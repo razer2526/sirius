@@ -1,0 +1,24 @@
+# Entorno de desarrollo local (no se sube al servidor)
+/tools/
+/data/
+
+# Configuración real (nunca en git: credenciales de BD y claves)
+/public/includes/config.php
+
+# El asistente de instalación se autobloquea con esto; nunca debe versionarse
+/public/install/.installed
+
+# Contenido subido por los usuarios (imágenes de membrete, PDFs archivados, archivos compartidos)
+/public/uploads/archivos/*
+!/public/uploads/archivos/.htaccess
+/public/uploads/documentos/*
+!/public/uploads/documentos/.htaccess
+/public/uploads/membretes/*
+!/public/uploads/membretes/.htaccess
+/public/uploads/tmp/*
+
+# Paquete de despliegue generado por package.bat
+/sirius-deploy.zip
+
+# Permisos locales de Claude Code (específicos de esta máquina, sin valor para el equipo)
+/.claude/settings.local.json

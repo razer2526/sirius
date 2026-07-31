@@ -1,0 +1,187 @@
+{
+  "categories": {
+    "analisis_clinicos": {
+      "label": "Análisis clínicos",
+      "icon": "flask",
+      "color": "bg-sky-100 text-sky-700",
+      "flow": "orders",
+      "doc_type": "analisis_clinicos",
+      "studies": []
+    },
+    "biologia_molecular": {
+      "label": "Biología Molecular",
+      "icon": "activity",
+      "color": "bg-violet-100 text-violet-700",
+      "studies": ["filmarray_gi", "filmarray_resp", "clostridium_difficile"]
+    },
+    "documentos": {
+      "label": "Documentos",
+      "icon": "file-text",
+      "color": "bg-amber-100 text-amber-700",
+      "studies": []
+    }
+  },
+  "templates": {
+    "filmarray_gi": {
+      "label": "FilmArray Gastrointestinal",
+      "short": "FilmArray GI",
+      "category": "biologia_molecular",
+      "study_name": "Film Array Panel Multiplex RT-PCR Gastrointestinal Viral y Bacteriológico",
+      "study_short": "Film Array Panel Multiplex Gastrointestinal por RT-PCR",
+      "report_title": "PCR Multiplex Panel Gastrointestinal FilmArray",
+      "area": "Biología Molecular (LAB-BPM)",
+      "sample_type": "Heces",
+      "container_temp": "",
+      "kit": "BioFire FilmArray Panel Gastrointestinal",
+      "technique": "determinaciones por PCR",
+      "positive_label": "DETECTADO (POSITIVO)",
+      "negative_label": "NO DETECTABLE",
+      "interpretation_title": "Interpretación de amplificación de ácidos nucleicos:",
+      "interpretation": "la amplificación múltiple es extremadamente sensible. El valor no detectado excluye la patología molecular bajo el límite técnico establecido. Favor de correlacionar clínicamente con el médico tratante a cargo del diagnóstico definitivo.",
+      "panels": [
+        {
+          "id": "bacteriologico",
+          "title": "PANEL BACTERIOLÓGICO",
+          "group": "Bacterias",
+          "page": 1,
+          "analytes": [
+            { "k": "aeromonas", "l": "Aeromonas SSP" },
+            { "k": "campylobacter", "l": "Campylobacter SSP" },
+            { "k": "shigella", "l": "Shigella SSP" },
+            { "k": "vibrio", "l": "Vibrio SSP" },
+            { "k": "yersinia", "l": "Yersinia Enterocolitica" },
+            { "k": "salmonella", "l": "Salmonella SSP" },
+            { "k": "ecoli_eaec", "l": "E-Coli Enteroagresiva (EAEC)" },
+            { "k": "ecoli_epec", "l": "E-Coli Enteropatógena (EPEC)" },
+            { "k": "ecoli_eiec", "l": "E-Coli Enteroinvasiva (EIEC)" },
+            { "k": "ecoli_etec", "l": "E-Coli Enterotoxigénica (ETEC)" },
+            { "k": "ecoli_0157", "l": "E-Coli 0157" },
+            { "k": "cdiff_toxina_b", "l": "Clostridium Difficile Toxina B" },
+            { "k": "cdiff_hiper", "l": "Clostridium Difficile hypervirulento (CD Hiper)" },
+            { "k": "cdiff_gdh", "l": "Clostridium Difficile GDH" }
+          ]
+        },
+        {
+          "id": "viral",
+          "title": "PANEL VIRAL",
+          "group": "Virus",
+          "page": 2,
+          "analytes": [
+            { "k": "adenovirus", "l": "Adenovirus" },
+            { "k": "astrovirus", "l": "Astrovirus" },
+            { "k": "norovirus_gi", "l": "Norovirus GI" },
+            { "k": "norovirus_gii", "l": "Norovirus GII" },
+            { "k": "rotavirus", "l": "Rotavirus" },
+            { "k": "sapovirus", "l": "Sapovirus" }
+          ]
+        },
+        {
+          "id": "parasitario",
+          "title": "PANEL PARASITARIO",
+          "group": "Parásitos",
+          "page": 2,
+          "analytes": [
+            { "k": "cryptosporidium", "l": "Cryptosporidium SSP" },
+            { "k": "cyclospora", "l": "Cyclospora cayatanensis" },
+            { "k": "entamoeba", "l": "Entamoeba histolytica" },
+            { "k": "giardia", "l": "Giardia lamblia" }
+          ]
+        }
+      ]
+    },
+    "filmarray_resp": {
+      "label": "FilmArray Respiratorio",
+      "short": "FilmArray Resp",
+      "category": "biologia_molecular",
+      "study_name": "Film Array Panel Multiplex RT-PCR Respiratorio Viral y Bacteriológico",
+      "study_short": "Film Array Panel Multiplex Respiratorio por RT-PCR",
+      "report_title": "PCR Multiplex Panel Respiratorio FilmArray",
+      "area": "Biología Molecular (LAB-BPM)",
+      "sample_type": "Exudado nasofaríngeo",
+      "container_temp": "",
+      "kit": "BioFire FilmArray Panel Respiratorio",
+      "technique": "determinaciones por PCR",
+      "positive_label": "DETECTADO (POSITIVO)",
+      "negative_label": "NO DETECTABLE",
+      "interpretation_title": "Interpretación de amplificación de ácidos nucleicos:",
+      "interpretation": "la amplificación múltiple es extremadamente sensible. El valor no detectado excluye la patología molecular bajo el límite técnico establecido. Favor de correlacionar clínicamente con el médico tratante a cargo del diagnóstico definitivo.",
+      "panels": [
+        {
+          "id": "bacteriologico",
+          "title": "PANEL BACTERIOLÓGICO",
+          "group": "Bacterias",
+          "page": 1,
+          "analytes": [
+            { "k": "bordetella_parapertussis", "l": "Bordetella Parapertussis (BPP)" },
+            { "k": "bordetella_pertussis", "l": "Bordetella Pertussis (BP)" },
+            { "k": "chlamydophila_pneumoniae", "l": "Chlamydophila Pneumoniae (CP)" },
+            { "k": "haemophilus_influenzae", "l": "Haemophilus Influenzae (HI)" },
+            { "k": "legionella_pneumophila", "l": "Legionella Pneumophila (LP)" },
+            { "k": "mycoplasma_pneumoniae", "l": "Mycoplasma Pneumoniae (MP)" },
+            { "k": "streptococcus_pneumoniae", "l": "Streptococcus Pneumoniae (SP)" },
+            { "k": "staphylococcus", "l": "Staphylococcus" }
+          ]
+        },
+        {
+          "id": "viral",
+          "title": "PANEL VIRAL",
+          "group": "Virus",
+          "page": 2,
+          "analytes": [
+            { "k": "influenza_a", "l": "Influenza A Virus (Flu A)" },
+            { "k": "influenza_a_h1", "l": "Influenza A-H1 (Flu A-H1)" },
+            { "k": "influenza_a_h1pdm09", "l": "Influenza A-H1PDM09 (Flu A-H1PDM09)" },
+            { "k": "influenza_a_h3", "l": "Influenza A-H3 (Flu A-H3)" },
+            { "k": "influenza_b", "l": "Influenza B Virus (Flu B)" },
+            { "k": "vsr_a", "l": "Virus Sincitial Respiratorio tipo A" },
+            { "k": "vsr_b", "l": "Virus Sincitial Respiratorio tipo B" },
+            { "k": "sars_cov_2", "l": "SARS CoV-2" }
+          ]
+        }
+      ]
+    },
+    "analisis_clinicos": {
+      "label": "Análisis clínicos",
+      "short": "Análisis clínicos",
+      "category": "analisis_clinicos",
+      "kind": "lab",
+      "report_title": "Reporte de análisis clínicos",
+      "area": "Análisis Clínicos",
+      "signature_area": "analisis_clinicos",
+      "reference_note": "Los valores de referencia corresponden al sexo y la edad del paciente. En los estudios cuyo intervalo depende de una condición fisiológica (fase del ciclo menstrual, menopausia, embarazo), se indica la condición considerada; cuando no se especifica, se muestran todos los intervalos aplicables.",
+      "outsourcing_note": "Para garantizar la calidad clínica de sus reportes, Corporativo de Especialidades Médicas Bosques Polanco S.A.S. de C.V. podrá disponer del servicio de un laboratorio de referencia, como RAPHA Referencia Clínica, S.C., para el procesamiento de muestras.",
+      "panels": []
+    },
+    "clostridium_difficile": {
+      "label": "Clostridium Difficile",
+      "short": "C. Difficile",
+      "category": "biologia_molecular",
+      "study_name": "Detección de Clostridium difficile por PCR",
+      "study_short": "Clostridium difficile por PCR",
+      "report_title": "PCR Detección de Clostridium difficile",
+      "area": "Biología Molecular (LAB-BPM)",
+      "sample_type": "Heces",
+      "container_temp": "",
+      "kit": "Atila biosystems Clostridium difficile PCR Detection Kit",
+      "technique": "determinaciones por PCR",
+      "positive_label": "DETECTADO (POSITIVO)",
+      "negative_label": "NO DETECTABLE",
+      "single_page": true,
+      "interpretation_title": "Interpretación de amplificación de ácidos nucleicos:",
+      "interpretation": "la amplificación múltiple es extremadamente sensible. El valor no detectado excluye la patología molecular bajo el límite técnico establecido. Favor de correlacionar clínicamente con el médico tratante a cargo del diagnóstico definitivo.",
+      "panels": [
+        {
+          "id": "clostridium",
+          "title": "PANEL CLOSTRIDIUM DIFFICILE",
+          "group": "Clostridium difficile",
+          "page": 1,
+          "analytes": [
+            { "k": "cdiff_gdh", "l": "Clostridium difficile GDH" },
+            { "k": "cdiff_toxina_a", "l": "Clostridium difficile Toxina A" },
+            { "k": "cdiff_toxina_b", "l": "Clostridium difficile Toxina B" }
+          ]
+        }
+      ]
+    }
+  }
+}

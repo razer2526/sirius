@@ -1,0 +1,8 @@
+# Archivos privados o del equipo: solo se sirven por archivo.php (verifica sesión y permisos).
+<IfModule mod_authz_core.c>
+  Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+  Order deny,allow
+  Deny from all
+</IfModule>

@@ -1,0 +1,17 @@
+{
+    "version": "0.0.1",
+    "configurations": [
+        {
+            "name": "sirius",
+            "runtimeExecutable": "C:\\Users\\Alan RodGar\\Desktop\\Membretador\\tools\\php\\php.exe",
+            "runtimeArgs": ["-S", "localhost:8080", "-t", "C:\\Users\\Alan RodGar\\Desktop\\Membretador\\public"],
+            "port": 8080
+        },
+        {
+            "name": "membretador-php",
+            "runtimeExecutable": "C:\\laragon\\bin\\php\\php-8.3.30-Win32-vs16-x64\\php.exe",
+            "runtimeArgs": ["-S", "127.0.0.1:8001", "-t", "C:\\laragon\\www\\membretador\\public"],
+            "port": 8001
+        }
+    ]
+}

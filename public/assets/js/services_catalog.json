@@ -1,0 +1,2410 @@
+{
+    "laboratorio": {
+        "admission": [
+            {
+                "id": "lab_medico",
+                "title": "Datos del médico",
+                "fields": [
+                    {
+                        "k": "medico_telefono",
+                        "l": "Teléfono del médico",
+                        "t": "text"
+                    },
+                    {
+                        "k": "medico_email",
+                        "l": "Email del médico",
+                        "t": "email"
+                    }
+                ]
+            },
+            {
+                "id": "lab_historia",
+                "title": "Historia clínica",
+                "fields": [
+                    {
+                        "k": "fumador",
+                        "l": "Fumador",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "alcohol",
+                        "l": "Alcohol",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "anticoagulantes",
+                        "l": "Anticoagulantes",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "legrado",
+                        "l": "Legrado",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "anticonceptivos",
+                        "l": "Anticonceptivos",
+                        "t": "checkbox"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "lab_sintomas",
+                "title": "Síntomas",
+                "fields": [
+                    {
+                        "k": "sintomas",
+                        "l": "Síntomas (motivo por el que se envía el estudio)",
+                        "t": "textarea",
+                        "span": 3
+                    },
+                    {
+                        "k": "diarrea",
+                        "l": "Diarrea",
+                        "t": "checkdetail",
+                        "d": "¿Por cuánto tiempo?"
+                    },
+                    {
+                        "k": "fiebre",
+                        "l": "Fiebre",
+                        "t": "checkdetail",
+                        "d": "¿Por cuánto tiempo?"
+                    },
+                    {
+                        "k": "perdida_apetito",
+                        "l": "Pérdida de apetito",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "dolor_abdominal",
+                        "l": "Dolor abdominal",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "dolor_cabeza",
+                        "l": "Dolor de cabeza",
+                        "t": "checkbox"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "lab_estudios",
+                "title": "Medicamentos y estudios",
+                "fields": [
+                    {
+                        "k": "medicamentos",
+                        "l": "Medicamentos",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "estudios",
+                        "l": "Estudios a realizar",
+                        "t": "textarea",
+                        "span": 2
+                    }
+                ]
+            },
+            {
+                "id": "lab_pago",
+                "title": "Pago",
+                "fields": [
+                    {
+                        "k": "pago_metodo",
+                        "l": "Método de pago",
+                        "t": "select",
+                        "o": [
+                            "Efectivo",
+                            "Tarjeta de crédito",
+                            "Tarjeta de débito",
+                            "Transferencia",
+                            "Link de pago"
+                        ]
+                    },
+                    {
+                        "k": "pago_monto",
+                        "l": "Monto (MXN)",
+                        "t": "number",
+                        "step": "0.01"
+                    }
+                ]
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ],
+        "session": []
+    },
+    "control_peso": {
+        "admission": [
+            {
+                "id": "cp_exp",
+                "title": "Exposiciones, viajes y consumo",
+                "fields": [
+                    {
+                        "k": "exp_animales",
+                        "l": "Animales",
+                        "t": "checkdetail",
+                        "d": "¿Qué animal?"
+                    },
+                    {
+                        "k": "exp_quimicos",
+                        "l": "Químicos",
+                        "t": "checkdetail",
+                        "d": "¿Qué químico?"
+                    },
+                    {
+                        "k": "exp_viajes",
+                        "l": "Viajes",
+                        "t": "checkdetail",
+                        "d": "¿A dónde viajó?"
+                    },
+                    {
+                        "k": "exp_alimentos",
+                        "l": "Alimentos exóticos",
+                        "t": "checkdetail",
+                        "d": "¿Qué alimento?"
+                    },
+                    {
+                        "k": "exp_medicamentos",
+                        "l": "Medicamentos",
+                        "t": "checkdetail",
+                        "d": "¿Cuál medicamento?"
+                    },
+                    {
+                        "k": "exp_suplementos",
+                        "l": "Suplementos",
+                        "t": "checkdetail",
+                        "d": "¿Cuál suplemento?"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_sf",
+                "title": "Salud femenina",
+                "fields": [
+                    {
+                        "k": "sf_menarca",
+                        "l": "Menarca (edad)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_fum",
+                        "l": "F.U.M. (última menstruación)",
+                        "t": "date"
+                    },
+                    {
+                        "k": "sf_ritmo",
+                        "l": "Ritmo (frecuencia y duración del ciclo)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_actividad_sexual",
+                        "l": "Actividad sexual",
+                        "t": "select",
+                        "o": [
+                            "Activa",
+                            "Inactiva"
+                        ]
+                    },
+                    {
+                        "k": "sf_anticonceptivos",
+                        "l": "Métodos anticonceptivos",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_embarazo",
+                        "l": "¿Embarazo actual?",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "sf_papanicolaou",
+                        "l": "Papanicolaou",
+                        "t": "checkdetail",
+                        "d": "Fecha \/ resultado"
+                    },
+                    {
+                        "k": "sf_mastografia",
+                        "l": "Mastografía",
+                        "t": "checkdetail",
+                        "d": "Fecha \/ resultado"
+                    },
+                    {
+                        "k": "sf_perfil_hormonal",
+                        "l": "Perfil hormonal",
+                        "t": "checkdetail",
+                        "d": "Fecha \/ resultado"
+                    },
+                    {
+                        "k": "sf_condiciones",
+                        "l": "Condiciones de salud",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "sf_legrado",
+                        "l": "Legrado",
+                        "t": "checkdetail",
+                        "d": "Fecha \/ motivo"
+                    }
+                ],
+                "showIf": {
+                    "field": "sex",
+                    "in": [
+                        "F",
+                        "O"
+                    ]
+                },
+                "grid": 3
+            },
+            {
+                "id": "cp_inm",
+                "title": "Inmunizaciones",
+                "fields": [
+                    {
+                        "k": "inm_influenza",
+                        "l": "Influenza",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_covid",
+                        "l": "COVID-19",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_neumococo",
+                        "l": "Neumococo",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_sarampion",
+                        "l": "Sarampión",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_tetanos",
+                        "l": "Tétanos",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_vph",
+                        "l": "VPH",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_hepatitis",
+                        "l": "Hepatitis",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_srp",
+                        "l": "SRP (Triple viral)",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_rotavirus",
+                        "l": "Rotavirus",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_pentavalente",
+                        "l": "Pentavalente",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_herpes",
+                        "l": "Herpes",
+                        "t": "checkdetail",
+                        "d": "¿En qué año?"
+                    },
+                    {
+                        "k": "inm_otra",
+                        "l": "Otra",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_app",
+                "title": "Antecedentes patológicos personales",
+                "fields": [
+                    {
+                        "k": "app_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_hta",
+                        "l": "Hipertensión",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_hipotension",
+                        "l": "Hipotensión",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_dislipidemia",
+                        "l": "Dislipidemia",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_cancer",
+                        "l": "Cáncer",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_artritis",
+                        "l": "Artritis",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_autoinmunes",
+                        "l": "Enf. autoinmunes",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_renal",
+                        "l": "Enf. renal",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_hepatica",
+                        "l": "Enf. hepática",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_tiroides",
+                        "l": "Enf. de tiroides",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_cardiovascular",
+                        "l": "Enf. cardiovascular",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_gastro",
+                        "l": "Enf. gastrointestinal",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_respiratoria",
+                        "l": "Enf. respiratoria",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "app_metabolica",
+                        "l": "Enf. metabólica",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "int_lactosa",
+                        "l": "Intolerancia: lactosa",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "int_gluten",
+                        "l": "Intolerancia: gluten",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "int_grasa",
+                        "l": "Intolerancia: grasa",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "int_meds",
+                        "l": "Intolerancia: medicamentos",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "int_otra",
+                        "l": "Otra intolerancia",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "alergias",
+                        "l": "Alergias",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_ahf",
+                "title": "Antecedentes heredofamiliares",
+                "fields": [
+                    {
+                        "k": "ahf_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_hta",
+                        "l": "Hipertensión",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_hipotension",
+                        "l": "Hipotensión",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_dislipidemia",
+                        "l": "Dislipidemia",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_cancer",
+                        "l": "Cáncer",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_artritis",
+                        "l": "Artritis",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_autoinmunes",
+                        "l": "Enf. autoinmunes",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_renal",
+                        "l": "Enf. renal",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_hepatica",
+                        "l": "Enf. hepática",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_tiroides",
+                        "l": "Enf. de tiroides",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_cardiovascular",
+                        "l": "Enf. cardiovascular",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_gastro",
+                        "l": "Enf. gastrointestinal",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_respiratoria",
+                        "l": "Enf. respiratoria",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    },
+                    {
+                        "k": "ahf_metabolica",
+                        "l": "Enf. metabólica",
+                        "t": "checkdetail",
+                        "d": "Padre \/ Madre \/ Ambos \/ Otro"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_pres",
+                "title": "Condiciones de presentación",
+                "fields": [
+                    {
+                        "k": "pres_ayuno",
+                        "l": "Ayuno",
+                        "t": "checkdetail",
+                        "d": "Horas de ayuno"
+                    },
+                    {
+                        "k": "pres_vejiga",
+                        "l": "Vejiga vacía",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_ejercicio",
+                        "l": "Ejercicio (últimas 24 h)",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_alcohol",
+                        "l": "Alcohol (últimas 48 h)",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_cafeina",
+                        "l": "Cafeína (últimas 8 h)",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_hidratacion",
+                        "l": "Hidratación",
+                        "t": "select",
+                        "o": [
+                            "Buena",
+                            "Regular",
+                            "Mala"
+                        ]
+                    },
+                    {
+                        "k": "pres_horas_sueno",
+                        "l": "Horas de sueño",
+                        "t": "number"
+                    },
+                    {
+                        "k": "pres_dolor",
+                        "l": "Dolor (nivel \/ zona)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "prep_aseo",
+                        "l": "Aseo personal",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_perfumes",
+                        "l": "Perfumes \/ cremas",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_metal_medico",
+                        "l": "Metal médico \/ implante",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_metal_no_medico",
+                        "l": "Metal no médico",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_sustancias",
+                        "l": "Bajo sustancias",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_ebriedad",
+                        "l": "Ebriedad",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_tatuajes",
+                        "l": "Tatuajes",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_observaciones",
+                        "l": "Observaciones adicionales",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_antro",
+                "title": "Antropometría",
+                "fields": [
+                    {
+                        "k": "peso_kg",
+                        "l": "Peso (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "talla_cm",
+                        "l": "Talla (cm)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "imc",
+                        "l": "IMC (automático)",
+                        "t": "calc",
+                        "calc": "imc"
+                    },
+                    {
+                        "k": "per_cintura",
+                        "l": "Cintura (cm) — punto más estrecho del abdomen",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_cadera",
+                        "l": "Cadera (cm) — máxima prominencia de glúteos",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_cuello",
+                        "l": "Cuello (cm) — debajo de la manzana de Adán",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_torax",
+                        "l": "Tórax (cm) — nivel de pezones \/ 4ª costilla",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_brazo_rel",
+                        "l": "Brazo relajado (cm) — punto medio acromion-radio",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_brazo_con",
+                        "l": "Brazo contraído (cm) — máx. circunferencia bíceps",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_antebrazo",
+                        "l": "Antebrazo (cm) — máxima circunferencia",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_muneca",
+                        "l": "Muñeca (cm) — distal a apófisis estiloides",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_abdomen",
+                        "l": "Abdomen (cm) — nivel de cicatriz umbilical",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_muslo",
+                        "l": "Muslo (cm) — justo debajo del pliegue glúteo",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_pantorrilla",
+                        "l": "Pantorrilla (cm) — cara medial, máximo grosor",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "icc",
+                        "l": "ICC cintura-cadera (automático)",
+                        "t": "calc",
+                        "calc": "icc"
+                    },
+                    {
+                        "k": "ice",
+                        "l": "ICE cintura-estatura (automático)",
+                        "t": "calc",
+                        "calc": "ice"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_pli",
+                "title": "Plicometría (mm)",
+                "fields": [
+                    {
+                        "k": "pli_triceps",
+                        "l": "Tríceps — parte post. brazo superior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_biceps",
+                        "l": "Bíceps — cara ant. brazo superior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_subescapular",
+                        "l": "Subescapular — ángulo inferior escápula",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_suprailiaco",
+                        "l": "Suprailiaco — cresta iliaca ant-sup",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_abdominal",
+                        "l": "Abdominal — 5 cm lateral al ombligo",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_muslo",
+                        "l": "Muslo — línea media cara anterior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_pantorrilla",
+                        "l": "Pantorrilla — cara medial máximo grosor",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_sumatoria",
+                        "l": "Sumatoria (automático)",
+                        "t": "calc",
+                        "calc": "pli_sum"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_bio",
+                "title": "Bioimpedancia",
+                "fields": [
+                    {
+                        "k": "bio_grasa_pct",
+                        "l": "% Grasa corporal",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_masa_grasa",
+                        "l": "Masa grasa (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_masa_muscular",
+                        "l": "Masa muscular (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_agua",
+                        "l": "Agua total TBW",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_grasa_visceral",
+                        "l": "Grasa visceral",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_edad_metabolica",
+                        "l": "Edad metabólica",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_tmb",
+                        "l": "TMB \/ BMR (kcal)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_impedancia",
+                        "l": "Impedancia (Ω)",
+                        "t": "number"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_sv",
+                "title": "Signos vitales",
+                "fields": [
+                    {
+                        "k": "sv_ta",
+                        "l": "T\/A (sistólica\/diastólica)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sv_fc",
+                        "l": "FC (lpm)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_spo2",
+                        "l": "SpO2 (%)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_glucosa",
+                        "l": "Glucosa (mg\/dL)",
+                        "t": "number"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_ev",
+                "title": "Estilo de vida",
+                "fields": [
+                    {
+                        "k": "ev_estres",
+                        "l": "Nivel de estrés",
+                        "t": "select",
+                        "o": [
+                            "Bajo",
+                            "Medio",
+                            "Alto"
+                        ]
+                    },
+                    {
+                        "k": "ev_calidad_sueno",
+                        "l": "Calidad de sueño",
+                        "t": "text"
+                    },
+                    {
+                        "k": "ev_horas_sentado",
+                        "l": "Horas sentado \/ día",
+                        "t": "number"
+                    },
+                    {
+                        "k": "ev_ejercicio_sem",
+                        "l": "Horas de ejercicio a la semana",
+                        "t": "number",
+                        "step": "0.5"
+                    },
+                    {
+                        "k": "ev_fumador",
+                        "l": "Fumador",
+                        "t": "checkdetail",
+                        "d": "Cantidad \/ frecuencia"
+                    },
+                    {
+                        "k": "ev_alcohol",
+                        "l": "Alcohol",
+                        "t": "checkdetail",
+                        "d": "Cantidad \/ frecuencia"
+                    },
+                    {
+                        "k": "ev_drogas",
+                        "l": "Drogas",
+                        "t": "checkdetail",
+                        "d": "Cantidad \/ frecuencia"
+                    },
+                    {
+                        "k": "ev_medicamentos",
+                        "l": "Medicamentos de uso regular (nombres y dosis)",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "ev_suplementos",
+                        "l": "Suplementos (vitaminas, proteínas, etc.)",
+                        "t": "textarea",
+                        "span": 2
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_nut",
+                "title": "Nutricionales",
+                "fields": [
+                    {
+                        "k": "nut_comidas_dia",
+                        "l": "Comidas principales \/ día",
+                        "t": "number"
+                    },
+                    {
+                        "k": "nut_comida_favorita",
+                        "l": "Comida favorita",
+                        "t": "text"
+                    },
+                    {
+                        "k": "nut_verduras",
+                        "l": "Gusto por verduras",
+                        "t": "select",
+                        "o": [
+                            "Alto",
+                            "Medio",
+                            "Bajo"
+                        ]
+                    },
+                    {
+                        "k": "nut_frutas",
+                        "l": "Gusto por frutas",
+                        "t": "select",
+                        "o": [
+                            "Alto",
+                            "Medio",
+                            "Bajo"
+                        ]
+                    },
+                    {
+                        "k": "nut_colaciones",
+                        "l": "¿Realiza colaciones (snacks)?",
+                        "t": "checkdetail",
+                        "d": "Cantidad al día y tipo"
+                    },
+                    {
+                        "k": "nut_frec_azucar",
+                        "l": "Frecuencia azúcar (ej. diario, ocasional)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "nut_agua",
+                        "l": "Consumo de agua (litros\/vasos al día)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "nut_chatarra",
+                        "l": "Comida chatarra (frecuencia semanal)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "nut_rec_desayuno",
+                        "l": "Recordatorio 24 h: desayuno",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "nut_rec_comida",
+                        "l": "Recordatorio 24 h: comida",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "nut_rec_cena",
+                        "l": "Recordatorio 24 h: cena",
+                        "t": "textarea",
+                        "span": 2
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ],
+        "session": [
+            {
+                "id": "cp_pres",
+                "title": "Condiciones de presentación",
+                "fields": [
+                    {
+                        "k": "pres_ayuno",
+                        "l": "Ayuno",
+                        "t": "checkdetail",
+                        "d": "Horas de ayuno"
+                    },
+                    {
+                        "k": "pres_vejiga",
+                        "l": "Vejiga vacía",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_ejercicio",
+                        "l": "Ejercicio (últimas 24 h)",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_alcohol",
+                        "l": "Alcohol (últimas 48 h)",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_cafeina",
+                        "l": "Cafeína (últimas 8 h)",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_hidratacion",
+                        "l": "Hidratación",
+                        "t": "select",
+                        "o": [
+                            "Buena",
+                            "Regular",
+                            "Mala"
+                        ]
+                    },
+                    {
+                        "k": "pres_horas_sueno",
+                        "l": "Horas de sueño",
+                        "t": "number"
+                    },
+                    {
+                        "k": "pres_dolor",
+                        "l": "Dolor (nivel \/ zona)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "prep_aseo",
+                        "l": "Aseo personal",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_perfumes",
+                        "l": "Perfumes \/ cremas",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_metal_medico",
+                        "l": "Metal médico \/ implante",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_metal_no_medico",
+                        "l": "Metal no médico",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_sustancias",
+                        "l": "Bajo sustancias",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_ebriedad",
+                        "l": "Ebriedad",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "prep_tatuajes",
+                        "l": "Tatuajes",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "pres_observaciones",
+                        "l": "Observaciones adicionales",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_antro",
+                "title": "Antropometría",
+                "fields": [
+                    {
+                        "k": "peso_kg",
+                        "l": "Peso (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "talla_cm",
+                        "l": "Talla (cm)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "imc",
+                        "l": "IMC (automático)",
+                        "t": "calc",
+                        "calc": "imc"
+                    },
+                    {
+                        "k": "per_cintura",
+                        "l": "Cintura (cm) — punto más estrecho del abdomen",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_cadera",
+                        "l": "Cadera (cm) — máxima prominencia de glúteos",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_cuello",
+                        "l": "Cuello (cm) — debajo de la manzana de Adán",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_torax",
+                        "l": "Tórax (cm) — nivel de pezones \/ 4ª costilla",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_brazo_rel",
+                        "l": "Brazo relajado (cm) — punto medio acromion-radio",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_brazo_con",
+                        "l": "Brazo contraído (cm) — máx. circunferencia bíceps",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_antebrazo",
+                        "l": "Antebrazo (cm) — máxima circunferencia",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_muneca",
+                        "l": "Muñeca (cm) — distal a apófisis estiloides",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_abdomen",
+                        "l": "Abdomen (cm) — nivel de cicatriz umbilical",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_muslo",
+                        "l": "Muslo (cm) — justo debajo del pliegue glúteo",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "per_pantorrilla",
+                        "l": "Pantorrilla (cm) — cara medial, máximo grosor",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "icc",
+                        "l": "ICC cintura-cadera (automático)",
+                        "t": "calc",
+                        "calc": "icc"
+                    },
+                    {
+                        "k": "ice",
+                        "l": "ICE cintura-estatura (automático)",
+                        "t": "calc",
+                        "calc": "ice"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_pli",
+                "title": "Plicometría (mm)",
+                "fields": [
+                    {
+                        "k": "pli_triceps",
+                        "l": "Tríceps — parte post. brazo superior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_biceps",
+                        "l": "Bíceps — cara ant. brazo superior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_subescapular",
+                        "l": "Subescapular — ángulo inferior escápula",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_suprailiaco",
+                        "l": "Suprailiaco — cresta iliaca ant-sup",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_abdominal",
+                        "l": "Abdominal — 5 cm lateral al ombligo",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_muslo",
+                        "l": "Muslo — línea media cara anterior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_pantorrilla",
+                        "l": "Pantorrilla — cara medial máximo grosor",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "pli_sumatoria",
+                        "l": "Sumatoria (automático)",
+                        "t": "calc",
+                        "calc": "pli_sum"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_bio",
+                "title": "Bioimpedancia",
+                "fields": [
+                    {
+                        "k": "bio_grasa_pct",
+                        "l": "% Grasa corporal",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_masa_grasa",
+                        "l": "Masa grasa (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_masa_muscular",
+                        "l": "Masa muscular (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_agua",
+                        "l": "Agua total TBW",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_grasa_visceral",
+                        "l": "Grasa visceral",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "bio_edad_metabolica",
+                        "l": "Edad metabólica",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_tmb",
+                        "l": "TMB \/ BMR (kcal)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_impedancia",
+                        "l": "Impedancia (Ω)",
+                        "t": "number"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_sv",
+                "title": "Signos vitales",
+                "fields": [
+                    {
+                        "k": "sv_ta",
+                        "l": "T\/A (sistólica\/diastólica)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sv_fc",
+                        "l": "FC (lpm)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_spo2",
+                        "l": "SpO2 (%)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_glucosa",
+                        "l": "Glucosa (mg\/dL)",
+                        "t": "number"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "cp_medico",
+                "title": "Consulta médica",
+                "stage": "doctor",
+                "fields": [
+                    {
+                        "k": "med_medicamentos",
+                        "l": "Medicamentos administrados en esta sesión",
+                        "t": "textarea",
+                        "span": 3
+                    },
+                    {
+                        "k": "med_apar_cavitacion",
+                        "l": "Cavitación",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "med_apar_radiofrecuencia",
+                        "l": "Radiofrecuencia",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "med_apar_drenaje",
+                        "l": "Drenaje linfático",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "med_apar_vacum",
+                        "l": "Vacum",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "med_apar_otro",
+                        "l": "Otro aparato",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
+                    },
+                    {
+                        "k": "med_esquema_revisado",
+                        "l": "Se revisó esquema alimentario",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "med_esquema_obs",
+                        "l": "Observaciones del esquema",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "med_estado_entrada",
+                        "l": "Estado de entrada",
+                        "t": "textarea"
+                    },
+                    {
+                        "k": "med_estado_salida",
+                        "l": "Estado de salida",
+                        "t": "textarea"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ]
+    },
+    "fisioterapia": {
+        "admission": [
+            {
+                "id": "app",
+                "title": "Datos patológicos personales",
+                "fields": [
+                    {
+                        "k": "app_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_renal",
+                        "l": "Enfermedad renal",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_gastro",
+                        "l": "Enfermedad gastrointestinal",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_articular",
+                        "l": "Enf. articular o reumatoide",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cancer",
+                        "l": "Cáncer",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hepatitis",
+                        "l": "Hepatitis",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cirugias",
+                        "l": "Cirugías",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_transplantes",
+                        "l": "Transplantes",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_sustancias",
+                        "l": "Consumo de sustancias",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_accidentes",
+                        "l": "Accidentes traumatológicos",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_automedicacion",
+                        "l": "Automedicación",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hta",
+                        "l": "Hipertensión arterial",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_endocrino",
+                        "l": "Enf. endocrinológicas",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "ahf",
+                "title": "Antecedentes heredofamiliares",
+                "fields": [
+                    {
+                        "k": "ahf_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_renal",
+                        "l": "Enfermedad renal",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_gastro",
+                        "l": "Enfermedad gastrointestinal",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_articular",
+                        "l": "Enf. articular o reumatoide",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_cancer",
+                        "l": "Cáncer",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_hepatitis",
+                        "l": "Hepatitis",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_cirugias",
+                        "l": "Cirugías",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_transplantes",
+                        "l": "Transplantes",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_sustancias",
+                        "l": "Consumo de sustancias",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_accidentes",
+                        "l": "Accidentes traumatológicos",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_automedicacion",
+                        "l": "Automedicación",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_hta",
+                        "l": "Hipertensión arterial",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_endocrino",
+                        "l": "Enf. endocrinológicas",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "anp",
+                "title": "Antecedentes personales no patológicos",
+                "fields": [
+                    {
+                        "k": "anp_ejercicio",
+                        "l": "Ejercicio o deporte (cuál, inicio, duración, frecuencia semanal)",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
+                        "k": "anp_lesiones",
+                        "l": "Lesiones secundarias \/ causas de abandono",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
+                        "k": "anp_horas_sueno",
+                        "l": "Horas de sueño",
+                        "t": "number"
+                    },
+                    {
+                        "k": "anp_estres",
+                        "l": "Nivel de estrés",
+                        "t": "select",
+                        "o": [
+                            "Bajo",
+                            "Medio",
+                            "Alto"
+                        ]
+                    },
+                    {
+                        "k": "anp_insomnio",
+                        "l": "Insomnio",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "anp_alimentacion",
+                        "l": "Tipo de alimentación",
+                        "t": "select",
+                        "o": [
+                            "Buena",
+                            "Regular",
+                            "Mala"
+                        ]
+                    },
+                    {
+                        "k": "anp_alimentos",
+                        "l": "Alimentos a la semana (desayuno, comida, cena y colaciones)",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "anp_animales",
+                        "l": "Exposición a animales (fecha y animal)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "anp_zoonosis",
+                        "l": "Zoonosis",
+                        "t": "text"
+                    }
+                ]
+            },
+            {
+                "id": "sv",
+                "title": "Signos vitales",
+                "fields": [
+                    {
+                        "k": "sv_ta",
+                        "l": "T\/A",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sv_fc",
+                        "l": "FC (lpm)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_fr",
+                        "l": "FR (rpm)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_temp",
+                        "l": "Temperatura (°C)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "sv_glucosa",
+                        "l": "Glucosa (mg\/dL)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_oxigenacion",
+                        "l": "Oxigenación (%)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "peso_kg",
+                        "l": "Peso (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "talla_cm",
+                        "l": "Talla (cm)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "imc",
+                        "l": "IMC (automático)",
+                        "t": "calc",
+                        "calc": "imc"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "sf",
+                "title": "Salud femenina",
+                "fields": [
+                    {
+                        "k": "sf_menarca",
+                        "l": "Menarca (edad)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_parejas",
+                        "l": "Número de parejas sexuales",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_preferencia",
+                        "l": "Preferencia sexual",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_inicio_vs",
+                        "l": "Inicio de actividad sexual",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_hijos",
+                        "l": "Hijos (cuántos)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_gestas",
+                        "l": "Número de gestas",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_partos_vag",
+                        "l": "Nacidos por vía vaginal",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_cesareas",
+                        "l": "Nacidos por cesárea",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_gestas_nn",
+                        "l": "Gestas no nacidos",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sf_aborto",
+                        "l": "Aborto (motivo)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_compl_embarazo",
+                        "l": "Complicaciones en el embarazo",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_compl_parto",
+                        "l": "Complicaciones en el parto",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_anticonceptivos",
+                        "l": "Métodos anticonceptivos (cuál y por qué lo dejó)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_ets",
+                        "l": "ETS (cuál y secuelas)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_incontinencia",
+                        "l": "Incontinencia urinaria o fecal",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_prolapso",
+                        "l": "Prolapso útero\/vejiga\/recto (cuál y tratamiento)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sf_menopausia",
+                        "l": "Menopausia",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "sf_climaterio",
+                        "l": "Síntomas de climaterio",
+                        "t": "text"
+                    }
+                ],
+                "showIf": {
+                    "field": "sex",
+                    "in": [
+                        "F",
+                        "O"
+                    ]
+                },
+                "grid": 3
+            },
+            {
+                "id": "sm",
+                "title": "Salud masculina",
+                "fields": [
+                    {
+                        "k": "sm_parejas",
+                        "l": "Número de parejas sexuales",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sm_inicio_vs",
+                        "l": "Inicio de actividad sexual",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sm_preferencia",
+                        "l": "Preferencia sexual",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sm_anticonceptivos",
+                        "l": "Métodos anticonceptivos (cuál y motivo de abandono)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sm_ets",
+                        "l": "ETS (cuál y secuelas)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sm_incontinencia",
+                        "l": "Incontinencia urinaria o fecal",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sm_prolapso",
+                        "l": "Prolapso vejiga\/recto (cuál y tratamiento)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sm_prostatitis",
+                        "l": "Prostatitis",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "sm_hpb",
+                        "l": "Hiperplasia prostática benigna",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "sm_ca_prostata",
+                        "l": "Cáncer de próstata",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "sm_disf_erectil",
+                        "l": "Disfunción eréctil",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "sm_alt_eyaculacion",
+                        "l": "Alteraciones en la eyaculación (precoz o retrógrada)",
+                        "t": "text"
+                    }
+                ],
+                "showIf": {
+                    "field": "sex",
+                    "in": [
+                        "M",
+                        "O"
+                    ]
+                },
+                "grid": 3
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ],
+        "session": [
+            {
+                "id": "fis_sesion",
+                "title": "Sesión",
+                "fields": [
+                    {
+                        "k": "numero_sesion",
+                        "l": "Número de sesión",
+                        "t": "number"
+                    },
+                    {
+                        "k": "exploracion",
+                        "l": "Exploración física",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "fis_dx",
+                "title": "Diagnóstico fisioterapéutico",
+                "fields": [
+                    {
+                        "k": "dx_deficiencias",
+                        "l": "Deficiencias, función y estructura",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "dx_limitaciones",
+                        "l": "Limitaciones en las actividades",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "dx_restricciones",
+                        "l": "Restricciones laborales, deportivas y de estilo de vida",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "plan_intervencion",
+                        "l": "Plan de intervención",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "resultados_ejercicios",
+                        "l": "Resultados y ejercicios",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "tratamiento",
+                        "l": "Tratamiento a seguir",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "objetivo",
+                        "l": "Objetivo",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "resultados_esperados",
+                        "l": "Resultados esperados",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "tiempo_estimado",
+                        "l": "Tiempo estimado del tratamiento",
+                        "t": "text",
+                        "span": 2
+                    }
+                ]
+            },
+            {
+                "id": "fis_estado",
+                "title": "Estado del paciente",
+                "fields": [
+                    {
+                        "k": "estado_admision",
+                        "l": "Estado en admisión de la sesión",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "estado_egreso",
+                        "l": "Estado de egreso de la sesión",
+                        "t": "textarea",
+                        "span": 2
+                    }
+                ]
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ]
+    },
+    "podologia": {
+        "admission": [
+            {
+                "id": "app",
+                "title": "Datos patológicos personales",
+                "fields": [
+                    {
+                        "k": "app_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_renal",
+                        "l": "Enfermedad renal",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_gastro",
+                        "l": "Enfermedad gastrointestinal",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_articular",
+                        "l": "Enf. articular o reumatoide",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cancer",
+                        "l": "Cáncer",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hepatitis",
+                        "l": "Hepatitis",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cirugias",
+                        "l": "Cirugías",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_transplantes",
+                        "l": "Transplantes",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_sustancias",
+                        "l": "Consumo de sustancias",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_accidentes",
+                        "l": "Accidentes traumatológicos",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_automedicacion",
+                        "l": "Automedicación",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hta",
+                        "l": "Hipertensión arterial",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_endocrino",
+                        "l": "Enf. endocrinológicas",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "ahf",
+                "title": "Antecedentes heredofamiliares",
+                "fields": [
+                    {
+                        "k": "ahf_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_renal",
+                        "l": "Enfermedad renal",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_gastro",
+                        "l": "Enfermedad gastrointestinal",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_articular",
+                        "l": "Enf. articular o reumatoide",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_cancer",
+                        "l": "Cáncer",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_hepatitis",
+                        "l": "Hepatitis",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_cirugias",
+                        "l": "Cirugías",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_transplantes",
+                        "l": "Transplantes",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_sustancias",
+                        "l": "Consumo de sustancias",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_accidentes",
+                        "l": "Accidentes traumatológicos",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_automedicacion",
+                        "l": "Automedicación",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_hta",
+                        "l": "Hipertensión arterial",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_endocrino",
+                        "l": "Enf. endocrinológicas",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre\/madre\/otro) y si vive o finado"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "anp",
+                "title": "Antecedentes personales no patológicos",
+                "fields": [
+                    {
+                        "k": "anp_ejercicio",
+                        "l": "Ejercicio o deporte (cuál, inicio, duración, frecuencia semanal)",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
+                        "k": "anp_lesiones",
+                        "l": "Lesiones secundarias \/ causas de abandono",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
+                        "k": "anp_horas_sueno",
+                        "l": "Horas de sueño",
+                        "t": "number"
+                    },
+                    {
+                        "k": "anp_estres",
+                        "l": "Nivel de estrés",
+                        "t": "select",
+                        "o": [
+                            "Bajo",
+                            "Medio",
+                            "Alto"
+                        ]
+                    },
+                    {
+                        "k": "anp_insomnio",
+                        "l": "Insomnio",
+                        "t": "checkbox"
+                    },
+                    {
+                        "k": "anp_alimentacion",
+                        "l": "Tipo de alimentación",
+                        "t": "select",
+                        "o": [
+                            "Buena",
+                            "Regular",
+                            "Mala"
+                        ]
+                    },
+                    {
+                        "k": "anp_alimentos",
+                        "l": "Alimentos a la semana (desayuno, comida, cena y colaciones)",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "anp_animales",
+                        "l": "Exposición a animales (fecha y animal)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "anp_zoonosis",
+                        "l": "Zoonosis",
+                        "t": "text"
+                    }
+                ]
+            },
+            {
+                "id": "sv",
+                "title": "Signos vitales",
+                "fields": [
+                    {
+                        "k": "sv_ta",
+                        "l": "T\/A",
+                        "t": "text"
+                    },
+                    {
+                        "k": "sv_fc",
+                        "l": "FC (lpm)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_fr",
+                        "l": "FR (rpm)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_temp",
+                        "l": "Temperatura (°C)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "sv_glucosa",
+                        "l": "Glucosa (mg\/dL)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "sv_oxigenacion",
+                        "l": "Oxigenación (%)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "peso_kg",
+                        "l": "Peso (kg)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "talla_cm",
+                        "l": "Talla (cm)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "imc",
+                        "l": "IMC (automático)",
+                        "t": "calc",
+                        "calc": "imc"
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ],
+        "session": [
+            {
+                "id": "pod_sesion",
+                "title": "Sesión",
+                "fields": [
+                    {
+                        "k": "numero_sesion",
+                        "l": "Número de sesión",
+                        "t": "number"
+                    },
+                    {
+                        "k": "motivo_consulta",
+                        "l": "Motivo de la consulta",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
+                        "k": "observaciones_exploracion",
+                        "l": "Observaciones de la exploración",
+                        "t": "textarea",
+                        "span": 3
+                    },
+                    {
+                        "k": "tratamiento",
+                        "l": "Tratamiento a seguir",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "pod_estado",
+                "title": "Estado del paciente",
+                "fields": [
+                    {
+                        "k": "estado_admision",
+                        "l": "Estado en admisión de la sesión",
+                        "t": "textarea",
+                        "span": 1
+                    },
+                    {
+                        "k": "estado_durante",
+                        "l": "Estado durante la sesión",
+                        "t": "textarea",
+                        "span": 1
+                    },
+                    {
+                        "k": "estado_egreso",
+                        "l": "Estado de egreso de la sesión",
+                        "t": "textarea",
+                        "span": 1
+                    }
+                ],
+                "grid": 3
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ]
+    }
+}

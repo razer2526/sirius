@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sirius — Sin conexión</title>
+<style>
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #f1f5f9; color: #1e293b;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; text-align: center; }
+  .card { padding: 32px; }
+  .star { width: 64px; height: 64px; margin: 0 auto 16px; border-radius: 18px; background: #4f46e5;
+          display: flex; align-items: center; justify-content: center; }
+  h1 { font-size: 20px; margin: 0 0 8px; }
+  p { color: #64748b; font-size: 14px; margin: 0 0 20px; }
+  button { background: #4f46e5; color: #fff; border: 0; border-radius: 10px; padding: 10px 22px;
+           font-size: 14px; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="star">
+    <svg viewBox="0 0 24 24" width="36" height="36" fill="#fff"><path d="M12 1l2.4 6.9L21 9l-5.2 4.4L17.5 21 12 17.2 6.5 21l1.7-7.6L3 9l6.6-1.1z"/></svg>
+  </div>
+  <h1>Sin conexión</h1>
+  <p>Sirius necesita internet para consultar los datos del laboratorio.<br>Verifica tu conexión e intenta de nuevo.</p>
+  <button onclick="location.reload()">Reintentar</button>
+</div>
+</body>
+</html>
