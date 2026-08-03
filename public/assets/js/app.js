@@ -31,6 +31,19 @@ async function boot() {
   initAssistant(state);
   initRouter(state);
   registerServiceWorker();
+  keepSessionAlive();
+}
+
+/**
+ * Formularios largos (ej. admisión de Control de peso) a veces tardan más que el
+ * tiempo de inactividad de sesión sin hacer ninguna petición al servidor. Este ping
+ * periódico mantiene la sesión "tocada" del lado del servidor mientras la pestaña
+ * siga abierta, para no perder el trabajo a media captura.
+ */
+function keepSessionAlive() {
+  setInterval(() => {
+    apiGet('auth/session').catch(() => {});
+  }, 5 * 60 * 1000);
 }
 
 function renderTopbar() {
