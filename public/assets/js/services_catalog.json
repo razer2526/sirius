@@ -998,6 +998,12 @@
                         "t": "text"
                     },
                     {
+                        "k": "nut_regularidad_evacuar",
+                        "l": "Regularidad para evacuar",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
                         "k": "nut_rec_desayuno",
                         "l": "Recordatorio 24 h: desayuno",
                         "t": "textarea",
