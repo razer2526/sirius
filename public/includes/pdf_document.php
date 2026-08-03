@@ -1262,9 +1262,9 @@ function render_patient_record_pdf(
 
     $pdf->dataGrid([
         ['Fecha de nacimiento', $birthLabel, 'Sexo', $sexLabel],
-        ['CURP', $patient['curp'] ?: '—', 'Grupo sanguíneo', $patient['blood_type'] ?: '—'],
-        ['Estado civil', $patient['marital_status'] ?: '—', 'Ocupación', $patient['occupation'] ?: '—'],
-        ['Nacionalidad', $patient['nationality'] ?: '—', 'Religión', $patient['religion'] ?: '—'],
+        ['Grupo sanguíneo', $patient['blood_type'] ?: '—', 'Estado civil', $patient['marital_status'] ?: '—'],
+        ['Ocupación', $patient['occupation'] ?: '—', 'Nacionalidad', $patient['nationality'] ?: '—'],
+        ['Religión', $patient['religion'] ?: '—', null, null],
         ['Celular', $patient['mobile'] ?: '—', 'Teléfono', $patient['phone'] ?: '—'],
         ['Email', $patient['email'] ?: '—', 'Titular / a cargo', $titular],
         ['Dirección', $direccion, null, null],

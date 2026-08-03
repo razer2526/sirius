@@ -391,6 +391,20 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 CONSTRAINT fk_quote_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL,
                 CONSTRAINT fk_quote_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'patient_documents' => "CREATE TABLE IF NOT EXISTS patient_documents (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                patient_id INT UNSIGNED NOT NULL,
+                name VARCHAR(200) NOT NULL,
+                stored_name VARCHAR(80) NOT NULL,
+                mime VARCHAR(120) NULL,
+                size BIGINT UNSIGNED NOT NULL DEFAULT 0,
+                notes VARCHAR(255) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_pdoc_patient (patient_id, created_at),
+                CONSTRAINT fk_pdoc_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
+                CONSTRAINT fk_pdoc_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -700,6 +714,17 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'patient_documents' => "CREATE TABLE IF NOT EXISTS patient_documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_id INTEGER NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+                name TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                mime TEXT NULL,
+                size INTEGER NOT NULL DEFAULT 0,
+                notes TEXT NULL,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
         ];
     }
 
@@ -733,6 +758,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_qstudy_active ON quote_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_qstudy_category ON quote_studies (category)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_quote_date ON quotes (quote_date)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_pdoc_patient ON patient_documents (patient_id, created_at)');
         $log[] = 'Índices SQLite: OK';
     }
 

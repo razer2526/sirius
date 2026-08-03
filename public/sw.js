@@ -5,7 +5,7 @@
  * - /api/, login.php, print.php: network-only — datos clínicos JAMÁS se cachean.
  * En cada deploy, subir la versión del cache.
  */
-const CACHE = 'sirius-shell-v19';
+const CACHE = 'sirius-shell-v20';
 
 const SHELL = [
   'offline.html',
@@ -65,7 +65,7 @@ self.addEventListener('fetch', (e) => {
   // Datos y autenticación: siempre red, nunca cache.
   if (path.includes('/api/') || path.endsWith('login.php') || path.endsWith('logout.php')
       || path.endsWith('print.php') || path.endsWith('documento.php') || path.endsWith('cotizacion.php')
-      || path.endsWith('membrete_prueba.php')
+      || path.endsWith('documento_expediente.php') || path.endsWith('membrete_prueba.php')
       || path.endsWith('respaldo.php') || path.endsWith('archivo.php')
       || path.includes('/install/') || path.includes('/uploads/')) {
     return;

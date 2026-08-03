@@ -210,6 +210,51 @@ function handle_episodes(string $action): void
             $st->execute([$like, $like, $like, $like]);
             json_ok(['patients' => $st->fetchAll()]);
         }
+
+        /** Adjunta un documento al expediente (estudios previos, imagenología, historial viejo…). */
+        case 'doc_upload': {
+            $me = current_user();
+            $patientId = (int)($_POST['patient_id'] ?? 0);
+            $st = db()->prepare('SELECT id FROM patients WHERE id = ? AND is_deleted = 0');
+            $st->execute([$patientId]);
+            if (!$st->fetch()) {
+                json_error('Paciente no encontrado', 404);
+            }
+            if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                if (!empty($_FILES['file']) && in_array($_FILES['file']['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+                    json_error('El archivo supera el límite de 20 MB', 422);
+                }
+                json_error('No se recibió el archivo', 422);
+            }
+            $file = $_FILES['file'];
+            if ($file['size'] > 20 * 1024 * 1024) {
+                json_error('El archivo supera el límite de 20 MB', 422);
+            }
+            if (!is_uploaded_file($file['tmp_name'])) {
+                json_error('Subida no válida', 422);
+            }
+
+            $dir = __DIR__ . '/../../uploads/expedientes/';
+            if (!is_dir($dir)) {
+                @mkdir($dir, 0775, true);
+            }
+            $storedName = bin2hex(random_bytes(20));
+            if (!move_uploaded_file($file['tmp_name'], $dir . $storedName)) {
+                json_error('No se pudo guardar el archivo', 500);
+            }
+            @chmod($dir . $storedName, 0644);
+            $mime = @mime_content_type($dir . $storedName) ?: 'application/octet-stream';
+            $name = mb_substr(trim((string)($file['name'] ?? '')), 0, 200) ?: 'documento';
+            $notes = mb_substr(trim((string)($_POST['notes'] ?? '')), 0, 255) ?: null;
+
+            db()->prepare(
+                'INSERT INTO patient_documents (patient_id, name, stored_name, mime, size, notes, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            )->execute([$patientId, $name, $storedName, $mime, (int)$file['size'], $notes, (int)$me['id']]);
+            $id = (int)db()->lastInsertId();
+            log_activity('admision', 'patient_doc_upload', "Adjuntó documento \"$name\" al expediente", 'patient_document', $id);
+            json_ok(['id' => $id]);
+        }
     }
 }
 

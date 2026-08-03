@@ -120,6 +120,17 @@ async function renderForm(root, serviceKey) {
         <!-- Secciones de la ficha del servicio -->
         ${sectionsHtml(sections)}
 
+        <!-- Documentos adjuntos -->
+        <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h4 class="mb-1 text-sm font-bold uppercase tracking-wide text-slate-700">Documentos adjuntos</h4>
+          <p class="mb-3 text-xs text-slate-400">Estudios de laboratorio, historial viejo, estudios de imagen, etc. (opcional). Se suben al expediente al registrar la admisión.</p>
+          <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-slate-50 px-4 py-2.5 text-sm font-medium text-slate-600 ring-1 ring-inset ring-slate-300 hover:bg-slate-100">
+            ${icon('upload', 'h-4 w-4')} Seleccionar archivos
+            <input type="file" id="doc-files" multiple class="hidden">
+          </label>
+          <div id="doc-pending" class="mt-3 space-y-1.5"></div>
+        </section>
+
         <div class="flex justify-end">
           <button type="submit" id="btn-submit"
                   class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">
@@ -131,6 +142,51 @@ async function renderForm(root, serviceKey) {
 
   const form = root.querySelector('#admission-form');
   initSections(form);
+
+  /* ---- Documentos adjuntos: se guardan en memoria y se suben ya creado el expediente ---- */
+  let pendingFiles = [];
+  const docInput = root.querySelector('#doc-files');
+  const docPendingBox = root.querySelector('#doc-pending');
+  const fmtSize = (bytes) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  const paintPending = () => {
+    docPendingBox.innerHTML = pendingFiles.map((f, i) => `
+      <div class="flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+        <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(f.name)}</span>
+        <span class="shrink-0 text-xs text-slate-400">${fmtSize(f.size)}</span>
+        <button type="button" data-rm-doc="${i}" class="shrink-0 text-slate-400 hover:text-red-600">${icon('x', 'h-4 w-4')}</button>
+      </div>`).join('');
+    docPendingBox.querySelectorAll('[data-rm-doc]').forEach((b) =>
+      b.addEventListener('click', () => { pendingFiles.splice(+b.dataset.rmDoc, 1); paintPending(); }));
+  };
+  docInput.addEventListener('change', () => {
+    pendingFiles.push(...docInput.files);
+    docInput.value = '';
+    paintPending();
+  });
+
+  async function uploadPendingDocs(patientId) {
+    let ok = 0;
+    let failed = 0;
+    for (const file of pendingFiles) {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('patient_id', patientId);
+      try {
+        const res = await fetch('api/index.php?r=episodes/doc_upload', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
+          body: fd,
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error);
+        ok++;
+      } catch (e) {
+        failed++;
+      }
+    }
+    if (ok) toast(`${ok} documento(s) adjuntado(s) al expediente`);
+    if (failed) toast(`${failed} documento(s) no se pudieron subir`, 'error');
+  }
 
   const searchInput = root.querySelector('#patient-search');
   const resultsBox = root.querySelector('#search-results');
@@ -234,6 +290,9 @@ async function renderForm(root, serviceKey) {
         return;
       }
 
+      if (pendingFiles.length) {
+        await uploadPendingDocs(data.patient_id);
+      }
       showSuccess(data);
     } catch (err) {
       btn.disabled = false;

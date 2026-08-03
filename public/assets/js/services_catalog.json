@@ -45,6 +45,12 @@
                         "k": "anticonceptivos",
                         "l": "Anticonceptivos",
                         "t": "checkbox"
+                    },
+                    {
+                        "k": "its",
+                        "l": "Infección de transmisión sexual",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
                     }
                 ],
                 "grid": 3
@@ -421,6 +427,12 @@
                         "k": "app_metabolica",
                         "l": "Enf. metabólica",
                         "t": "checkbox"
+                    },
+                    {
+                        "k": "app_its",
+                        "l": "Infección de transmisión sexual",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
                     },
                     {
                         "k": "int_lactosa",
@@ -910,6 +922,12 @@
                         "step": "0.5"
                     },
                     {
+                        "k": "ev_tipo_ejercicio",
+                        "l": "¿Qué tipo de ejercicio realiza?",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
                         "k": "ev_fumador",
                         "l": "Fumador",
                         "t": "checkdetail",
@@ -934,6 +952,12 @@
                         "span": 2
                     },
                     {
+                        "k": "ev_medicamentos_obs",
+                        "l": "Observaciones de medicamentos",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
                         "k": "ev_suplementos",
                         "l": "Suplementos (vitaminas, proteínas, etc.)",
                         "t": "textarea",
@@ -941,6 +965,25 @@
                     }
                 ],
                 "grid": 3
+            },
+            {
+                "id": "cp_obj",
+                "title": "Objetivo del paciente",
+                "fields": [
+                    {
+                        "k": "obj_meta",
+                        "l": "¿Cuál es tu objetivo?",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "obj_obstaculos",
+                        "l": "Problemas para llegar a ese objetivo (ej. antojos, falta de ejercicio, etc.)",
+                        "t": "textarea",
+                        "span": 2
+                    }
+                ],
+                "grid": 2
             },
             {
                 "id": "cp_nut",
@@ -1527,6 +1570,12 @@
                         "l": "Enf. endocrinológicas",
                         "t": "checkdetail",
                         "d": "Especificar"
+                    },
+                    {
+                        "k": "app_its",
+                        "l": "Infección de transmisión sexual",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
                     }
                 ],
                 "grid": 3
@@ -2121,6 +2170,12 @@
                         "l": "Enf. endocrinológicas",
                         "t": "checkdetail",
                         "d": "Especificar"
+                    },
+                    {
+                        "k": "app_its",
+                        "l": "Infección de transmisión sexual",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
                     }
                 ],
                 "grid": 3

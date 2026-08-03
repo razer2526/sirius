@@ -53,7 +53,6 @@ export const PATIENT_FIELDS = [
   { key: 'maternal_surname', label: 'Apellido materno', type: 'text' },
   { key: 'birth_date', label: 'Fecha de nacimiento', type: 'date' },
   { key: 'sex', label: 'Sexo', type: 'select', options: [['F', 'Femenino'], ['M', 'Masculino'], ['O', 'Otro']] },
-  { key: 'curp', label: 'CURP', type: 'text' },
   { key: 'blood_type', label: 'Grupo sanguíneo', type: 'select', options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
   { key: 'marital_status', label: 'Estado civil', type: 'select', options: ['Soltero(a)', 'Casado(a)', 'Unión libre', 'Divorciado(a)', 'Viudo(a)'] },
   { key: 'occupation', label: 'Ocupación', type: 'text' },

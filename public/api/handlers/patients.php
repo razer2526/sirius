@@ -159,7 +159,63 @@ function handle_patients(string $action): void
             log_activity('expedientes', 'patient_delete', 'Eliminó expediente ' . $patient['file_number'], 'patient', $id);
             json_ok();
         }
+
+        /** Documentos adjuntos al expediente (estudios previos, imagenología, historial viejo…). */
+        case 'doc_list': {
+            $id = (int)($_GET['patient_id'] ?? 0);
+            $patient = find_patient($id);
+            if (!patient_is_visible($patient, $me)) {
+                json_error('No tienes acceso a este expediente', 403);
+            }
+            $st = db()->prepare(
+                'SELECT d.*, u.full_name AS created_by_name FROM patient_documents d
+                 LEFT JOIN users u ON u.id = d.created_by
+                 WHERE d.patient_id = ? ORDER BY d.created_at DESC'
+            );
+            $st->execute([$id]);
+            $docs = $st->fetchAll();
+            foreach ($docs as &$d) {
+                $d['id'] = (int)$d['id'];
+                $d['size'] = (int)$d['size'];
+            }
+            json_ok(['documents' => $docs]);
+        }
+
+        case 'doc_delete': {
+            require_admin_role();
+            $b = request_body();
+            $doc = find_patient_document((int)($b['id'] ?? 0));
+            @unlink(__DIR__ . '/../../uploads/expedientes/' . basename($doc['stored_name']));
+            db()->prepare('DELETE FROM patient_documents WHERE id = ?')->execute([$doc['id']]);
+            log_activity('expedientes', 'patient_doc_delete', "Eliminó documento \"{$doc['name']}\" del expediente", 'patient_document', (int)$doc['id']);
+            json_ok();
+        }
     }
+}
+
+/** ¿Puede $me ver este paciente? Mismo criterio que visible_episodes(): admin ve todo,
+ *  el resto solo si tiene al menos un episodio general o asignado a él. */
+function patient_is_visible(array $patient, array $me): bool
+{
+    if (is_admin_role($me)) {
+        return true;
+    }
+    $st = db()->prepare(
+        'SELECT 1 FROM episodes WHERE patient_id = ? AND (assigned_user_id IS NULL OR assigned_user_id = ?) LIMIT 1'
+    );
+    $st->execute([$patient['id'], (int)$me['id']]);
+    return (bool)$st->fetch();
+}
+
+function find_patient_document(int $id): array
+{
+    $st = db()->prepare('SELECT * FROM patient_documents WHERE id = ?');
+    $st->execute([$id]);
+    $row = $st->fetch();
+    if (!$row) {
+        json_error('Documento no encontrado', 404);
+    }
+    return $row;
 }
 
 /**

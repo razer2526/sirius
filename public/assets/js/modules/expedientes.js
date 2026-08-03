@@ -224,7 +224,6 @@ async function renderDetail(root, patientId) {
 
         <dl class="mt-5 grid grid-cols-2 gap-x-6 gap-y-3 border-t border-slate-100 pt-4 sm:grid-cols-3 lg:grid-cols-4">
           ${infoRow('Nacimiento', p.birth_date ? fmtDate(p.birth_date) : '')}
-          ${infoRow('CURP', p.curp)}
           ${infoRow('Grupo sanguíneo', p.blood_type)}
           ${infoRow('Estado civil', p.marital_status)}
           ${infoRow('Ocupación', p.occupation)}
@@ -248,6 +247,12 @@ async function renderDetail(root, patientId) {
         </div>` : ''}
       </div>
 
+      <!-- Documentos adjuntos -->
+      <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <h4 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Documentos adjuntos</h4>
+        <div id="patient-docs">${spinner()}</div>
+      </div>
+
       <!-- Timeline de episodios -->
       <div>
         <h4 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Historial por servicio</h4>
@@ -257,6 +262,7 @@ async function renderDetail(root, patientId) {
     </div>`;
 
   root.querySelector('#btn-new-consult').addEventListener('click', () => openConsultModal(p, episodes, patientId));
+  loadPatientDocs(root, patientId);
 
   root.querySelectorAll('[data-chart-metric]').forEach((sel) => {
     sel.addEventListener('change', () => {
@@ -338,6 +344,68 @@ async function renderDetail(root, patientId) {
       toast(e.message, 'error');
     }
   });
+}
+
+/* ================= Documentos adjuntos ================= */
+function fmtBytes(bytes) {
+  return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+async function loadPatientDocs(root, patientId) {
+  const box = root.querySelector('#patient-docs');
+  if (!box) return;
+  let documents;
+  try {
+    ({ documents } = await apiGet('patients/doc_list', { patient_id: patientId }));
+  } catch (e) {
+    box.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(e.message)}</p>`;
+    return;
+  }
+  paintPatientDocs(box, documents, patientId);
+}
+
+function paintPatientDocs(box, documents, patientId) {
+  const isAdmin = isAdminUser();
+  if (!documents.length) {
+    box.innerHTML = '<p class="text-sm text-slate-400">Sin documentos adjuntos.</p>';
+    return;
+  }
+  box.innerHTML = `
+    <div class="space-y-2">
+      ${documents.map((d) => `
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+          <div class="min-w-0 flex-1">
+            <p class="truncate text-sm font-medium text-slate-800">${escapeHtml(d.name)}</p>
+            <p class="text-xs text-slate-400">
+              ${fmtBytes(d.size)} · ${fmtDateTime(d.created_at)}${d.created_by_name ? ' · ' + escapeHtml(d.created_by_name) : ''}
+              ${d.notes ? ' · ' + escapeHtml(d.notes) : ''}
+            </p>
+          </div>
+          <div class="flex shrink-0 gap-1">
+            <a href="documento_expediente.php?id=${d.id}" target="_blank" title="Ver"
+               class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
+            <a href="documento_expediente.php?id=${d.id}&download=1" title="Descargar"
+               class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('download', 'h-4 w-4')}</a>
+            ${isAdmin ? `<button type="button" data-del-doc="${d.id}" title="Eliminar"
+               class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+
+  box.querySelectorAll('[data-del-doc]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const d = documents.find((x) => x.id === +btn.dataset.delDoc);
+      const ok = await confirmDialog('Eliminar documento', `Se eliminará "${d.name}" del expediente. ¿Continuar?`, { danger: true, confirmLabel: 'Eliminar' });
+      if (!ok) return;
+      try {
+        await apiPost('patients/doc_delete', { id: d.id });
+        toast('Documento eliminado');
+        const { documents: fresh } = await apiGet('patients/doc_list', { patient_id: patientId });
+        paintPatientDocs(box, fresh, patientId);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }));
 }
 
 function clinicalBox(label, text, cls) {
