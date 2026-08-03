@@ -66,17 +66,34 @@ function fieldHtml(f) {
       return `<div class="${span}">${label}
         <input type="text" name="${f.k}" data-calc="${f.calc}" readonly tabindex="-1"
                class="w-full rounded-lg border-0 bg-indigo-50 px-3 py-2 text-sm font-bold text-indigo-700 ring-1 ring-inset ring-indigo-200 outline-none"></div>`;
-    case 'signature':
-      return `<div class="sm:col-span-2 lg:col-span-3">${label}
-        <div class="overflow-hidden rounded-xl bg-white ring-1 ring-slate-300">
-          <canvas data-sig="${f.k}" class="block h-40 w-full touch-none" style="touch-action:none"></canvas>
+    case 'signature': {
+      if (!f.large) {
+        return `<div class="sm:col-span-2 lg:col-span-3">${label}
+          <div class="overflow-hidden rounded-xl bg-white ring-1 ring-slate-300">
+            <canvas data-sig="${f.k}" class="block h-40 w-full touch-none" style="touch-action:none"></canvas>
+          </div>
+          <div class="mt-1.5 flex items-center justify-between">
+            <p class="text-xs text-slate-400">Firma con el dedo o el mouse</p>
+            <button type="button" data-sig-clear="${f.k}" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Limpiar firma</button>
+          </div>
+          <input type="hidden" name="${f.k}">
+        </div>`;
+      }
+      return `<div class="sm:col-span-2 lg:col-span-3">
+        <div class="mx-auto max-w-xl text-center">
+          <h5 class="mb-2 text-sm font-bold text-slate-700">${escapeHtml(f.l)}</h5>
+          ${f.legend ? `<p class="mb-3 text-xs font-medium text-slate-500">${escapeHtml(f.legend)}</p>` : ''}
+          <div class="overflow-hidden rounded-xl bg-white ring-1 ring-slate-300">
+            <canvas data-sig="${f.k}" class="block h-56 w-full touch-none" style="touch-action:none"></canvas>
+          </div>
+          <div class="mt-1.5 flex items-center justify-between">
+            <p class="text-xs text-slate-400">Firma con el dedo o el mouse</p>
+            <button type="button" data-sig-clear="${f.k}" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Limpiar firma</button>
+          </div>
+          <input type="hidden" name="${f.k}">
         </div>
-        <div class="mt-1.5 flex items-center justify-between">
-          <p class="text-xs text-slate-400">Firma con el dedo o el mouse</p>
-          <button type="button" data-sig-clear="${f.k}" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Limpiar firma</button>
-        </div>
-        <input type="hidden" name="${f.k}">
       </div>`;
+    }
     default: {
       const step = f.step ? `step="${f.step}"` : (f.t === 'number' ? 'step="any"' : '');
       return `<div class="${span}">${label}<input type="${f.t}" name="${f.k}" ${step} class="${inputCls}"></div>`;
@@ -218,11 +235,13 @@ export function dataRowsHtml(sections, data) {
   for (const sec of sections) {
     const rows = [];
     let firma = null;
+    let firmaField = null;
     for (const f of sec.fields) {
       const v = data[f.k];
       if (v === undefined || v === '' || v === null || v === false) continue;
       if (f.t === 'signature') {
         firma = v;
+        firmaField = f;
         continue;
       }
       let display;
@@ -236,11 +255,17 @@ export function dataRowsHtml(sections, data) {
         <span class="text-right font-medium text-slate-800">${display}</span></div>`);
     }
     if (!rows.length && !firma) continue;
+    const firmaHtml = !firma ? '' : (firmaField && firmaField.large
+      ? `<div class="mt-3 flex flex-col items-center text-center">
+          ${firmaField.legend ? `<p class="mb-2 max-w-md text-xs font-medium text-slate-500">${escapeHtml(firmaField.legend)}</p>` : ''}
+          <img src="${firma}" alt="Firma" class="h-28 rounded-lg bg-white ring-1 ring-slate-200">
+        </div>`
+      : `<img src="${firma}" alt="Firma" class="mt-2 h-16 rounded-lg bg-white ring-1 ring-slate-200">`);
     blocks.push(`
       <div class="rounded-xl bg-slate-50 px-4 py-3">
         <p class="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">${escapeHtml(sec.title)}</p>
         ${rows.length ? `<div class="space-y-1.5">${rows.join('')}</div>` : ''}
-        ${firma ? `<img src="${firma}" alt="Firma" class="mt-2 h-16 rounded-lg bg-white ring-1 ring-slate-200">` : ''}
+        ${firmaHtml}
       </div>`);
   }
   return blocks.join('');

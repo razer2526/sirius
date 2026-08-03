@@ -1469,18 +1469,27 @@
                         "k": "med_estado_salida",
                         "l": "Estado de salida",
                         "t": "textarea"
+                    },
+                    {
+                        "k": "med_observaciones",
+                        "l": "Observaciones de la consulta",
+                        "t": "textarea",
+                        "span": 3
                     }
                 ],
                 "grid": 3
             },
             {
                 "id": "firma",
-                "title": "Firma del paciente",
+                "title": "Firma de conformidad del paciente",
+                "stage": "doctor",
                 "fields": [
                     {
                         "k": "firma",
-                        "l": "Firma del paciente",
+                        "l": "Firma de conformidad",
                         "t": "signature",
+                        "large": true,
+                        "legend": "Firmo de conformidad, manifestando que recibí el servicio antes descrito a mi entera satisfacción.",
                         "span": 2
                     }
                 ]
@@ -2070,17 +2079,25 @@
                         "l": "Estado de egreso de la sesión",
                         "t": "textarea",
                         "span": 2
+                    },
+                    {
+                        "k": "estado_observaciones",
+                        "l": "Observaciones de la consulta",
+                        "t": "textarea",
+                        "span": 2
                     }
                 ]
             },
             {
                 "id": "firma",
-                "title": "Firma del paciente",
+                "title": "Firma de conformidad del paciente",
                 "fields": [
                     {
                         "k": "firma",
-                        "l": "Firma del paciente",
+                        "l": "Firma de conformidad",
                         "t": "signature",
+                        "large": true,
+                        "legend": "Firmo de conformidad, manifestando que recibí el servicio antes descrito a mi entera satisfacción.",
                         "span": 2
                     }
                 ]
@@ -2450,18 +2467,26 @@
                         "l": "Estado de egreso de la sesión",
                         "t": "textarea",
                         "span": 1
+                    },
+                    {
+                        "k": "estado_observaciones",
+                        "l": "Observaciones de la consulta",
+                        "t": "textarea",
+                        "span": 3
                     }
                 ],
                 "grid": 3
             },
             {
                 "id": "firma",
-                "title": "Firma del paciente",
+                "title": "Firma de conformidad del paciente",
                 "fields": [
                     {
                         "k": "firma",
-                        "l": "Firma del paciente",
+                        "l": "Firma de conformidad",
                         "t": "signature",
+                        "large": true,
+                        "legend": "Firmo de conformidad, manifestando que recibí el servicio antes descrito a mi entera satisfacción.",
                         "span": 2
                     }
                 ]

@@ -698,15 +698,56 @@ class SiriusDocPDF extends FPDF
         $this->SetTextColor(...PDF_INK);
     }
 
-    /** Inserta una firma capturada en pantalla (PNG en data URL) con una leyenda al lado. */
-    public function dataUrlImage(string $dataUrl, string $caption = 'Firma del paciente'): void
+    /**
+     * Inserta una firma capturada en pantalla (PNG en data URL).
+     * Por defecto: caja chica con la leyenda al lado. Con $large: caja grande
+     * centrada en la página, con la leyenda de conformidad arriba y la etiqueta abajo.
+     */
+    public function dataUrlImage(string $dataUrl, string $caption = 'Firma del paciente', ?string $legend = null, bool $large = false): void
     {
         $path = pdf_cache_data_url($dataUrl);
         if (!$path) {
             return;
         }
-        $h = 14.0;
         $size = @getimagesize($path);
+
+        if ($large) {
+            $h = 28.0;
+            $w = ($size && $size[1]) ? $h * $size[0] / $size[1] : $h * 2.4;
+            $maxW = min(100.0, $this->usableWidth());
+            if ($w > $maxW) {
+                $h *= $maxW / $w;
+                $w = $maxW;
+            }
+
+            $this->ensureSpace(($legend ? 10.0 : 0.0) + $h + 8);
+
+            if ($legend) {
+                $this->SetX($this->left());
+                $this->SetFont('Helvetica', 'I', 8);
+                $this->SetTextColor(...PDF_MUTED);
+                $this->MultiCell($this->usableWidth(), 4, pdf_t($legend), 0, 'C');
+                $this->Ln(2);
+            }
+
+            $x = $this->left() + ($this->usableWidth() - $w) / 2;
+            $y = $this->GetY();
+            $this->SetDrawColor(...PDF_LINE);
+            $this->SetLineWidth(0.2);
+            $this->Rect($x, $y, $w, $h);
+            @$this->Image($path, $x, $y, $w, $h);
+
+            $this->SetY($y + $h + 2);
+            $this->SetFont('Helvetica', '', 8);
+            $this->SetTextColor(...PDF_MUTED);
+            $this->SetX($this->left());
+            $this->Cell($this->usableWidth(), 4, pdf_t($caption), 0, 1, 'C');
+            $this->Ln(2);
+            $this->SetTextColor(...PDF_INK);
+            return;
+        }
+
+        $h = 14.0;
         $w = ($size && $size[1]) ? $h * $size[0] / $size[1] : $h * 2.4;
 
         $this->ensureSpace($h + 4);
@@ -1390,6 +1431,7 @@ function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array 
     foreach ($sections as $sec) {
         $pairs = [];
         $signature = null;
+        $signatureField = null;
         foreach ($sec['fields'] as $f) {
             $v = $data[$f['k']] ?? null;
             if ($v === null || $v === '' || $v === false) {
@@ -1397,6 +1439,7 @@ function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array 
             }
             if ($f['t'] === 'signature') {
                 $signature = $v;
+                $signatureField = $f;
                 continue;
             }
             if ($f['t'] === 'checkbox') {
@@ -1417,7 +1460,12 @@ function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array 
             $pdf->fieldsTable($pairs);
         }
         if ($signature) {
-            $pdf->dataUrlImage($signature);
+            $pdf->dataUrlImage(
+                $signature,
+                $signatureField['l'] ?? 'Firma del paciente',
+                $signatureField['legend'] ?? null,
+                !empty($signatureField['large'])
+            );
         }
     }
 }
