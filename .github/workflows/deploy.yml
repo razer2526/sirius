@@ -1,0 +1,19 @@
+name: Deploy a cPanel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Actualizar repositorio y desplegar en cPanel
+        uses: pinkasey/cpanel-deploy-action@v1.0.0
+        with:
+          hostname: ${{ secrets.CPANEL_HOSTNAME }}
+          repository_root: ${{ secrets.CPANEL_REPOSITORY_ROOT }}
+          branch: main
+          cpanel_username: ${{ secrets.CPANEL_USERNAME }}
+          cpanel_token: ${{ secrets.CPANEL_TOKEN }}
