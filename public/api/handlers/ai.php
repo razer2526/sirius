@@ -19,10 +19,6 @@ function handle_ai(string $action): void
 
         case 'save': {
             $b = request_body();
-            // Si no se escribe una llave nueva, se conserva la guardada
-            if (!array_key_exists('api_key', $b) || trim((string)$b['api_key']) === '') {
-                unset($b['api_key']);
-            }
             $cfg = ai_save($b);
             log_activity('api', 'ai_config', 'Actualizó la configuración del asistente'
                 . ($cfg['enabled'] ? ' (activo)' : ' (inactivo)'));
@@ -32,12 +28,17 @@ function handle_ai(string $action): void
         /** Comprueba la llave y devuelve los modelos disponibles de la cuenta. */
         case 'test': {
             $b = request_body();
-            $key = trim((string)($b['api_key'] ?? '')) ?: ai_config()['api_key'];
+            $cfg = ai_config();
+            $provider = (string)($b['provider'] ?? $cfg['provider']);
+            if (!isset(AI_PROVIDERS[$provider])) {
+                json_error('Proveedor no reconocido', 422);
+            }
+            $key = trim((string)($b['api_key'] ?? '')) ?: $cfg['providers'][$provider]['api_key'];
             if ($key === '') {
                 json_error('Captura la llave de API antes de probar', 422);
             }
             try {
-                $models = ai_list_models($key);
+                $models = ai_list_models($provider, $key);
             } catch (Throwable $e) {
                 json_error($e->getMessage(), 422);
             }
@@ -50,7 +51,8 @@ function handle_ai(string $action): void
         /** Prueba de extremo a extremo con el modelo configurado. */
         case 'ping': {
             $cfg = ai_config();
-            if ($cfg['api_key'] === '') {
+            $provider = $cfg['provider'];
+            if ($cfg['providers'][$provider]['api_key'] === '') {
                 json_error('Falta la llave de API', 422);
             }
             try {
@@ -61,18 +63,21 @@ function handle_ai(string $action): void
             } catch (Throwable $e) {
                 json_error($e->getMessage(), 422);
             }
-            json_ok(['reply' => $reply, 'model' => $cfg['model']]);
+            json_ok(['reply' => $reply, 'model' => $cfg['providers'][$provider]['model'], 'provider' => $provider]);
         }
     }
 }
 
-/** Configuración sin exponer la llave. */
+/** Configuración sin exponer las llaves. */
 function ai_public_config(): array
 {
     $cfg = ai_config();
-    $key = (string)$cfg['api_key'];
-    $cfg['api_key'] = '';
-    $cfg['has_key'] = $key !== '';
-    $cfg['key_hint'] = $key === '' ? '' : str_repeat('•', 8) . substr($key, -4);
+    foreach ($cfg['providers'] as $name => $p) {
+        $key = (string)$p['api_key'];
+        $p['api_key'] = '';
+        $p['has_key'] = $key !== '';
+        $p['key_hint'] = $key === '' ? '' : str_repeat('•', 8) . substr($key, -4);
+        $cfg['providers'][$name] = $p;
+    }
     return $cfg;
 }

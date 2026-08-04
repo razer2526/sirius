@@ -27,7 +27,7 @@ function renderGrid(root) {
     <div class="mx-auto max-w-4xl space-y-5">
       <p class="text-sm text-slate-500">Servicios externos que utiliza Sirius.</p>
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        ${card('#/api/ia', 'Asistente de IA', 'Gemini: nombre, instrucciones, modelo y llave', 'sparkles', 'bg-violet-100 text-violet-700')}
+        ${card('#/api/ia', 'Asistente de IA', 'Gemini, ChatGPT o Claude: proveedor, modelo, instrucciones y llave', 'sparkles', 'bg-violet-100 text-violet-700')}
         ${card('#/api/calendario', 'Calendario', 'Vinculación con Google Calendar', 'calendar', 'bg-sky-100 text-sky-700')}
       </div>
       <div id="api-state" class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 text-sm text-slate-500">${spinner()}</div>
@@ -36,22 +36,55 @@ function renderGrid(root) {
   apiGet('ai/get').then(({ config }) => {
     const box = root.querySelector('#api-state');
     if (!box) return;
-    const on = config.enabled && config.has_key;
+    const pcfg = config.providers[config.provider] || {};
+    const on = config.enabled && pcfg.has_key;
     box.innerHTML = `
       <div class="flex flex-wrap items-center gap-3">
         <span class="flex h-2.5 w-2.5 rounded-full ${on ? 'bg-emerald-500' : 'bg-slate-300'}"></span>
         <span class="text-sm font-semibold text-slate-800">
-          Asistente ${on ? 'activo' : (config.has_key ? 'configurado pero desactivado' : 'sin configurar')}
+          Asistente ${on ? 'activo' : (pcfg.has_key ? 'configurado pero desactivado' : 'sin configurar')}
         </span>
-        ${on ? `<span class="text-xs text-slate-500">Modelo: ${escapeHtml(config.model)}</span>` : ''}
+        ${on ? `<span class="text-xs text-slate-500">${escapeHtml(AI_PROVIDER_LABELS[config.provider] || config.provider)} · ${escapeHtml(pcfg.model || '(sin modelo)')}</span>` : ''}
       </div>`;
   });
 }
+
+const AI_PROVIDER_LABELS = { gemini: 'Google Gemini', openai: 'OpenAI (ChatGPT)', claude: 'Anthropic (Claude)' };
+const AI_PROVIDER_META = {
+  gemini: { placeholder: 'AIza…', hint: 'Se obtiene en Google AI Studio.' },
+  openai: { placeholder: 'sk-…', hint: 'Se obtiene en platform.openai.com.' },
+  claude: { placeholder: 'sk-ant-…', hint: 'Se obtiene en console.anthropic.com.' },
+};
 
 /* ---------- Asistente de IA ---------- */
 async function renderAI(root) {
   root.innerHTML = spinner();
   const { config } = await apiGet('ai/get');
+
+  const providerBlock = (name) => {
+    const p = config.providers[name] || {};
+    const meta = AI_PROVIDER_META[name];
+    return `
+      <div data-provider-block="${name}" class="space-y-4 ${config.provider === name ? '' : 'hidden'}">
+        <div>
+          <label class="${labelCls}">Llave de API${p.has_key ? ` <span class="normal-case text-slate-400">(guardada: ${escapeHtml(p.key_hint)})</span>` : ''}</label>
+          <input type="password" data-provider-key="${name}" autocomplete="off" placeholder="${p.has_key ? 'Escribe una nueva para reemplazarla' : meta.placeholder}" class="${inputCls}">
+          <p class="mt-1 text-xs text-slate-400">${meta.hint} Déjala vacía para conservar la actual.</p>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="${labelCls}">Modelo</label>
+            <input type="text" data-provider-model="${name}" value="${escapeHtml(p.model || '')}" class="${inputCls}" list="model-list-${name}">
+            <datalist id="model-list-${name}"></datalist>
+          </div>
+          <div class="flex items-end gap-2">
+            <button type="button" data-btn-test="${name}" class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
+              Probar y ver modelos
+            </button>
+          </div>
+        </div>
+      </div>`;
+  };
 
   root.innerHTML = `
     <div class="mx-auto max-w-3xl space-y-5">
@@ -60,7 +93,7 @@ async function renderAI(root) {
       </a>
       <div>
         <h3 class="text-lg font-bold text-slate-900">Asistente de IA</h3>
-        <p class="text-sm text-slate-500">Impulsado por Google Gemini. La llave se guarda en el servidor y nunca viaja al navegador.</p>
+        <p class="text-sm text-slate-500">Elige el proveedor y modelo a usar. La llave se guarda en el servidor y nunca viaja al navegador.</p>
       </div>
 
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -77,24 +110,18 @@ async function renderAI(root) {
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-4">
         <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Conexión</h4>
         <div>
-          <label class="${labelCls}">Llave de API${config.has_key ? ` <span class="normal-case text-slate-400">(guardada: ${escapeHtml(config.key_hint)})</span>` : ''}</label>
-          <input type="password" data-cfg="api_key" autocomplete="off" placeholder="${config.has_key ? 'Escribe una nueva para reemplazarla' : 'AIza…'}" class="${inputCls}">
-          <p class="mt-1 text-xs text-slate-400">Se obtiene en Google AI Studio. Déjala vacía para conservar la actual.</p>
+          <label class="${labelCls}">Servicio</label>
+          <select id="provider-select" class="${inputCls}">
+            ${Object.entries(AI_PROVIDER_LABELS).map(([name, label]) => `<option value="${name}" ${config.provider === name ? 'selected' : ''}>${escapeHtml(label)}</option>`).join('')}
+          </select>
         </div>
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div>
-            <label class="${labelCls}">Modelo</label>
-            <input type="text" data-cfg="model" value="${escapeHtml(config.model)}" class="${inputCls}" list="model-list">
-            <datalist id="model-list"></datalist>
-          </div>
-          <div class="flex items-end gap-2">
-            <button id="btn-test" type="button" class="flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
-              Probar y ver modelos
-            </button>
-            <button id="btn-ping" type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
-              Enviar prueba
-            </button>
-          </div>
+        ${providerBlock('gemini')}
+        ${providerBlock('openai')}
+        ${providerBlock('claude')}
+        <div class="flex items-end gap-2 border-t border-slate-100 pt-4">
+          <button id="btn-ping" type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
+            Enviar prueba
+          </button>
         </div>
         <div id="test-result" class="hidden rounded-xl px-4 py-3 text-sm"></div>
       </section>
@@ -134,11 +161,24 @@ async function renderAI(root) {
       </div>
     </div>`;
 
+  const activeProvider = () => root.querySelector('#provider-select').value;
+
+  root.querySelector('#provider-select').addEventListener('change', (e) => {
+    root.querySelectorAll('[data-provider-block]').forEach((el) => {
+      el.classList.toggle('hidden', el.dataset.providerBlock !== e.target.value);
+    });
+  });
+
   const collect = () => {
-    const out = {};
+    const provider = activeProvider();
+    const out = { provider, providers: {} };
     root.querySelectorAll('[data-cfg]').forEach((el) => {
       out[el.dataset.cfg] = el.type === 'checkbox' ? el.checked : el.value;
     });
+    out.providers[provider] = {
+      api_key: root.querySelector(`[data-provider-key="${provider}"]`).value.trim(),
+      model: root.querySelector(`[data-provider-model="${provider}"]`).value.trim(),
+    };
     return out;
   };
   const result = root.querySelector('#test-result');
@@ -148,19 +188,24 @@ async function renderAI(root) {
     result.classList.remove('hidden');
   };
 
-  root.querySelector('#btn-test').addEventListener('click', async (e) => {
-    const btn = e.currentTarget;
-    btn.disabled = true;
-    try {
-      const data = await apiPost('ai/test', { api_key: root.querySelector('[data-cfg="api_key"]').value.trim() });
-      root.querySelector('#model-list').innerHTML =
-        data.models.map((m) => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.label)}</option>`).join('');
-      showResult(`Conexión correcta. ${data.count} modelo(s) disponibles; elige uno en el campo Modelo.`, true);
-    } catch (err) {
-      showResult(err.message, false);
-    } finally {
-      btn.disabled = false;
-    }
+  root.querySelectorAll('[data-btn-test]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      const name = e.currentTarget.dataset.btnTest;
+      e.currentTarget.disabled = true;
+      try {
+        const data = await apiPost('ai/test', {
+          provider: name,
+          api_key: root.querySelector(`[data-provider-key="${name}"]`).value.trim(),
+        });
+        root.querySelector(`#model-list-${name}`).innerHTML =
+          data.models.map((m) => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.label)}</option>`).join('');
+        showResult(`Conexión correcta. ${data.count} modelo(s) disponibles; elige uno en el campo Modelo.`, true);
+      } catch (err) {
+        showResult(err.message, false);
+      } finally {
+        e.currentTarget.disabled = false;
+      }
+    });
   });
 
   root.querySelector('#btn-ping').addEventListener('click', async (e) => {
@@ -169,7 +214,7 @@ async function renderAI(root) {
     try {
       await apiPost('ai/save', collect());
       const data = await apiPost('ai/ping', {});
-      showResult(`El modelo ${data.model} respondió: "${data.reply}"`, true);
+      showResult(`${AI_PROVIDER_LABELS[data.provider] || data.provider} (${data.model}) respondió: "${data.reply}"`, true);
     } catch (err) {
       showResult(err.message, false);
     } finally {

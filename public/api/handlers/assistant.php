@@ -101,7 +101,10 @@ function assistant_history($history, string $message): array
         foreach (array_slice($history, -10) as $turn) {
             $text = trim((string)($turn['text'] ?? ''));
             if ($text !== '') {
-                $out[] = ['role' => ($turn['role'] ?? 'user') === 'model' ? 'model' : 'user', 'text' => mb_substr($text, 0, 4000)];
+                // El bubble de chat (assistant.js) manda 'model' para los turnos del asistente;
+                // se normaliza aquí para que ai_generate() sea independiente del proveedor.
+                $role = ($turn['role'] ?? 'user') === 'model' || ($turn['role'] ?? '') === 'assistant' ? 'assistant' : 'user';
+                $out[] = ['role' => $role, 'text' => mb_substr($text, 0, 4000)];
             }
         }
     }
