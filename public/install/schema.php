@@ -34,6 +34,34 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 PRIMARY KEY (user_id, module_key),
                 CONSTRAINT fk_perm_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )$suffix",
+            'vinculacion_concierge' => "CREATE TABLE IF NOT EXISTS vinculacion_concierge (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(150) NOT NULL,
+                phone VARCHAR(20) NULL,
+                email VARCHAR(120) NULL,
+                commission_pct DECIMAL(5,2) NOT NULL DEFAULT 10,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_concierge_active (is_active, name),
+                CONSTRAINT fk_concierge_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'vinculacion_doctors' => "CREATE TABLE IF NOT EXISTS vinculacion_doctors (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(150) NOT NULL,
+                phone VARCHAR(20) NULL,
+                email VARCHAR(120) NULL,
+                concierge_id INT UNSIGNED NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_doctor_active (is_active, name),
+                INDEX idx_doctor_concierge (concierge_id),
+                CONSTRAINT fk_doctor_concierge FOREIGN KEY (concierge_id) REFERENCES vinculacion_concierge(id) ON DELETE SET NULL,
+                CONSTRAINT fk_doctor_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
             'patients' => "CREATE TABLE IF NOT EXISTS patients (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 file_number VARCHAR(20) NOT NULL UNIQUE,
@@ -82,6 +110,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 admission_date DATETIME NOT NULL,
                 reason TEXT NULL,
                 referring_doctor VARCHAR(120) NULL,
+                linked_doctor_id INT UNSIGNED NULL,
                 assigned_user_id INT UNSIGNED NULL,
                 service_data JSON NULL,
                 status ENUM('activo','cerrado') NOT NULL DEFAULT 'activo',
@@ -94,9 +123,11 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_episode_date (admission_date),
                 INDEX idx_episode_assigned (assigned_user_id),
                 INDEX idx_episode_delivery (expected_delivery_date),
+                INDEX idx_episode_linked_doctor (linked_doctor_id),
                 CONSTRAINT fk_episode_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
                 CONSTRAINT fk_episode_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
-                CONSTRAINT fk_episode_assigned FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL
+                CONSTRAINT fk_episode_assigned FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL,
+                CONSTRAINT fk_episode_linked_doctor FOREIGN KEY (linked_doctor_id) REFERENCES vinculacion_doctors(id) ON DELETE SET NULL
             )$suffix",
             'consultations' => "CREATE TABLE IF NOT EXISTS consultations (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -361,6 +392,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(200) NOT NULL,
                 category VARCHAR(100) NULL,
+                commission_group VARCHAR(20) NULL,
                 public_price DECIMAL(10,2) NOT NULL DEFAULT 0,
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_by INT UNSIGNED NULL,
@@ -405,6 +437,34 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 CONSTRAINT fk_pdoc_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
                 CONSTRAINT fk_pdoc_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'episode_studies' => "CREATE TABLE IF NOT EXISTS episode_studies (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                episode_id INT UNSIGNED NOT NULL,
+                study_id INT UNSIGNED NULL,
+                study_name VARCHAR(200) NOT NULL,
+                commission_group VARCHAR(20) NULL,
+                amount_charged DECIMAL(10,2) NOT NULL DEFAULT 0,
+                commission_included TINYINT(1) NOT NULL DEFAULT 1,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_epstudy_episode (episode_id),
+                INDEX idx_epstudy_study (study_id),
+                CONSTRAINT fk_epstudy_episode FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
+                CONSTRAINT fk_epstudy_study FOREIGN KEY (study_id) REFERENCES quote_studies(id) ON DELETE SET NULL
+            )$suffix",
+            'commission_statements' => "CREATE TABLE IF NOT EXISTS commission_statements (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                folio VARCHAR(20) NOT NULL UNIQUE,
+                party_type ENUM('doctor','concierge') NOT NULL,
+                party_id INT UNSIGNED NOT NULL,
+                period_start DATE NOT NULL,
+                period_end DATE NOT NULL,
+                lines JSON NOT NULL,
+                total_commission DECIMAL(10,2) NOT NULL DEFAULT 0,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_cstatement_party (party_type, party_id),
+                CONSTRAINT fk_cstatement_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -427,6 +487,28 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 granted_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 PRIMARY KEY (user_id, module_key),
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )",
+            'vinculacion_concierge' => "CREATE TABLE IF NOT EXISTS vinculacion_concierge (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT NULL,
+                email TEXT NULL,
+                commission_pct REAL NOT NULL DEFAULT 10,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'vinculacion_doctors' => "CREATE TABLE IF NOT EXISTS vinculacion_doctors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                phone TEXT NULL,
+                email TEXT NULL,
+                concierge_id INTEGER NULL REFERENCES vinculacion_concierge(id) ON DELETE SET NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
             'patients' => "CREATE TABLE IF NOT EXISTS patients (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -473,6 +555,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 admission_date TEXT NOT NULL,
                 reason TEXT NULL,
                 referring_doctor TEXT NULL,
+                linked_doctor_id INTEGER NULL REFERENCES vinculacion_doctors(id) ON DELETE SET NULL,
                 assigned_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 service_data TEXT NULL,
                 status TEXT NOT NULL DEFAULT 'activo',
@@ -690,6 +773,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
                 category TEXT NULL,
+                commission_group TEXT NULL,
                 public_price REAL NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -722,6 +806,28 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 mime TEXT NULL,
                 size INTEGER NOT NULL DEFAULT 0,
                 notes TEXT NULL,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'episode_studies' => "CREATE TABLE IF NOT EXISTS episode_studies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                episode_id INTEGER NOT NULL REFERENCES episodes(id) ON DELETE CASCADE,
+                study_id INTEGER NULL REFERENCES quote_studies(id) ON DELETE SET NULL,
+                study_name TEXT NOT NULL,
+                commission_group TEXT NULL,
+                amount_charged REAL NOT NULL DEFAULT 0,
+                commission_included INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'commission_statements' => "CREATE TABLE IF NOT EXISTS commission_statements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                folio TEXT NOT NULL UNIQUE,
+                party_type TEXT NOT NULL,
+                party_id INTEGER NOT NULL,
+                period_start TEXT NOT NULL,
+                period_end TEXT NOT NULL,
+                lines TEXT NOT NULL,
+                total_commission REAL NOT NULL DEFAULT 0,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
@@ -759,6 +865,12 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_qstudy_category ON quote_studies (category)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_quote_date ON quotes (quote_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_pdoc_patient ON patient_documents (patient_id, created_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_concierge_active ON vinculacion_concierge (is_active, name)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_doctor_active ON vinculacion_doctors (is_active, name)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_doctor_concierge ON vinculacion_doctors (concierge_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_episode ON episode_studies (episode_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_study ON episode_studies (study_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cstatement_party ON commission_statements (party_type, party_id)');
         $log[] = 'Índices SQLite: OK';
     }
 
@@ -787,6 +899,8 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE consultations ADD COLUMN doctor_closed_by " . ($isMysql ? 'INT UNSIGNED NULL' : 'INTEGER NULL'),
         "ALTER TABLE episodes ADD COLUMN expected_delivery_date " . ($isMysql ? 'DATE NULL' : 'TEXT NULL'),
         "ALTER TABLE episodes ADD COLUMN results_delivered_at " . ($isMysql ? 'DATETIME NULL' : 'TEXT NULL'),
+        "ALTER TABLE episodes ADD COLUMN linked_doctor_id " . ($isMysql ? 'INT UNSIGNED NULL' : 'INTEGER NULL'),
+        "ALTER TABLE quote_studies ADD COLUMN commission_group {$varchar(20)}",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
@@ -801,6 +915,7 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
     if (!$isMysql) {
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_assigned ON episodes (assigned_user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_delivery ON episodes (expected_delivery_date)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_linked_doctor ON episodes (linked_doctor_id)');
     }
 
     return ["Migraciones aplicadas: $applied"];
@@ -810,10 +925,12 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
 function sirius_seed_settings(PDO $pdo, string $clinicName = 'Laboratorio y Clínica Bosques Polanco'): array
 {
     $defaults = [
-        'clinic_name'    => $clinicName,
-        'gemini_api_key' => '',
-        'gemini_model'   => 'gemini-2.0-flash',
-        'assistant_name' => 'Sirius',
+        'clinic_name'               => $clinicName,
+        'gemini_api_key'            => '',
+        'gemini_model'              => 'gemini-2.0-flash',
+        'assistant_name'            => 'Sirius',
+        'commission_rate_molecular' => '15',
+        'commission_rate_clinico'   => '10',
     ];
     $check = $pdo->prepare('SELECT skey FROM settings WHERE skey = ?');
     $ins = $pdo->prepare('INSERT INTO settings (skey, svalue) VALUES (?, ?)');

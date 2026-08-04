@@ -44,6 +44,8 @@ $routes = [
     'assistant'     => ['assistant.php', null],
     'catalog'       => ['catalog.php', 'catalogo_estudios'],
     'quotes'        => ['quotes.php', 'apps'],
+    'vinculacion'   => ['vinculacion.php', 'vinculacion'],
+    'commissions'   => ['commissions.php', 'apps'],
 ];
 
 $r = (string)($_GET['r'] ?? '');

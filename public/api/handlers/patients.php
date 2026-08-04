@@ -86,6 +86,7 @@ function handle_patients(string $action): void
             }
 
             $consultsByEpisode = [];
+            $studiesByEpisode = [];
             if ($episodes) {
                 $ids = array_column($episodes, 'id');
                 $marks = implode(',', array_fill(0, count($ids), '?'));
@@ -99,10 +100,20 @@ function handle_patients(string $action): void
                     $row['params'] = $row['params'] ? json_decode($row['params'], true) : null;
                     $consultsByEpisode[$row['episode_id']][] = $row;
                 }
+
+                $st = db()->prepare(
+                    "SELECT * FROM episode_studies WHERE episode_id IN ($marks) ORDER BY id"
+                );
+                $st->execute($ids);
+                foreach ($st->fetchAll() as $row) {
+                    $row['amount_charged'] = (float)$row['amount_charged'];
+                    $studiesByEpisode[$row['episode_id']][] = $row;
+                }
             }
             foreach ($episodes as &$e) {
                 $e['service_data'] = $e['service_data'] ? json_decode($e['service_data'], true) : null;
                 $e['consultations'] = $consultsByEpisode[$e['id']] ?? [];
+                $e['studies'] = $studiesByEpisode[$e['id']] ?? [];
             }
 
             log_activity('expedientes', 'patient_view', 'Consultó expediente ' . $patient['file_number'], 'patient', $id);

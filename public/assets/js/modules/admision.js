@@ -48,12 +48,16 @@ function renderGrid(root) {
 /* ---- Formulario de admisión ---- */
 async function renderForm(root, serviceKey) {
   const svc = SERVICES[serviceKey];
-  const [catalog, { users: assignableUsers }] = await Promise.all([
+  const isLab = serviceKey === 'laboratorio';
+  const [catalog, { users: assignableUsers }, doctorsRes] = await Promise.all([
     loadCatalog(),
     apiGet('episodes/assignable_users'),
+    isLab ? apiGet('episodes/search_doctors') : Promise.resolve({ items: [] }),
   ]);
+  const convenioDoctors = doctorsRes.items;
   const sections = catalog[serviceKey]?.admission || [];
   let selectedPatient = null;
+  let studyLines = [];
 
   root.innerHTML = `
     <div class="mx-auto max-w-4xl space-y-5">
@@ -99,7 +103,16 @@ async function renderForm(root, serviceKey) {
           <h4 class="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">Motivo y referencia</h4>
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
             ${field({ key: '__reason', label: 'Motivo de consulta / estudio', type: 'textarea', rows: 2, span: 'sm:col-span-2' })}
-            ${field({ key: '__referring_doctor', label: serviceKey === 'laboratorio' ? 'Nombre del médico' : 'Médico solicitante / responsable', type: 'text', span: 'sm:col-span-2' })}
+            ${isLab ? `
+            <div class="sm:col-span-2">
+              <label class="${labelCls}">Médico tratante</label>
+              <select name="__linked_doctor_id" id="doctor-select" class="${inputCls}">
+                <option value="">— Sin médico / no aplica —</option>
+                ${convenioDoctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('')}
+                <option value="otro">Otro (no está en Vinculación)</option>
+              </select>
+              <input type="text" name="__referring_doctor_other" id="doctor-other" placeholder="Nombre del médico" class="${inputCls} mt-2 hidden">
+            </div>` : field({ key: '__referring_doctor', label: 'Médico solicitante / responsable', type: 'text', span: 'sm:col-span-2' })}
             <div class="sm:col-span-2">
               <label class="${labelCls}">Responsable asignado</label>
               <select name="__assigned_user_id" class="${inputCls}">
@@ -116,6 +129,23 @@ async function renderForm(root, serviceKey) {
             </div>` : ''}
           </div>
         </section>
+
+        ${isLab ? `
+        <!-- Estudios a realizar -->
+        <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+          <h4 class="mb-1 text-sm font-bold uppercase tracking-wide text-slate-700">Estudios a realizar</h4>
+          <p class="mb-3 text-xs text-slate-400">Busca en el catálogo y agrega cada estudio con el monto realmente cobrado (ya con descuento aplicado). Si no está en el catálogo, agrégalo como "no catalogado".</p>
+          <div class="relative">
+            <input id="study-search" type="text" placeholder="Buscar estudio del catálogo…" autocomplete="off" class="${inputCls}">
+            <div id="study-results" class="absolute inset-x-0 top-full z-10 mt-1 hidden overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-200"></div>
+          </div>
+          <button type="button" id="btn-add-other-study" class="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-800">+ Agregar estudio no catalogado</button>
+          <div id="study-lines" class="mt-3 space-y-2"></div>
+          <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+            <span class="text-sm font-semibold text-slate-600">Total cobrado</span>
+            <span id="study-total" class="text-base font-bold text-slate-800">$0.00</span>
+          </div>
+        </section>` : ''}
 
         <!-- Secciones de la ficha del servicio -->
         ${sectionsHtml(sections)}
@@ -142,6 +172,77 @@ async function renderForm(root, serviceKey) {
 
   const form = root.querySelector('#admission-form');
   initSections(form);
+
+  /* ---- Médico tratante (solo laboratorio): dropdown de convenio + "Otro" ---- */
+  const doctorSelect = root.querySelector('#doctor-select');
+  const doctorOther = root.querySelector('#doctor-other');
+  doctorSelect?.addEventListener('change', () => {
+    doctorOther.classList.toggle('hidden', doctorSelect.value !== 'otro');
+    if (doctorSelect.value !== 'otro') doctorOther.value = '';
+  });
+
+  /* ---- Estudios a realizar (solo laboratorio): buscador + líneas con monto propio ---- */
+  const studyInput = root.querySelector('#study-search');
+  const studyResults = root.querySelector('#study-results');
+  const studyLinesBox = root.querySelector('#study-lines');
+  const studyTotalEl = root.querySelector('#study-total');
+
+  function paintStudyTotal() {
+    if (!studyTotalEl) return;
+    const total = studyLines.reduce((sum, l) => sum + (parseFloat(l.amount) || 0), 0);
+    studyTotalEl.textContent = '$' + total.toFixed(2);
+  }
+
+  function paintStudyLines() {
+    if (!studyLinesBox) return;
+    studyLinesBox.innerHTML = studyLines.length ? studyLines.map((l, i) => `
+      <div class="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+        ${l.study_id === null
+          ? `<input type="text" data-line-name="${i}" value="${escapeHtml(l.name)}" placeholder="Nombre del estudio" class="min-w-0 flex-1 rounded-md border-0 bg-white px-2 py-1.5 text-sm ring-1 ring-slate-300">`
+          : `<span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(l.name)}</span>`}
+        <span class="shrink-0 text-xs text-slate-400">$</span>
+        <input type="number" min="0" step="0.01" data-line-amount="${i}" value="${l.amount}" class="w-28 shrink-0 rounded-md border-0 bg-white px-2 py-1.5 text-right text-sm ring-1 ring-slate-300">
+        <button type="button" data-line-rm="${i}" class="shrink-0 text-slate-400 hover:text-red-600">${icon('x', 'h-4 w-4')}</button>
+      </div>`).join('') : '<p class="text-sm text-slate-400">Sin estudios agregados.</p>';
+
+    studyLinesBox.querySelectorAll('[data-line-amount]').forEach((el) =>
+      el.addEventListener('input', () => { studyLines[+el.dataset.lineAmount].amount = parseFloat(el.value || '0'); paintStudyTotal(); }));
+    studyLinesBox.querySelectorAll('[data-line-name]').forEach((el) =>
+      el.addEventListener('input', () => { studyLines[+el.dataset.lineName].name = el.value; }));
+    studyLinesBox.querySelectorAll('[data-line-rm]').forEach((el) =>
+      el.addEventListener('click', () => { studyLines.splice(+el.dataset.lineRm, 1); paintStudyLines(); }));
+    paintStudyTotal();
+  }
+  paintStudyLines();
+
+  studyInput?.addEventListener('input', debounce(async () => {
+    const q = studyInput.value.trim();
+    if (q.length < 2) { studyResults.classList.add('hidden'); return; }
+    const { items } = await apiGet('episodes/search_studies', { q });
+    studyResults.innerHTML = items.length
+      ? items.map((s, i) => `
+        <button type="button" data-idx="${i}" class="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-indigo-50">
+          <span class="text-sm font-medium text-slate-800">${escapeHtml(s.name)}</span>
+          <span class="shrink-0 text-xs text-slate-500">$${s.public_price.toFixed(2)}</span>
+        </button>`).join('')
+      : '<p class="px-4 py-3 text-sm text-slate-500">Sin coincidencias.</p>';
+    studyResults.querySelectorAll('button').forEach((b) =>
+      b.addEventListener('click', () => {
+        const s = items[+b.dataset.idx];
+        studyLines.push({ study_id: s.id, name: s.name, amount: s.public_price });
+        paintStudyLines();
+        studyResults.classList.add('hidden');
+        studyInput.value = '';
+      }));
+    studyResults.classList.remove('hidden');
+  }, 250));
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#study-search') && !e.target.closest('#study-results')) studyResults?.classList.add('hidden');
+  });
+  root.querySelector('#btn-add-other-study')?.addEventListener('click', () => {
+    studyLines.push({ study_id: null, name: '', amount: 0 });
+    paintStudyLines();
+  });
 
   /* ---- Documentos adjuntos: se guardan en memoria y se suben ya creado el expediente ---- */
   let pendingFiles = [];
@@ -259,16 +360,21 @@ async function renderForm(root, serviceKey) {
     for (const f of PATIENT_FIELDS) patient[f.key] = v[f.key] ?? '';
     const serviceData = collectSections(form, sections);
 
+    const linkedDoctorId = isLab && v.__linked_doctor_id && v.__linked_doctor_id !== 'otro' ? v.__linked_doctor_id : null;
+    const referringDoctor = isLab ? (v.__linked_doctor_id === 'otro' ? v.__referring_doctor_other : '') : v.__referring_doctor;
+
     try {
       const data = await apiPost('episodes/create', {
         service: serviceKey,
         patient_id: selectedPatient ? +selectedPatient.id : 0,
         patient,
         reason: v.__reason,
-        referring_doctor: v.__referring_doctor,
+        referring_doctor: referringDoctor,
+        linked_doctor_id: linkedDoctorId,
         assigned_user_id: v.__assigned_user_id || null,
         expected_delivery_date: v.__expected_delivery_date || null,
         service_data: serviceData,
+        study_lines: isLab ? studyLines.map((l) => ({ study_id: l.study_id, study_name: l.name, amount_charged: l.amount })) : undefined,
         ignore_duplicate: ignoreDuplicate,
       });
 

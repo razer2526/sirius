@@ -58,6 +58,17 @@ if ($episodes) {
     }
 }
 
+$studiesByEpisode = [];
+if ($episodes) {
+    $ids = array_column($episodes, 'id');
+    $marks = implode(',', array_fill(0, count($ids), '?'));
+    $st = db()->prepare("SELECT * FROM episode_studies WHERE episode_id IN ($marks) ORDER BY id");
+    $st->execute($ids);
+    foreach ($st->fetchAll() as $row) {
+        $studiesByEpisode[$row['episode_id']][] = $row;
+    }
+}
+
 $clinicName = 'Laboratorio y Clínica Bosques Polanco';
 try {
     $st = db()->prepare('SELECT svalue FROM settings WHERE skey = ?');
@@ -70,7 +81,7 @@ try {
 }
 
 try {
-    $pdf = render_patient_record_pdf($p, $episodes, $consultsByEpisode, $clinicName);
+    $pdf = render_patient_record_pdf($p, $episodes, $consultsByEpisode, $clinicName, null, $studiesByEpisode);
 } catch (Throwable $e) {
     error_log('print.php: ' . $e->getMessage());
     http_response_code(500);

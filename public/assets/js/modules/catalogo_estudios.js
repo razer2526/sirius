@@ -79,6 +79,12 @@ async function renderList(root) {
   await load();
 }
 
+function commissionGroupLabel(group) {
+  if (group === 'molecular') return 'Biología Molecular';
+  if (group === 'clinico') return 'Análisis Clínicos';
+  return '—';
+}
+
 function paintCategories(sel) {
   const current = sel.value;
   sel.innerHTML = '<option value="">Todas</option>' +
@@ -107,6 +113,7 @@ function paintList(box, load) {
             <tr>
               <th class="px-4 py-3">Estudio</th>
               <th class="hidden px-4 py-3 sm:table-cell">Categoría</th>
+              <th class="hidden px-4 py-3 lg:table-cell">Comisión</th>
               <th class="px-4 py-3 text-right">Precio público</th>
               <th class="px-4 py-3 text-center">Estado</th>
               <th class="px-4 py-3 text-right">Acciones</th>
@@ -117,6 +124,7 @@ function paintList(box, load) {
               <tr>
                 <td class="px-4 py-3 font-medium text-slate-800">${escapeHtml(it.name)}</td>
                 <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(it.category || '—')}</td>
+                <td class="hidden px-4 py-3 text-slate-500 lg:table-cell">${escapeHtml(commissionGroupLabel(it.commission_group))}</td>
                 <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(it.public_price).toFixed(2)}</td>
                 <td class="px-4 py-3 text-center">
                   <span class="rounded-full px-2.5 py-1 text-xs font-semibold ${it.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
@@ -179,6 +187,14 @@ function openStudyModal(study, load) {
           <input type="number" id="s-price" min="0" step="0.01" value="${study?.public_price ?? 0}" class="${inputCls}">
         </div>
       </div>
+      <div>
+        <label class="${labelCls}">Grupo de comisión (convenio médico/concierge)</label>
+        <select id="s-commission-group" class="${inputCls}">
+          <option value="" ${!study?.commission_group ? 'selected' : ''}>No aplica</option>
+          <option value="molecular" ${study?.commission_group === 'molecular' ? 'selected' : ''}>Biología Molecular</option>
+          <option value="clinico" ${study?.commission_group === 'clinico' ? 'selected' : ''}>Análisis Clínicos</option>
+        </select>
+      </div>
       <label class="flex items-center gap-2 py-1 text-sm text-slate-700">
         <input type="checkbox" id="s-active" ${study ? (study.is_active ? 'checked' : '') : 'checked'} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
         Activo (visible en el Cotizador)
@@ -201,6 +217,7 @@ function openStudyModal(study, load) {
               id: study?.id,
               name,
               category: wrap.querySelector('#s-category').value.trim(),
+              commission_group: wrap.querySelector('#s-commission-group').value,
               public_price: parseFloat(wrap.querySelector('#s-price').value || '0'),
               is_active: wrap.querySelector('#s-active').checked,
             });
@@ -228,7 +245,7 @@ async function exportCatalog(format) {
     blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
     fileName = `catalogo-estudios-${stamp}.json`;
   } else {
-    const cols = ['id', 'name', 'category', 'public_price', 'is_active'];
+    const cols = ['id', 'name', 'category', 'commission_group', 'public_price', 'is_active'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [cols.join(',')].concat(items.map((it) => cols.map((c) => esc(it[c])).join(',')));
     blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });

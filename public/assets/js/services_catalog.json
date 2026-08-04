@@ -97,17 +97,11 @@
             },
             {
                 "id": "lab_estudios",
-                "title": "Medicamentos y estudios",
+                "title": "Medicamentos",
                 "fields": [
                     {
                         "k": "medicamentos",
                         "l": "Medicamentos",
-                        "t": "textarea",
-                        "span": 2
-                    },
-                    {
-                        "k": "estudios",
-                        "l": "Estudios a realizar",
                         "t": "textarea",
                         "span": 2
                     }
@@ -128,12 +122,6 @@
                             "Transferencia",
                             "Link de pago"
                         ]
-                    },
-                    {
-                        "k": "pago_monto",
-                        "l": "Monto (MXN)",
-                        "t": "number",
-                        "step": "0.01"
                     }
                 ]
             },

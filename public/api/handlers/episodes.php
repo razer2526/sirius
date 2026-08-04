@@ -65,6 +65,43 @@ function handle_episodes(string $action): void
                 }
             }
 
+            // Médico con convenio (Vinculación): si se eligió uno del catálogo, su nombre
+            // manda sobre cualquier texto libre que haya llegado en referring_doctor.
+            $linkedDoctorId = !empty($b['linked_doctor_id']) ? (int)$b['linked_doctor_id'] : null;
+            $referringDoctor = trim($b['referring_doctor'] ?? '') ?: null;
+            if ($linkedDoctorId !== null) {
+                $st = $pdo->prepare('SELECT name FROM vinculacion_doctors WHERE id = ?');
+                $st->execute([$linkedDoctorId]);
+                $doctorRow = $st->fetch();
+                if (!$doctorRow) {
+                    json_error('El médico seleccionado no es válido', 422);
+                }
+                $referringDoctor = $doctorRow['name'];
+            }
+
+            // Estudios seleccionados (solo laboratorio): cada línea trae su monto realmente
+            // cobrado; el grupo de comisión se toma del catálogo al momento de capturar.
+            $studyLines = [];
+            foreach ((array)($b['study_lines'] ?? []) as $line) {
+                $amount = max(0, (float)($line['amount_charged'] ?? 0));
+                $studyId = !empty($line['study_id']) ? (int)$line['study_id'] : null;
+                if ($studyId !== null) {
+                    $st = $pdo->prepare('SELECT name, commission_group FROM quote_studies WHERE id = ?');
+                    $st->execute([$studyId]);
+                    $studyRow = $st->fetch();
+                    if (!$studyRow) {
+                        continue;
+                    }
+                    $studyLines[] = ['study_id' => $studyId, 'study_name' => $studyRow['name'], 'commission_group' => $studyRow['commission_group'], 'amount_charged' => $amount];
+                } else {
+                    $name = trim((string)($line['study_name'] ?? ''));
+                    if ($name === '') {
+                        continue;
+                    }
+                    $studyLines[] = ['study_id' => null, 'study_name' => $name, 'commission_group' => null, 'amount_charged' => $amount];
+                }
+            }
+
             $pdo->beginTransaction();
             try {
                 if ($patientId === 0) {
@@ -86,8 +123,8 @@ function handle_episodes(string $action): void
                 }
 
                 $st = $pdo->prepare(
-                    'INSERT INTO episodes (patient_id, service, service_folio, admission_date, reason, referring_doctor, assigned_user_id, service_data, status, expected_delivery_date, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    'INSERT INTO episodes (patient_id, service, service_folio, admission_date, reason, referring_doctor, linked_doctor_id, assigned_user_id, service_data, status, expected_delivery_date, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $st->execute([
                     $patientId,
@@ -95,7 +132,8 @@ function handle_episodes(string $action): void
                     $serviceFolio,
                     date('Y-m-d H:i:s'),
                     trim($b['reason'] ?? '') ?: null,
-                    trim($b['referring_doctor'] ?? '') ?: null,
+                    $referringDoctor,
+                    $linkedDoctorId,
                     $assignedUserId,
                     $serviceData ? json_encode($serviceData, JSON_UNESCAPED_UNICODE) : null,
                     'activo',
@@ -103,6 +141,16 @@ function handle_episodes(string $action): void
                     (int)$me['id'],
                 ]);
                 $episodeId = (int)$pdo->lastInsertId();
+
+                if ($studyLines) {
+                    $insStudy = $pdo->prepare(
+                        'INSERT INTO episode_studies (episode_id, study_id, study_name, commission_group, amount_charged) VALUES (?, ?, ?, ?, ?)'
+                    );
+                    foreach ($studyLines as $line) {
+                        $insStudy->execute([$episodeId, $line['study_id'], $line['study_name'], $line['commission_group'], $line['amount_charged']]);
+                    }
+                }
+
                 $pdo->commit();
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) {
@@ -209,6 +257,34 @@ function handle_episodes(string $action): void
             );
             $st->execute([$like, $like, $like, $like]);
             json_ok(['patients' => $st->fetchAll()]);
+        }
+
+        /** Estudios activos del catálogo, para el picker de "Estudios a realizar" en admisión de laboratorio. */
+        case 'search_studies': {
+            $q = trim((string)($_GET['q'] ?? ''));
+            $params = [];
+            $where = 'is_active = 1';
+            if ($q !== '') {
+                $where .= ' AND name LIKE ?';
+                $params[] = '%' . $q . '%';
+            }
+            $st = db()->prepare("SELECT id, name, category, commission_group, public_price FROM quote_studies WHERE $where ORDER BY name LIMIT 25");
+            $st->execute($params);
+            $items = $st->fetchAll();
+            foreach ($items as &$it) {
+                $it['id'] = (int)$it['id'];
+                $it['public_price'] = (float)$it['public_price'];
+            }
+            unset($it);
+            json_ok(['items' => $items]);
+        }
+
+        /** Médicos activos con convenio, para el dropdown de "Médico tratante" en admisión de laboratorio. */
+        case 'search_doctors': {
+            $rows = db()->query(
+                'SELECT id, name FROM vinculacion_doctors WHERE is_active = 1 ORDER BY name'
+            )->fetchAll();
+            json_ok(['items' => $rows]);
         }
 
         /** Adjunta un documento al expediente (estudios previos, imagenología, historial viejo…). */

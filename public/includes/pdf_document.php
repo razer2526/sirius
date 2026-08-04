@@ -894,6 +894,99 @@ class SiriusDocPDF extends FPDF
         $this->SetXY($this->left(), $y + 4);
         $this->SetTextColor(...PDF_INK);
     }
+
+    /* ---------- Comisiones ---------- */
+
+    /** Ancho de columnas de la tabla de comisiones: N° | Paciente/Estudio | Monto | % | Comisión. */
+    private function commissionColWidths(): array
+    {
+        $w = $this->usableWidth();
+        $num = 8.0;
+        $amount = 28.0;
+        $pct = 16.0;
+        $commission = 32.0;
+        return [$num, $w - $num - $amount - $pct - $commission, $amount, $pct, $commission];
+    }
+
+    public function commissionItemsHead(): void
+    {
+        [$num, $desc, $amount, $pct, $commission] = $this->commissionColWidths();
+        $this->SetFillColor(...PDF_HEAD_BG);
+        $this->SetFont('Helvetica', 'B', 7.5);
+        $this->SetTextColor(75, 85, 99);
+        $this->Cell($num, 6.4, pdf_t('N°'), 0, 0, 'C', true);
+        $this->Cell($desc, 6.4, pdf_t('  PACIENTE / ESTUDIO'), 0, 0, 'L', true);
+        $this->Cell($amount, 6.4, pdf_t('MONTO'), 0, 0, 'R', true);
+        $this->Cell($pct, 6.4, pdf_t('%'), 0, 0, 'C', true);
+        $this->Cell($commission, 6.4, pdf_t('COMISIÓN  '), 0, 1, 'R', true);
+        $this->SetTextColor(...PDF_INK);
+    }
+
+    public function commissionItemRowHeight(string $label): float
+    {
+        [, $desc] = $this->commissionColWidths();
+        $lines = $this->wrapLines($label, $desc - 4, 'Helvetica', '', 8.6) ?: [''];
+        return max(7.0, count($lines) * 4.0 + 2.8);
+    }
+
+    public function commissionItemRow(int $n, string $patientName, string $studyName, float $amount, float $pct, float $commission, bool $zebra): void
+    {
+        [$numW, $desc, $amountW, $pctW, $commissionW] = $this->commissionColWidths();
+        $label = $patientName . ' — ' . $studyName;
+        $h = $this->commissionItemRowHeight($label);
+        $y = $this->GetY();
+
+        if ($zebra) {
+            $this->SetFillColor(...PDF_ZEBRA);
+            $this->Rect($this->left(), $y, $this->usableWidth(), $h, 'F');
+        }
+
+        $this->SetFont('Helvetica', '', 9);
+        $this->SetTextColor(...PDF_INK);
+        $this->SetXY($this->left(), $y + 1.4);
+        $this->Cell($numW, 4.0, pdf_t((string)$n), 0, 0, 'C');
+
+        $lines = $this->wrapLines($label, $desc - 4, 'Helvetica', '', 8.6) ?: [''];
+        $ny = $y + 1.4;
+        foreach ($lines as $line) {
+            $this->SetXY($this->left() + $numW + 2, $ny);
+            $this->Cell($desc - 2, 4.0, pdf_t($line), 0, 0, 'L');
+            $ny += 4.0;
+        }
+
+        $this->SetXY($this->left() + $numW + $desc, $y + 1.4);
+        $this->Cell($amountW - 2, 4.0, pdf_t('$' . number_format($amount, 2)), 0, 0, 'R');
+        $this->SetXY($this->left() + $numW + $desc + $amountW, $y + 1.4);
+        $this->Cell($pctW, 4.0, pdf_t(rtrim(rtrim(number_format($pct, 2), '0'), '.') . '%'), 0, 0, 'C');
+        $this->SetFont('Helvetica', 'B', 9);
+        $this->SetXY($this->left() + $numW + $desc + $amountW + $pctW, $y + 1.4);
+        $this->Cell($commissionW - 2, 4.0, pdf_t('$' . number_format($commission, 2)), 0, 0, 'R');
+
+        $this->SetXY($this->left(), $y + $h);
+    }
+
+    /** Barra azul de Total de comisión, alineada a la derecha. */
+    public function commissionTotalsBox(float $total): void
+    {
+        $w = 80.0;
+        $rowH = 8.0;
+        $x = $this->right() - $w;
+        $this->ensureSpace($rowH + 4);
+        $y = $this->GetY();
+
+        $this->SetFillColor(...PDF_BLUE);
+        $this->SetDrawColor(...PDF_BOX_BORDER);
+        $this->SetLineWidth(0.2);
+        $this->Rect($x, $y, $w, $rowH, 'FD');
+        $this->SetXY($x + 4, $y);
+        $this->SetFont('Helvetica', 'B', 10);
+        $this->SetTextColor(255, 255, 255);
+        $this->Cell($w * 0.5, $rowH, pdf_t('Total comisión'), 0, 0, 'L');
+        $this->SetFont('Helvetica', 'B', 11);
+        $this->Cell($w * 0.5 - 8, $rowH, pdf_t('$' . number_format($total, 2)), 0, 0, 'R');
+        $this->SetXY($this->left(), $y + $rowH + 4);
+        $this->SetTextColor(...PDF_INK);
+    }
 }
 
 /**
@@ -1268,7 +1361,8 @@ function render_patient_record_pdf(
     array $episodes,
     array $consultsByEpisode,
     string $clinicName,
-    ?string $path = null
+    ?string $path = null,
+    array $studiesByEpisode = []
 ): string {
     $lh = letterhead_config();
     $pdf = new SiriusDocPDF($lh, $clinicName);
@@ -1381,6 +1475,20 @@ function render_patient_record_pdf(
         }
 
         render_pdf_service_sections($pdf, $admSections, $sd);
+
+        if (!empty($studiesByEpisode[$e['id']])) {
+            $pdf->ensureSpace(10);
+            $pdf->sectionLabel('Estudios realizados');
+            $total = 0.0;
+            $rows = [];
+            foreach ($studiesByEpisode[$e['id']] as $s) {
+                $amount = (float)$s['amount_charged'];
+                $total += $amount;
+                $rows[] = [$s['study_name'], '$' . number_format($amount, 2)];
+            }
+            $rows[] = ['Total cobrado', '$' . number_format($total, 2)];
+            $pdf->fieldsTable($rows);
+        }
 
         foreach ($consultsByEpisode[$e['id']] ?? [] as $c) {
             $params = $c['params'] ? json_decode($c['params'], true) : [];
@@ -1544,6 +1652,67 @@ function render_quote_pdf(array $quote, ?string $path = null): string
         $pdf->MultiCell(0, 4.6, pdf_t($notes), 0, 'L');
         $pdf->SetTextColor(...PDF_INK);
     }
+
+    if ($path) {
+        $pdf->Output('F', $path);
+        return $path;
+    }
+    return $pdf->Output('S');
+}
+
+/**
+ * Dibuja el estado de cuenta de comisiones: barra de folio/periodo/médico o
+ * concierge, tabla de partidas (paciente/estudio/monto/%/comisión) y la barra
+ * de Total comisión. Sin firma, es un reporte interno, no un documento clínico.
+ */
+function render_commission_pdf(array $statement, ?string $path = null): string
+{
+    $lines = is_array($statement['lines']) ? $statement['lines'] : (json_decode((string)$statement['lines'], true) ?: []);
+    $items = $lines['items'] ?? [];
+    $partyName = (string)($lines['party_name'] ?? '');
+    $partyLabel = $statement['party_type'] === 'concierge' ? 'Concierge' : 'Médico';
+
+    $clinicName = 'Laboratorio y Clínica Bosques Polanco';
+    try {
+        $st = db()->prepare('SELECT svalue FROM settings WHERE skey = ?');
+        $st->execute(['clinic_name']);
+        $row = $st->fetch();
+        if ($row && $row['svalue']) {
+            $clinicName = $row['svalue'];
+        }
+    } catch (Throwable $e) {
+    }
+
+    $lh = letterhead_config();
+    $pdf = new SiriusDocPDF($lh, $clinicName);
+    $period = date('d/m/Y', strtotime((string)$statement['period_start'])) . ' – ' . date('d/m/Y', strtotime((string)$statement['period_end']));
+    $pdf->setPatientInfo([
+        ['Folio', (string)$statement['folio'], 'Periodo', $period, 'bold' => true],
+        [$partyLabel, $partyName, null, null],
+    ]);
+
+    $pdf->AddPage();
+    $pdf->markLastPage();
+
+    $pdf->panelBar('Detalle de comisión', count($items) . ' partida(s)');
+    $pdf->commissionItemsHead();
+    $i = 0;
+    $total = 0.0;
+    foreach ($items as $item) {
+        $patientName = (string)($item['patient_name'] ?? '');
+        $studyName = (string)($item['study_name'] ?? '');
+        $amount = (float)($item['amount_charged'] ?? 0);
+        $pct = (float)($item['commission_pct'] ?? 0);
+        $commission = (float)($item['commission_amount'] ?? 0);
+        $total += $commission;
+        $h = $pdf->commissionItemRowHeight($patientName . ' — ' . $studyName);
+        $pdf->ensureSpace($h, static fn($p) => $p->commissionItemsHead());
+        $pdf->commissionItemRow($i + 1, $patientName, $studyName, $amount, $pct, $commission, $i % 2 === 1);
+        $i++;
+    }
+    $pdf->Ln(6);
+
+    $pdf->commissionTotalsBox((float)($statement['total_commission'] ?? $total));
 
     if ($path) {
         $pdf->Output('F', $path);

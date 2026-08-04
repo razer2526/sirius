@@ -66,6 +66,7 @@ function handle_catalog(string $action): void
                 json_error('El nombre del estudio es obligatorio', 422);
             }
             $category = trim((string)($b['category'] ?? '')) ?: null;
+            $commissionGroup = in_array($b['commission_group'] ?? '', ['molecular', 'clinico'], true) ? $b['commission_group'] : null;
             $price = max(0, (float)($b['public_price'] ?? 0));
             $isActive = !empty($b['is_active']) ? 1 : 0;
             $id = (int)($b['id'] ?? 0);
@@ -74,13 +75,13 @@ function handle_catalog(string $action): void
             if ($id > 0) {
                 find_quote_study($id);
                 $pdo->prepare(
-                    'UPDATE quote_studies SET name = ?, category = ?, public_price = ?, is_active = ? WHERE id = ?'
-                )->execute([$name, $category, $price, $isActive, $id]);
+                    'UPDATE quote_studies SET name = ?, category = ?, commission_group = ?, public_price = ?, is_active = ? WHERE id = ?'
+                )->execute([$name, $category, $commissionGroup, $price, $isActive, $id]);
                 log_activity('catalogo_estudios', 'study_update', "Editó estudio \"$name\"", 'quote_study', $id);
             } else {
                 $pdo->prepare(
-                    'INSERT INTO quote_studies (name, category, public_price, is_active, created_by) VALUES (?, ?, ?, ?, ?)'
-                )->execute([$name, $category, $price, $isActive, (int)$me['id']]);
+                    'INSERT INTO quote_studies (name, category, commission_group, public_price, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+                )->execute([$name, $category, $commissionGroup, $price, $isActive, (int)$me['id']]);
                 $id = (int)$pdo->lastInsertId();
                 log_activity('catalogo_estudios', 'study_create', "Creó estudio \"$name\"", 'quote_study', $id);
             }
@@ -97,7 +98,7 @@ function handle_catalog(string $action): void
 
         /** Todo el catálogo, para exportar (el navegador arma el JSON/CSV). */
         case 'export_all': {
-            $items = db()->query('SELECT id, name, category, public_price, is_active FROM quote_studies ORDER BY name')->fetchAll();
+            $items = db()->query('SELECT id, name, category, commission_group, public_price, is_active FROM quote_studies ORDER BY name')->fetchAll();
             foreach ($items as &$it) {
                 $it['id'] = (int)$it['id'];
                 $it['public_price'] = (float)$it['public_price'];

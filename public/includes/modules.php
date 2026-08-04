@@ -75,6 +75,7 @@ return [
         'flags' => [
             'membretador' => 'Usar el Membretador',
             'cotizador'   => 'Usar el Cotizador',
+            'comisiones'  => 'Usar Comisiones',
             'review'      => 'Revisar y liberar estudios',
             'delete'      => 'Eliminar estudios membretados',
         ],
@@ -112,6 +113,12 @@ return [
     'catalogo_estudios' => [
         'label' => 'Catálogo de Estudios',
         'icon'  => 'flask',
+        'phase' => 2,
+        'group' => 'admin_tools',
+    ],
+    'vinculacion' => [
+        'label' => 'Vinculación',
+        'icon'  => 'link',
         'phase' => 2,
         'group' => 'admin_tools',
     ],

@@ -21,6 +21,7 @@ let listState = { documents: [], can_review: false, can_delete: false };
 const TOOLS = [
   { key: 'membretador', label: 'Membretador', icon: 'file-text', color: 'bg-indigo-100 text-indigo-700', desc: 'Emitir estudios y documentos con membrete' },
   { key: 'cotizador',   label: 'Cotizador',   icon: 'calculator', color: 'bg-emerald-100 text-emerald-700', desc: 'Generar cotizaciones para pacientes' },
+  { key: 'comisiones',  label: 'Comisiones',  icon: 'link', color: 'bg-amber-100 text-amber-700', desc: 'Comisiones de médicos y concierge con convenio' },
 ];
 
 export async function render(root, context) {
@@ -32,6 +33,7 @@ export async function render(root, context) {
 
   if (!tool) return gridTools(root);
   if (tool === 'cotizador') return renderCotizador(root, category);
+  if (tool === 'comisiones') return renderComisiones(root, category);
   if (tool !== 'membretador') return gridTools(root);
 
   if (!category) return gridCategories(root);
@@ -1413,3 +1415,277 @@ function renderQuoteForm(root) {
   paintLines();
 }
 
+/* ================== Comisiones ================== */
+let commissionListState = { items: [], total: 0, per_page: 25 };
+let commissionFilters = { q: '', page: 1 };
+
+function renderComisiones(root, view) {
+  if (view === 'nuevo') return renderCommissionForm(root);
+  return renderCommissionList(root);
+}
+
+async function renderCommissionList(root) {
+  root.innerHTML = `
+    <div class="mx-auto max-w-5xl space-y-4">
+      <a href="#/apps" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        ${icon('chevron-left', 'h-4 w-4')} Volver a Apps
+      </a>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="relative min-w-0 flex-1 sm:max-w-sm">
+          <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${icon('search', 'h-5 w-5')}</span>
+          <input id="c-search" type="text" placeholder="Buscar por folio…" autocomplete="off"
+                 class="w-full rounded-xl border-0 bg-white py-2.5 pl-11 pr-4 text-sm shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+        </div>
+        <a href="#/apps/comisiones/nuevo"
+           class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+          ${icon('plus', 'h-4 w-4')} Nuevo estado de cuenta
+        </a>
+      </div>
+      <div id="c-list">${spinner()}</div>
+    </div>`;
+
+  const input = root.querySelector('#c-search');
+  const load = async (resetPage = true) => {
+    if (resetPage) commissionFilters.page = 1;
+    commissionFilters.q = input.value.trim();
+    commissionListState = await apiGet('commissions/list', commissionFilters);
+    paintCommissionList(root.querySelector('#c-list'), load);
+  };
+  input.addEventListener('input', debounce(() => load(), 300));
+  await load();
+}
+
+function paintCommissionList(box, load) {
+  const { items, total, page, per_page: perPage } = commissionListState;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+
+  if (!items.length) {
+    box.innerHTML = `
+      <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
+        <p class="text-sm font-medium text-slate-600">Sin estados de cuenta generados</p>
+        <p class="mt-1 text-xs text-slate-400">Crea el primero con el botón de arriba.</p>
+      </div>`;
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-4 py-3">Folio</th>
+              <th class="px-4 py-3">Médico / Concierge</th>
+              <th class="hidden px-4 py-3 sm:table-cell">Periodo</th>
+              <th class="px-4 py-3 text-right">Comisión</th>
+              <th class="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${items.map((s) => `
+              <tr>
+                <td class="px-4 py-3 font-mono text-xs font-semibold text-slate-700">${escapeHtml(s.folio)}</td>
+                <td class="px-4 py-3 font-medium text-slate-800">${escapeHtml(s.party_name)}
+                  <span class="ml-1.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">${s.party_type === 'concierge' ? 'Concierge' : 'Médico'}</span>
+                </td>
+                <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(s.period_start)} — ${escapeHtml(s.period_end)}</td>
+                <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(s.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                <td class="px-4 py-3">
+                  <div class="flex justify-end gap-1">
+                    <a href="comision.php?id=${s.id}" target="_blank" title="Ver PDF"
+                       class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
+                    <a href="comision.php?id=${s.id}&download=1" title="Descargar PDF"
+                       class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('download', 'h-4 w-4')}</a>
+                  </div>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mt-3 flex items-center justify-center gap-3">
+      <button id="pg-prev" ${page <= 1 ? 'disabled' : ''} class="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 disabled:opacity-40">Anterior</button>
+      <span class="text-sm text-slate-500">Página ${page} de ${pages} · ${total} estado(s) de cuenta</span>
+      <button id="pg-next" ${page >= pages ? 'disabled' : ''} class="rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 disabled:opacity-40">Siguiente</button>
+    </div>`;
+
+  box.querySelector('#pg-prev')?.addEventListener('click', () => { commissionFilters.page--; load(false); });
+  box.querySelector('#pg-next')?.addEventListener('click', () => { commissionFilters.page++; load(false); });
+}
+
+function defaultPeriodStart() {
+  const d = new Date();
+  d.setDate(1);
+  return d.toISOString().slice(0, 10);
+}
+function defaultPeriodEnd() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
+async function renderCommissionForm(root) {
+  const { doctors, concierge } = await apiGet('commissions/parties');
+  let lines = [];
+  let saving = false;
+
+  root.innerHTML = `
+    <div class="mx-auto max-w-4xl space-y-5">
+      <a href="#/apps/comisiones" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        ${icon('chevron-left', 'h-4 w-4')} Volver al listado
+      </a>
+      <div>
+        <h3 class="text-lg font-bold text-slate-900">Nuevo estado de cuenta de comisiones</h3>
+        <p class="text-sm text-slate-500">Elige a quién y el periodo; revisa las líneas antes de generar el PDF.</p>
+      </div>
+
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div>
+            <label class="${labelCls}">Tipo</label>
+            <select id="c-party-type" class="${inputCls}">
+              <option value="doctor">Médico</option>
+              <option value="concierge">Concierge</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2 lg:col-span-1">
+            <label class="${labelCls}">Médico / Concierge</label>
+            <select id="c-party-id" class="${inputCls}"></select>
+          </div>
+          <div>
+            <label class="${labelCls}">Desde</label>
+            <input type="date" id="c-from" value="${defaultPeriodStart()}" class="${inputCls}">
+          </div>
+          <div>
+            <label class="${labelCls}">Hasta</label>
+            <input type="date" id="c-to" value="${defaultPeriodEnd()}" class="${inputCls}">
+          </div>
+        </div>
+        <div class="mt-4">
+          <button id="btn-preview" type="button" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Vista previa</button>
+        </div>
+      </section>
+
+      <div id="c-lines-box"></div>
+
+      <div class="flex justify-end">
+        <button id="btn-generate" type="button" disabled
+                class="flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">
+          ${icon('check-square', 'h-4 w-4')} Generar estado de cuenta
+        </button>
+      </div>
+    </div>`;
+
+  const typeSel = root.querySelector('#c-party-type');
+  const partySel = root.querySelector('#c-party-id');
+  const linesBox = root.querySelector('#c-lines-box');
+  const genBtn = root.querySelector('#btn-generate');
+
+  const paintPartyOptions = () => {
+    const opts = typeSel.value === 'concierge'
+      ? concierge.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
+      : doctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}${d.concierge_name ? ' — ' + escapeHtml(d.concierge_name) : ''}</option>`);
+    partySel.innerHTML = opts.join('') || '<option value="">— Sin registros —</option>';
+  };
+  typeSel.addEventListener('change', paintPartyOptions);
+  paintPartyOptions();
+
+  const paintLines = () => {
+    genBtn.disabled = !lines.length;
+    if (!lines.length) {
+      linesBox.innerHTML = '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">Sin vista previa todavía.</div>';
+      return;
+    }
+    const total = lines.reduce((sum, l) => sum + (l.commission_included ? l.commission_amount : 0), 0);
+    linesBox.innerHTML = `
+      <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-3 py-2 w-10"></th>
+                <th class="px-3 py-2">Paciente / Estudio</th>
+                <th class="px-3 py-2 text-right">Monto</th>
+                <th class="px-3 py-2 text-center">%</th>
+                <th class="px-3 py-2 text-right">Comisión</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${lines.map((l) => `
+                <tr class="${l.commission_included ? '' : 'opacity-40'}">
+                  <td class="px-3 py-2"><input type="checkbox" data-toggle="${l.id}" ${l.commission_included ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
+                  <td class="px-3 py-2">
+                    <span class="block font-medium text-slate-800">${escapeHtml(l.patient_name)}</span>
+                    <span class="block text-xs text-slate-500">${escapeHtml(l.study_name)} · ${escapeHtml(l.file_number)}</span>
+                  </td>
+                  <td class="px-3 py-2 text-right text-slate-700">$${Number(l.amount_charged).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center text-slate-500">${Number(l.commission_pct).toFixed(1)}%</td>
+                  <td class="px-3 py-2 text-right font-semibold text-slate-800">$${Number(l.commission_amount).toFixed(2)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+        <span class="text-sm font-semibold text-slate-600">Total comisión (solo incluidas)</span>
+        <span class="text-base font-bold text-slate-800">$${total.toFixed(2)}</span>
+      </div>`;
+
+    linesBox.querySelectorAll('[data-toggle]').forEach((cb) =>
+      cb.addEventListener('change', async () => {
+        const line = lines.find((l) => l.id === +cb.dataset.toggle);
+        cb.disabled = true;
+        try {
+          const res = await apiPost('commissions/toggle_line', { id: line.id });
+          line.commission_included = res.commission_included;
+          paintLines();
+        } catch (e) {
+          toast(e.message, 'error');
+          cb.disabled = false;
+        }
+      }));
+  };
+  paintLines();
+
+  const currentParams = () => ({
+    party_type: typeSel.value,
+    party_id: +partySel.value || 0,
+    period_start: root.querySelector('#c-from').value,
+    period_end: root.querySelector('#c-to').value,
+  });
+
+  root.querySelector('#btn-preview').addEventListener('click', async () => {
+    const p = currentParams();
+    if (!p.party_id) { toast('Elige un médico o concierge', 'error'); return; }
+    try {
+      const res = await apiGet('commissions/preview', p);
+      lines = res.lines;
+      paintLines();
+      if (!lines.length) toast('No hay estudios comisionables en ese periodo', 'info');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
+
+  genBtn.addEventListener('click', async () => {
+    if (saving) return;
+    const included = lines.filter((l) => l.commission_included);
+    if (!included.length) { toast('No hay líneas incluidas para generar el estado de cuenta', 'error'); return; }
+    saving = true;
+    genBtn.disabled = true;
+    try {
+      const res = await apiPost('commissions/save', currentParams());
+      modal({
+        title: 'Estado de cuenta generado',
+        content: `<p class="text-sm text-slate-600">Folio <b class="font-mono text-slate-900">${escapeHtml(res.folio)}</b> guardado correctamente.</p>`,
+        actions: [
+          { label: 'Ver PDF', onClick: (close) => { window.open(`comision.php?id=${res.id}`, '_blank'); close(); ctx.navigate('apps/comisiones'); } },
+          { label: 'Volver al listado', primary: true, onClick: (close) => { close(); ctx.navigate('apps/comisiones'); } },
+        ],
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+      saving = false;
+      genBtn.disabled = false;
+    }
+  });
+}

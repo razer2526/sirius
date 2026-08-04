@@ -416,6 +416,26 @@ function clinicalBox(label, text, cls) {
 }
 
 /** Fecha de entrega estimada de resultados (Laboratorio): editable, con botón para marcar entregado. */
+function studiesBlockHtml(e) {
+  if (!e.studies || !e.studies.length) return '';
+  const total = e.studies.reduce((sum, s) => sum + Number(s.amount_charged), 0);
+  return `
+    <div class="rounded-xl bg-slate-50 px-4 py-3">
+      <p class="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">Estudios realizados</p>
+      <div class="space-y-1.5">
+        ${e.studies.map((s) => `
+          <div class="flex justify-between gap-4 text-sm">
+            <span class="text-slate-500">${escapeHtml(s.study_name)}</span>
+            <span class="text-right font-medium text-slate-800">$${Number(s.amount_charged).toFixed(2)}</span>
+          </div>`).join('')}
+        <div class="flex justify-between gap-4 border-t border-slate-200 pt-1.5 text-sm font-semibold">
+          <span class="text-slate-600">Total cobrado</span>
+          <span class="text-slate-900">$${total.toFixed(2)}</span>
+        </div>
+      </div>
+    </div>`;
+}
+
 function deliveryRowHtml(e) {
   if (e.results_delivered_at) {
     return `
@@ -462,6 +482,7 @@ function episodeHtml(e) {
         ${e.referring_doctor ? `<p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Médico:</span> ${escapeHtml(e.referring_doctor)}</p>` : ''}
         <p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Responsable asignado:</span> ${e.assigned_user_name ? escapeHtml(e.assigned_user_name) : 'General (todos con acceso lo ven)'}</p>
         ${e.service === 'laboratorio' ? deliveryRowHtml(e) : ''}
+        ${e.service === 'laboratorio' ? studiesBlockHtml(e) : ''}
         ${dataRowsHtml(admSections, e.service_data)}
         ${isControlPeso ? progressChartHtml(e) : ''}
         ${e.consultations.length ? `
