@@ -1333,7 +1333,12 @@ function render_document_pdf(array $doc, ?string $path = null): string
         $pdf->Ln(6);
     }
 
-    // La firma se ancla arriba del pie corporativo
+    // La firma se ancla sobre el pie; sin salto automático para que no se parta
+    // (el bloque completo —imagen + nombre + cédula + rol— ya cabe en el espacio
+    // reservado; sin este candado, FPDF puede partirlo a media línea y dejar una
+    // hoja huérfana con solo la última línea del bloque, como ya pasó con FilmArray
+    // Gastrointestinal).
+    $pdf->SetAutoPageBreak(false);
     $signY = $pdf->GetPageHeight() - (float)$lh['footer_bottom'] - (float)$lh['footer_height'] - 32;
     if ($signY > $pdf->GetY()) {
         $pdf->SetY($signY);
