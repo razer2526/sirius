@@ -2,4 +2,4 @@
 deployment:
   tasks:
     - export DEPLOYPATH=/home4/alanrod2/sirius-bpm.com/
-    - /usr/bin/rsync -a --exclude=".git" $REPOPATH/public/ $DEPLOYPATH
+    - /bin/rsync -a --exclude=".git" $REPOPATH/public/ $DEPLOYPATH
