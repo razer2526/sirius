@@ -1,5 +1,7 @@
 ---
+# Las tareas corren con el repositorio como directorio actual, así que el origen va
+# en ruta relativa. No se usan variables ($REPOPATH no la define cPanel, y con ella
+# el origen quedaba en "/public/", que no existe: la tarea moría sin mensaje).
 deployment:
   tasks:
-    - export DEPLOYPATH=/home4/alanrod2/sirius-bpm.com/
-    - /bin/rsync -a --exclude=".git" $REPOPATH/public/ $DEPLOYPATH
+    - /bin/rsync -a --exclude=".git" public/ /home4/alanrod2/sirius-bpm.com/
