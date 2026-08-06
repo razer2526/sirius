@@ -483,7 +483,9 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 party_id INT UNSIGNED NOT NULL,
                 period_start DATE NOT NULL,
                 period_end DATE NOT NULL,
-                lines JSON NOT NULL,
+                -- `lines` es palabra reservada en MySQL: sin comillas invertidas el
+                -- CREATE TABLE falla y aborta todo el instalador. SQLite sí las acepta.
+                `lines` JSON NOT NULL,
                 total_commission DECIMAL(10,2) NOT NULL DEFAULT 0,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,

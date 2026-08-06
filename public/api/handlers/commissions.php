@@ -69,7 +69,8 @@ function handle_commissions(string $action): void
             $pdo = db();
             $folio = commissions_generate_folio($pdo);
             $pdo->prepare(
-                'INSERT INTO commission_statements (folio, party_type, party_id, period_start, period_end, lines, total_commission, created_by)
+                // `lines` va entre comillas invertidas por ser palabra reservada en MySQL
+                'INSERT INTO commission_statements (folio, party_type, party_id, period_start, period_end, `lines`, total_commission, created_by)
                  VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $folio, $partyType, $partyId, $from, $to,
