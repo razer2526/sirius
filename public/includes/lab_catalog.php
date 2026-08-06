@@ -162,6 +162,107 @@ function lab_save_test(array $data, array $ranges, ?int $userId = null): int
     return $id;
 }
 
+/* ---------- Plantillas de estudio ---------- */
+
+/**
+ * Crea o actualiza una plantilla con su lista ordenada de determinaciones.
+ * La plantilla solo apunta a lab_tests: los rangos siguen viviendo en
+ * lab_reference_ranges, para no tener dos versiones del mismo intervalo.
+ */
+function lab_study_save(array $data, array $testIds, ?int $userId = null): int
+{
+    $name = trim((string)($data['name'] ?? ''));
+    if ($name === '') {
+        throw new InvalidArgumentException('La plantilla necesita nombre');
+    }
+    $slug = lab_slug($name);
+    $pdo = db();
+
+    $id = (int)($data['id'] ?? 0);
+    if ($id <= 0) {
+        $st = $pdo->prepare('SELECT id FROM lab_studies WHERE slug = ?');
+        $st->execute([$slug]);
+        $id = (int)($st->fetch()['id'] ?? 0);
+    }
+
+    $active = array_key_exists('is_active', $data) ? (int)!empty($data['is_active']) : 1;
+    $aliases = trim((string)($data['aliases'] ?? '')) ?: null;
+
+    if ($id > 0) {
+        $pdo->prepare('UPDATE lab_studies SET name = ?, slug = ?, aliases = ?, is_active = ? WHERE id = ?')
+            ->execute([$name, $slug, $aliases, $active, $id]);
+    } else {
+        $pdo->prepare('INSERT INTO lab_studies (name, slug, aliases, is_active, created_by) VALUES (?, ?, ?, ?, ?)')
+            ->execute([$name, $slug, $aliases, $active, $userId]);
+        $id = (int)$pdo->lastInsertId();
+    }
+
+    // La lista se reemplaza completa: es la versión que el usuario acaba de validar
+    $pdo->prepare('DELETE FROM lab_study_items WHERE study_id = ?')->execute([$id]);
+    $ins = $pdo->prepare('INSERT INTO lab_study_items (study_id, test_id, sort_order) VALUES (?, ?, ?)');
+    $order = 0;
+    $seen = [];
+    foreach ($testIds as $testId) {
+        $testId = (int)$testId;
+        // La tabla tiene índice único (study_id, test_id): repetir uno abortaría el guardado
+        if ($testId <= 0 || isset($seen[$testId])) {
+            continue;
+        }
+        $seen[$testId] = true;
+        $ins->execute([$id, $testId, $order++]);
+    }
+    return $id;
+}
+
+/** Plantilla con sus determinaciones ordenadas, cada una con sus rangos. */
+function lab_study_get(int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM lab_studies WHERE id = ?');
+    $st->execute([$id]);
+    $study = $st->fetch();
+    if (!$study) {
+        return null;
+    }
+    $study['items'] = lab_study_tests([$id]);
+    return $study;
+}
+
+/**
+ * Determinaciones esperadas de una o varias plantillas, en orden y con sus rangos.
+ * Es la lista contra la que se empareja lo leído del PDF.
+ */
+function lab_study_tests(array $studyIds): array
+{
+    $ids = array_values(array_filter(array_map('intval', $studyIds), fn($n) => $n > 0));
+    if (!$ids) {
+        return [];
+    }
+    $in = implode(',', array_fill(0, count($ids), '?'));
+    $st = db()->prepare(
+        "SELECT t.*, i.study_id, i.sort_order, s.name AS study_name
+         FROM lab_study_items i
+         JOIN lab_tests t ON t.id = i.test_id
+         JOIN lab_studies s ON s.id = i.study_id
+         WHERE i.study_id IN ($in)
+         ORDER BY i.study_id, i.sort_order, i.id"
+    );
+    $st->execute($ids);
+    $rows = $st->fetchAll();
+    // El orden de los estudios lo fija quien llama, no el id: se reordena aquí
+    $byStudy = [];
+    foreach ($rows as $r) {
+        $r['ranges'] = lab_ranges_of((int)$r['id']);
+        $byStudy[(int)$r['study_id']][] = $r;
+    }
+    $out = [];
+    foreach ($ids as $sid) {
+        foreach ($byStudy[$sid] ?? [] as $r) {
+            $out[] = $r;
+        }
+    }
+    return $out;
+}
+
 function lab_num($v): ?float
 {
     if ($v === null || $v === '' || !is_numeric(str_replace(',', '', (string)$v))) {
@@ -314,8 +415,11 @@ function lab_parse_reference(string $text): array
             continue;
         }
         // Los intervalos vienen en mayúsculas; una línea en prosa es una nota o una
-        // cita bibliográfica ("…Reviews, 2018, 39(1):3-16") y no debe leerse como rango
-        $letters = preg_replace('/[^\p{L}]/u', '', $line);
+        // cita bibliográfica ("…Reviews, 2018, 39(1):3-16") y no debe leerse como rango.
+        // Las unidades sí van en minúsculas (mg/dL, umol/L, ug/dL): si se cuentan, una
+        // línea legítima como "MUJERES: 0.60-1.10 mg/dL (53.0-97.2 umol/L)" pasa el 40%
+        // y se descarta, que es de donde venían buena parte de las referencias vacías.
+        $letters = preg_replace('/[^\p{L}]/u', '', preg_replace('/\b[a-zA-Z]{1,5}\/[a-zA-Z]+\b/u', '', $line));
         if ($letters !== '' && preg_match_all('/\p{Ll}/u', $letters) / mb_strlen($letters) > 0.4) {
             continue;
         }

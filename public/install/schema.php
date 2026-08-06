@@ -263,6 +263,31 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_range_test (test_id, sort_order),
                 CONSTRAINT fk_range_test FOREIGN KEY (test_id) REFERENCES lab_tests(id) ON DELETE CASCADE
             )$suffix",
+            // Plantillas: agrupan y ordenan determinaciones ya catalogadas. No copian los
+            // rangos —viven solo en lab_reference_ranges— para no tener dos fuentes de verdad.
+            'lab_studies' => "CREATE TABLE IF NOT EXISTS lab_studies (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(150) NOT NULL,
+                slug VARCHAR(150) NOT NULL,
+                aliases TEXT NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_lab_study_slug (slug),
+                INDEX idx_lab_study_active (is_active, name),
+                CONSTRAINT fk_labstudy_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'lab_study_items' => "CREATE TABLE IF NOT EXISTS lab_study_items (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                study_id INT UNSIGNED NOT NULL,
+                test_id INT UNSIGNED NOT NULL,
+                sort_order INT NOT NULL DEFAULT 0,
+                UNIQUE KEY uq_study_test (study_id, test_id),
+                INDEX idx_study_item_order (study_id, sort_order),
+                CONSTRAINT fk_studyitem_study FOREIGN KEY (study_id) REFERENCES lab_studies(id) ON DELETE CASCADE,
+                CONSTRAINT fk_studyitem_test FOREIGN KEY (test_id) REFERENCES lab_tests(id) ON DELETE CASCADE
+            )$suffix",
             'inventory_items' => "CREATE TABLE IF NOT EXISTS inventory_items (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 name VARCHAR(150) NOT NULL,
@@ -673,6 +698,25 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 unit TEXT NULL,
                 sort_order INTEGER NOT NULL DEFAULT 0
             )",
+            // Plantillas: agrupan y ordenan determinaciones ya catalogadas. No copian los
+            // rangos —viven solo en lab_reference_ranges— para no tener dos fuentes de verdad.
+            'lab_studies' => "CREATE TABLE IF NOT EXISTS lab_studies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                slug TEXT NOT NULL UNIQUE,
+                aliases TEXT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'lab_study_items' => "CREATE TABLE IF NOT EXISTS lab_study_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                study_id INTEGER NOT NULL REFERENCES lab_studies(id) ON DELETE CASCADE,
+                test_id INTEGER NOT NULL REFERENCES lab_tests(id) ON DELETE CASCADE,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                UNIQUE (study_id, test_id)
+            )",
             'inventory_items' => "CREATE TABLE IF NOT EXISTS inventory_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -871,6 +915,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_episode ON episode_studies (episode_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_study ON episode_studies (study_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cstatement_party ON commission_statements (party_type, party_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');
         $log[] = 'Índices SQLite: OK';
     }
 

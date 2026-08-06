@@ -163,7 +163,7 @@ function rapha_read_page(array $items): array
     foreach ($rows as $r) {
         $value = rapha_split_value($r['value']);
         $study['items'][] = [
-            'name'      => rapha_norm($r['name']),
+            'name'      => rapha_clean_name($r['name']),
             'value'     => $value['value'],
             'unit'      => $value['unit'],
             'abnormal'  => $value['abnormal'],
@@ -257,6 +257,19 @@ function rapha_block(array $refs, float $fromY, float $toY): string
     // Las referencias bibliográficas y notas largas de RAPHA no se conservan
     $text = preg_split('/\n\s*(REFERENCIA|BIBLIOGRAFIA|REFERENCIAS)\b/iu', $text)[0];
     return trim($text);
+}
+
+/**
+ * Limpia el nombre de la determinación. Algunas traen pegada una nota al pie con el
+ * valor del propio paciente ("… (HB-A1C) * IFCC 29.4"), que cambia en cada reporte:
+ * si se deja, el mismo analito parece uno distinto en cada PDF y nunca empata con
+ * el catálogo.
+ */
+function rapha_clean_name(string $name): string
+{
+    $n = rapha_norm($name);
+    $n = preg_replace('/\*\s*IFCC\s*[\d.,]+\s*$/iu', '', $n);
+    return rapha_norm(rtrim($n, ' *'));
 }
 
 function rapha_clean_technique(string $t): string

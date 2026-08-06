@@ -314,6 +314,11 @@ async function renderOrderForm(root, category, cat, docType, docId) {
   let data = { patient: {}, studies: [], clinical: {}, notes: '', folio: '' };
   let currentId = docId || 0;
   let reviewed = false;
+  // Paso 1: elegir qué estudios se van a membretar. Al editar una orden ya guardada
+  // se salta, porque los estudios quedaron fijados cuando se creó.
+  let step = docId ? 2 : 1;
+  let templates = [];
+  let picked = [];
 
   if (docId) {
     const res = await apiGet('documents/get', { id: docId });
@@ -329,7 +334,128 @@ async function renderOrderForm(root, category, cat, docType, docId) {
     listState.can_review = res.can_review;
   }
 
-  const paint = () => {
+  /* ---------- Paso 1: selección de estudios ---------- */
+  const paintPicker = () => {
+    const q = (root.querySelector('#tpl-q')?.value || '').trim().toLowerCase();
+    const shown = q ? templates.filter((t) => t.name.toLowerCase().includes(q)) : templates;
+
+    root.innerHTML = `
+      <div class="mx-auto max-w-3xl space-y-5">
+        <a href="${backHref}" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+          ${icon('chevron-left', 'h-4 w-4')} Volver al panel
+        </a>
+
+        <div class="flex items-center gap-3">
+          <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">${icon('flask', 'h-6 w-6')}</span>
+          <div>
+            <h3 class="text-lg font-bold text-slate-900">¿Qué estudios vas a membretar?</h3>
+            <p class="text-sm text-slate-500">
+              Sus determinaciones y valores de referencia se toman de la plantilla; el PDF solo aporta los resultados.
+            </p>
+          </div>
+        </div>
+
+        <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div class="relative">
+            <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${icon('search', 'h-5 w-5')}</span>
+            <input id="tpl-q" type="text" value="${escapeHtml(q)}" placeholder="Buscar estudio…" autocomplete="off"
+                   class="w-full rounded-xl border-0 bg-slate-50 py-2.5 pl-11 pr-4 text-sm outline-none ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500">
+          </div>
+          <div class="mt-3 max-h-80 space-y-1 overflow-y-auto">
+            ${!templates.length ? `
+              <div class="px-3 py-8 text-center">
+                <p class="text-sm text-slate-500">No hay plantillas de estudios todavía.</p>
+                <p class="mt-1 text-xs text-slate-400">
+                  Créalas en <b>Admin Tools › Plantillas de Estudios</b> para que las referencias
+                  dejen de leerse del PDF.
+                </p>
+              </div>`
+              : shown.map((t) => `
+              <label class="flex cursor-pointer items-center gap-3 rounded-lg px-3 py-2 hover:bg-slate-50">
+                <input type="checkbox" data-tpl="${t.id}" ${picked.includes(t.id) ? 'checked' : ''}
+                       class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                <span class="min-w-0 flex-1 text-sm font-medium text-slate-800">${escapeHtml(t.name)}</span>
+                <span class="shrink-0 text-xs text-slate-400">${t.item_count} determinación(es)</span>
+              </label>`).join('')}
+          </div>
+        </section>
+
+        <section class="rounded-2xl bg-indigo-50 p-4 ring-1 ring-indigo-200">
+          <p class="text-xs font-bold uppercase tracking-wide text-indigo-900">Seleccionados (${picked.length})</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            ${picked.length
+              ? picked.map((id) => {
+                  const t = templates.find((x) => x.id === id);
+                  return `<span class="inline-flex items-center gap-1.5 rounded-full bg-white px-3 py-1 text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                    ${escapeHtml(t ? t.name : '')}
+                    <button type="button" data-unpick="${id}" class="text-indigo-400 hover:text-indigo-700">${icon('x', 'h-3.5 w-3.5')}</button>
+                  </span>`;
+                }).join('')
+              : '<span class="text-sm text-indigo-500">Todavía no eliges ninguno.</span>'}
+          </div>
+        </section>
+
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <button id="btn-skip" type="button" class="rounded-lg px-4 py-2.5 text-sm font-semibold text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">
+            Continuar sin plantilla
+          </button>
+          <button id="btn-step2" type="button" ${picked.length ? '' : 'disabled'}
+                  class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">
+            Siguiente
+          </button>
+        </div>
+      </div>`;
+
+    const input = root.querySelector('#tpl-q');
+    input.addEventListener('input', debounce(() => {
+      const pos = input.selectionStart;
+      paintPicker();
+      const next = root.querySelector('#tpl-q');
+      next.focus();
+      next.setSelectionRange(pos, pos);
+    }, 250));
+
+    root.querySelectorAll('[data-tpl]').forEach((cb) => cb.addEventListener('change', () => {
+      const id = +cb.dataset.tpl;
+      picked = cb.checked ? [...picked, id] : picked.filter((x) => x !== id);
+      paintPicker();
+    }));
+    root.querySelectorAll('[data-unpick]').forEach((b) => b.addEventListener('click', () => {
+      picked = picked.filter((x) => x !== +b.dataset.unpick);
+      paintPicker();
+    }));
+
+    root.querySelector('#btn-skip').addEventListener('click', () => { step = 2; paint(); });
+    root.querySelector('#btn-step2').addEventListener('click', async () => {
+      try {
+        const res = await apiGet('labs/seed', { study_ids: picked.join(',') });
+        data.studies = res.studies.map((s) => ({
+          name: s.name,
+          is_extra: !!s.is_extra,
+          items: s.items.map((it) => ({
+            name: it.name,
+            value: it.value,
+            unit: it.unit,
+            technique: it.technique,
+            reference: (it.applicable || []).join(' · '),
+            flag: it.flag,
+            origin: it.origin,
+            ranges: it.ranges,
+            conditions: it.conditions || [],
+            condition: '',
+            dropped: false,
+          })),
+        }));
+        step = 2;
+        paint();
+      } catch (e) { toast(e.message, 'error'); }
+    });
+  };
+
+  const paintForm = () => {
+    // Sembrado desde plantilla y todavía sin resultados: falta subir el PDF
+    const seeded = data.studies.length > 0 && data.studies.every((s) => s.items.every((it) => !String(it.value || '').trim()));
+
     root.innerHTML = `
       <div class="mx-auto max-w-5xl space-y-5">
         <a href="${backHref}" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
@@ -341,11 +467,28 @@ async function renderOrderForm(root, category, cat, docType, docId) {
             <span class="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700">${icon('flask', 'h-6 w-6')}</span>
             <div>
               <h3 class="text-lg font-bold text-slate-900">${docId ? 'Editar' : 'Nueva'} orden · Análisis clínicos</h3>
-              <p class="text-sm text-slate-500">Sube el PDF del laboratorio de referencia y revisa los datos.</p>
+              <p class="text-sm text-slate-500">
+                ${picked.length
+                  ? 'Sube el PDF del laboratorio: solo se toman de ahí los resultados.'
+                  : 'Sube el PDF del laboratorio de referencia y revisa los datos.'}
+              </p>
             </div>
           </div>
           ${data.status === 'revisado' ? '<span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Revisado</span>' : ''}
         </div>
+
+        ${seeded ? `
+        <section class="rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50 p-6 text-center">
+          <p class="text-sm font-semibold text-indigo-900">Plantilla lista · faltan los resultados</p>
+          <p class="mx-auto mt-1 max-w-md text-xs text-indigo-700">
+            Las determinaciones y sus valores de referencia ya están puestos. Sube el PDF del
+            laboratorio para llenar los resultados, o captúralos a mano en la tabla.
+          </p>
+          <label class="mt-4 inline-flex cursor-pointer items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">
+            ${icon('upload', 'h-4 w-4')} <span id="lab-label">Seleccionar PDF</span>
+            <input type="file" id="lab-file" accept="application/pdf" class="hidden">
+          </label>
+        </section>` : ''}
 
         ${!data.studies.length ? `
         <section class="rounded-2xl border-2 border-dashed border-slate-300 bg-white p-8 text-center">
@@ -432,12 +575,17 @@ async function renderOrderForm(root, category, cat, docType, docId) {
     const box = root.querySelector('#studies-box');
     if (!box) return;
     box.innerHTML = data.studies.map((study, si) => `
-      <section class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <section class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 ${study.is_extra ? 'ring-amber-300' : ''}">
         <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
           <input type="text" data-study="${si}" value="${escapeHtml(study.name)}"
                  class="min-w-0 flex-1 rounded-lg border-0 bg-transparent px-1 py-1 text-sm font-bold text-slate-900 outline-none hover:bg-slate-50 focus:bg-slate-50 focus:ring-2 focus:ring-indigo-500">
-          <span class="shrink-0 text-xs text-slate-400">${study.items.length} determinación(es)</span>
+          <span class="shrink-0 text-xs text-slate-400">${study.items.filter((i) => !i.dropped).length} determinación(es)</span>
         </div>
+        ${study.is_extra ? `
+          <p class="border-b border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            El PDF trajo estas determinaciones y ninguna plantilla las contempla. Revísalas: quedan
+            en el reporte salvo que las descartes.
+          </p>` : ''}
         <div class="overflow-x-auto">
           <table class="w-full text-left text-sm">
             <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -447,13 +595,14 @@ async function renderOrderForm(root, category, cat, docType, docId) {
                 <th class="px-3 py-2 w-24">Unidad</th>
                 <th class="px-3 py-2">Valor de referencia</th>
                 <th class="px-3 py-2 w-16">Origen</th>
+                <th class="px-3 py-2 w-10"></th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
               ${study.items.map((it, ii) => `
-                <tr class="${it.flag ? 'bg-red-50/60' : ''}">
+                <tr class="${it.dropped ? 'opacity-40' : (it.origin === 'faltante' && !it.value ? 'bg-amber-50/70' : (it.flag ? 'bg-red-50/60' : ''))}">
                   <td class="px-3 py-1.5"><input type="text" data-cell="${si}.${ii}.name" value="${escapeHtml(it.name)}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400"></td>
-                  <td class="px-3 py-1.5"><input type="text" data-cell="${si}.${ii}.value" value="${escapeHtml(it.value)}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-right text-sm font-semibold ${it.flag ? 'text-red-700' : ''} outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400"></td>
+                  <td class="px-3 py-1.5"><input type="text" data-cell="${si}.${ii}.value" value="${escapeHtml(it.value)}" placeholder="—" class="w-full rounded border-0 bg-transparent px-1 py-1 text-right text-sm font-semibold ${it.flag ? 'text-red-700' : ''} outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400"></td>
                   <td class="px-3 py-1.5"><input type="text" data-cell="${si}.${ii}.unit" value="${escapeHtml(it.unit || '')}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm text-slate-500 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400"></td>
                   <td class="px-3 py-1.5">
                     <input type="text" data-cell="${si}.${ii}.reference" value="${escapeHtml(it.reference || '')}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400">
@@ -465,6 +614,12 @@ async function renderOrderForm(root, category, cat, docType, docId) {
                       </select>` : ''}
                   </td>
                   <td class="px-3 py-1.5 text-center">${originBadge(it.origin)}</td>
+                  <td class="px-3 py-1.5 text-center">
+                    <button type="button" data-drop="${si}.${ii}" title="${it.dropped ? 'Volver a incluir' : 'No aplica: quitar del reporte'}"
+                            class="rounded p-1 ${it.dropped ? 'text-emerald-600 hover:bg-emerald-50' : 'text-slate-300 hover:bg-red-50 hover:text-red-600'}">
+                      ${icon(it.dropped ? 'undo' : 'x', 'h-4 w-4')}
+                    </button>
+                  </td>
                 </tr>`).join('')}
             </tbody>
           </table>
@@ -475,8 +630,16 @@ async function renderOrderForm(root, category, cat, docType, docId) {
       el.addEventListener('input', () => {
         const [si, ii, field] = el.dataset.cell.split('.');
         data.studies[si].items[ii][field] = el.value;
+        if (field === 'value') refreshReviewGate(root);
       });
     });
+    box.querySelectorAll('[data-drop]').forEach((b) => b.addEventListener('click', () => {
+      const [si, ii] = b.dataset.drop.split('.');
+      const item = data.studies[si].items[ii];
+      item.dropped = !item.dropped;
+      paintStudies(root);
+      refreshReviewGate(root);
+    }));
     box.querySelectorAll('[data-study]').forEach((el) => {
       el.addEventListener('input', () => { data.studies[el.dataset.study].name = el.value; });
     });
@@ -538,6 +701,9 @@ async function renderOrderForm(root, category, cat, docType, docId) {
       if (label) label.textContent = 'Leyendo…';
       const fd = new FormData();
       fd.append('file', file);
+      // Con plantillas elegidas el PDF solo aporta resultados: las referencias las
+      // pone el catálogo, no el texto del reporte
+      picked.forEach((id) => fd.append('study_ids[]', id));
       try {
         const res = await fetch('api/index.php?r=labs/parse', {
           method: 'POST',
@@ -553,6 +719,7 @@ async function renderOrderForm(root, category, cat, docType, docId) {
         data.clinical.medico = d.patient.medico || data.clinical.medico;
         data.studies = d.studies.map((s) => ({
           name: s.name,
+          is_extra: !!s.is_extra,
           items: s.items.map((it) => ({
             name: it.name,
             value: it.value,
@@ -564,10 +731,14 @@ async function renderOrderForm(root, category, cat, docType, docId) {
             ranges: it.ranges,
             conditions: it.conditions || [],
             condition: '',
+            dropped: false,
           })),
         }));
         const total = data.studies.reduce((n, s) => n + s.items.length, 0);
-        toast(`Leído: ${data.studies.length} estudio(s), ${total} determinaciones`);
+        const missing = pendingItems().length;
+        toast(missing
+          ? `Leído: ${total} determinaciones, ${missing} sin resultado`
+          : `Leído: ${data.studies.length} estudio(s), ${total} determinaciones`);
         paint();
       } catch (e) {
         if (label) label.textContent = 'Seleccionar PDF';
@@ -576,6 +747,41 @@ async function renderOrderForm(root, category, cat, docType, docId) {
         input.value = '';
       }
     });
+  };
+
+  /** Determinaciones esperadas que siguen sin resultado y sin descartar. */
+  const pendingItems = () => {
+    const out = [];
+    data.studies.forEach((s) => s.items.forEach((it) => {
+      if (!it.dropped && it.origin === 'faltante' && !String(it.value || '').trim()) {
+        out.push(it.name);
+      }
+    }));
+    return out;
+  };
+
+  /**
+   * "Revisado" se habilita solo cuando no quedan huecos: con plantillas sabemos qué
+   * debía traer el estudio, así que un PDF mal leído ya no puede colarse como reporte
+   * incompleto sin que nadie lo note.
+   */
+  const refreshReviewGate = (root) => {
+    const btn = root.querySelector('#btn-reviewed');
+    const hint = root.querySelector('#review-hint');
+    if (!btn) return;
+    const pending = pendingItems();
+    btn.disabled = !reviewed || pending.length > 0;
+    if (!hint) return;
+    if (pending.length) {
+      hint.className = 'text-right text-xs font-semibold text-amber-700';
+      hint.textContent = `Faltan ${pending.length} resultado(s) por capturar o descartar: ${pending.slice(0, 3).join(', ')}${pending.length > 3 ? '…' : ''}`;
+    } else if (!reviewed) {
+      hint.className = 'text-right text-xs text-slate-400';
+      hint.textContent = 'Pulsa "Siguiente" para revisar los datos antes de guardar.';
+    } else {
+      hint.className = 'text-right text-xs text-slate-400';
+      hint.textContent = 'Cuando termines de revisar, pulsa "Revisado" para guardar el reporte.';
+    }
   };
 
   const collect = () => {
@@ -589,13 +795,18 @@ async function renderOrderForm(root, category, cat, docType, docId) {
     ['fecha_reporte', 'medico', 'toma_muestra', 'kit'].forEach((k) => {
       clinical[k] = (fd.get('c_' + k) || '').toString().trim();
     });
+    // Lo descartado no se guarda; el formato de results no cambia, para que los
+    // reportes viejos y los nuevos se impriman con el mismo generador de PDF.
+    const results = data.studies
+      .map((s) => ({ name: s.name, items: s.items.filter((it) => !it.dropped) }))
+      .filter((s) => s.items.length);
     return {
       id: currentId || undefined,
       doc_type: docType,
       folio: (fd.get('p_folio') || '').toString().trim(),
       patient_data: patient,
       clinical_data: clinical,
-      results: data.studies,
+      results,
       notes: (fd.get('notes') || '').toString(),
     };
   };
@@ -622,20 +833,26 @@ async function renderOrderForm(root, category, cat, docType, docId) {
     root.querySelector('#btn-next').addEventListener('click', () => {
       document.getElementById('module-root').scrollTo({ top: 0, behavior: 'smooth' });
       reviewed = true;
-      root.querySelector('#btn-reviewed').disabled = false;
-      root.querySelector('#review-hint').textContent =
-        'Cuando termines de revisar, pulsa "Revisado" para guardar el reporte.';
+      refreshReviewGate(root);
+      const pending = pendingItems();
       modal({
-        title: 'Revisa los datos',
-        content: `<p class="text-sm text-slate-600">
-            Verifica resultados y valores de referencia antes de guardar. Al terminar pulsa
-            <b class="text-slate-800">Revisado</b>.</p>`,
+        title: pending.length ? 'Faltan resultados' : 'Revisa los datos',
+        content: pending.length
+          ? `<p class="text-sm text-slate-600">
+               Estas determinaciones que la plantilla espera siguen sin resultado. Captúralas o
+               márcalas como "no aplica" con la ✕ de su renglón:</p>
+             <ul class="mt-2 list-disc space-y-0.5 pl-5 text-sm text-slate-700">
+               ${pending.map((n) => `<li>${escapeHtml(n)}</li>`).join('')}
+             </ul>`
+          : `<p class="text-sm text-slate-600">
+               Verifica resultados y valores de referencia antes de guardar. Al terminar pulsa
+               <b class="text-slate-800">Revisado</b>.</p>`,
         actions: [{ label: 'Aceptar', primary: true }],
       });
     });
 
     root.querySelector('#btn-reviewed').addEventListener('click', async () => {
-      if (!reviewed) return;
+      if (!reviewed || pendingItems().length) return;
       try {
         await save();
         await apiPost('documents/review', { id: currentId });
@@ -660,13 +877,26 @@ async function renderOrderForm(root, category, cat, docType, docId) {
         toast(`${res.saved} determinación(es) guardadas en el catálogo`);
       } catch (e) { toast(e.message, 'error'); }
     });
+
+    refreshReviewGate(root);
   };
 
+  const paint = () => (step === 1 ? paintPicker() : paintForm());
+
+  if (step === 1) {
+    root.innerHTML = spinner();
+    try {
+      templates = (await apiGet('labs/studies')).studies;
+    } catch { templates = []; }
+  }
   paint();
 }
 
 function originBadge(origin) {
   const map = {
+    plantilla: ['Plantilla', 'bg-emerald-100 text-emerald-700'],
+    faltante:  ['Falta', 'bg-red-100 text-red-700'],
+    extra:     ['Extra', 'bg-amber-100 text-amber-700'],
     catalogo:  ['Catálogo', 'bg-emerald-100 text-emerald-700'],
     detectado: ['Leído', 'bg-amber-100 text-amber-700'],
     sin_rango: ['Sin rango', 'bg-slate-100 text-slate-500'],

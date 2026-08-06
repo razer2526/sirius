@@ -1075,30 +1075,43 @@ function render_lab_report(
         $pdf->Ln(5);
     }
 
-    if (trim($notes) !== '') {
-        $pdf->ensureSpace(20);
-        $pdf->panelBar('Observaciones', '');
-        $pdf->Ln(3);
-        $pdf->SetFont('Helvetica', '', 9);
-        $pdf->SetTextColor(...PDF_INK);
-        foreach (preg_split('/\r?\n/', trim($notes)) as $line) {
-            if (trim($line) !== '') {
-                $pdf->MultiCell(0, 5.2, pdf_t(trim($line)), 0, 'L');
-            }
-        }
-    }
-
-    /* ---- Cierre: notas legales, firma y pie corporativo, todo en la misma hoja ---- */
+    /* ---- Cierre: observaciones, notas legales, firma y pie, todo en la misma hoja ---- */
     $notesText = array_filter([$tpl['reference_note'] ?? '', $tpl['outsourcing_note'] ?? '']);
     $notesHeight = 0;
     foreach ($notesText as $t) {
         $notesHeight += count($pdf->wrapLines($t, $pdf->usableWidth(), 'Helvetica', 'I', 7.4)) * 4 + 5;
     }
-    $closing = $notesHeight + 34 + (float)$lh['footer_height'] + (float)$lh['footer_bottom'];
+
+    // Las observaciones se miden junto con el cierre. Si el salto se decide después de
+    // imprimirlas, la sección se queda en una hoja y la firma se va a la siguiente.
+    $observations = array_values(array_filter(
+        array_map('trim', preg_split('/\r?\n/', trim($notes))),
+        static fn($l) => $l !== ''
+    ));
+    $observationsHeight = 0;
+    if ($observations) {
+        $observationsHeight = 9.5 + 3 + 2;   // barra de sección + aire arriba y abajo
+        foreach ($observations as $line) {
+            $observationsHeight += max(1, count($pdf->wrapLines($line, $pdf->usableWidth(), 'Helvetica', '', 9))) * 5.2;
+        }
+    }
+
+    $closing = $observationsHeight + $notesHeight + 34 + (float)$lh['footer_height'] + (float)$lh['footer_bottom'];
     if ($pdf->GetY() + $closing > $pdf->contentLimit()) {
         $pdf->AddPage();
     }
     $pdf->markLastPage();
+
+    if ($observations) {
+        $pdf->panelBar('Observaciones', '');
+        $pdf->Ln(3);
+        $pdf->SetFont('Helvetica', '', 9);
+        $pdf->SetTextColor(...PDF_INK);
+        foreach ($observations as $line) {
+            $pdf->MultiCell(0, 5.2, pdf_t($line), 0, 'L');
+        }
+        $pdf->Ln(2);
+    }
 
     foreach ($notesText as $t) {
         $pdf->referenceNote($t);

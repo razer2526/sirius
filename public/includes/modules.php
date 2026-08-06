@@ -122,4 +122,10 @@ return [
         'phase' => 2,
         'group' => 'admin_tools',
     ],
+    'plantillas_estudios' => [
+        'label' => 'Plantillas de Estudios',
+        'icon'  => 'clipboard',
+        'phase' => 2,
+        'group' => 'admin_tools',
+    ],
 ];

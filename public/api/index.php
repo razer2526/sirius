@@ -46,6 +46,7 @@ $routes = [
     'quotes'        => ['quotes.php', 'apps'],
     'vinculacion'   => ['vinculacion.php', 'vinculacion'],
     'commissions'   => ['commissions.php', 'apps'],
+    'lab_templates' => ['lab_templates.php', 'plantillas_estudios'],
 ];
 
 $r = (string)($_GET['r'] ?? '');
