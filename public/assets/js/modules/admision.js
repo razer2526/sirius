@@ -418,10 +418,20 @@ async function renderForm(root, serviceKey) {
         ${data.service_folio ? `
         <p class="mt-3 text-sm text-slate-500">Folio de orden de laboratorio</p>
         <p class="mt-0.5 text-xl font-bold tracking-wide text-sky-600">${escapeHtml(data.service_folio)}</p>` : ''}
+        ${data.mail && data.mail.sent
+          ? `<p class="mt-4 rounded-xl bg-emerald-50 px-4 py-2 text-sm text-emerald-800 ring-1 ring-emerald-200">
+               Ficha enviada${data.mail.to ? ` a ${escapeHtml(data.mail.to)}` : ' (solo copia interna)'}
+             </p>`
+          : (data.mail && data.mail.error
+            ? `<p class="mt-4 rounded-xl bg-amber-50 px-4 py-2 text-sm text-amber-800 ring-1 ring-amber-200">
+                 La admisión se guardó, pero la ficha no se pudo enviar. Puedes reenviarla desde el expediente.
+               </p>`
+            : '')}
         <div class="mt-8 flex flex-wrap justify-center gap-3">
           ${ctx.modules.some((m) => m.key === 'expedientes')
             ? `<a href="#/expedientes/${data.patient_id}" class="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500">Ver expediente</a>`
             : ''}
+          <a href="ficha.php?episode_id=${data.episode_id}" target="_blank" class="rounded-lg px-5 py-2.5 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">Ver ficha</a>
           <a href="#/admision" class="rounded-lg px-5 py-2.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">Nueva admisión</a>
         </div>
       </div>`;

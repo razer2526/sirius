@@ -7,6 +7,7 @@ export async function render(root, ctx) {
   const [view] = ctx.args;
   if (view === 'ia') return renderAI(root);
   if (view === 'calendario') return renderCalendar(root);
+  if (view === 'correo') return renderMail(root);
   return renderGrid(root);
 }
 
@@ -29,6 +30,7 @@ function renderGrid(root) {
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
         ${card('#/api/ia', 'Asistente de IA', 'Gemini, ChatGPT o Claude: proveedor, modelo, instrucciones y llave', 'sparkles', 'bg-violet-100 text-violet-700')}
         ${card('#/api/calendario', 'Calendario', 'Vinculación con Google Calendar', 'calendar', 'bg-sky-100 text-sky-700')}
+        ${card('#/api/correo', 'Correo', 'Envío de fichas de identificación a los pacientes', 'send', 'bg-emerald-100 text-emerald-700')}
       </div>
       <div id="api-state" class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 text-sm text-slate-500">${spinner()}</div>
     </div>`;
@@ -227,6 +229,160 @@ async function renderAI(root) {
       await apiPost('ai/save', collect());
       toast('Configuración guardada');
       render(root, { args: ['ia'] });
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
+}
+
+/* ---------- Correo saliente ---------- */
+async function renderMail(root) {
+  root.innerHTML = spinner();
+  const { config } = await apiGet('mail/get');
+
+  root.innerHTML = `
+    <div class="mx-auto max-w-3xl space-y-5">
+      <a href="#/api" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        ${icon('chevron-left', 'h-4 w-4')} Volver
+      </a>
+      <div>
+        <h3 class="text-lg font-bold text-slate-900">Correo saliente</h3>
+        <p class="text-sm text-slate-500">
+          Se usa para enviar al paciente su ficha de identificación en PDF. La contraseña se guarda
+          en el servidor y nunca viaja al navegador.
+        </p>
+      </div>
+
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <label class="flex cursor-pointer items-start gap-3">
+          <input type="checkbox" data-cfg="enabled" ${config.enabled ? 'checked' : ''}
+                 class="mt-0.5 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+          <span>
+            <span class="block text-sm font-semibold text-slate-800">Envío de correo activo</span>
+            <span class="block text-xs text-slate-500">Si se desactiva, las admisiones se siguen guardando pero no se envía la ficha.</span>
+          </span>
+        </label>
+      </section>
+
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-4">
+        <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Servidor SMTP</h4>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div class="sm:col-span-2">
+            <label class="${labelCls}">Servidor</label>
+            <input type="text" data-cfg="host" value="${escapeHtml(config.host)}" placeholder="mail.bosquespolanco.com" class="${inputCls}">
+          </div>
+          <div>
+            <label class="${labelCls}">Puerto</label>
+            <input type="number" data-cfg="port" value="${escapeHtml(String(config.port))}" class="${inputCls}">
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <label class="${labelCls}">Seguridad</label>
+            <select data-cfg="secure" class="${inputCls}">
+              <option value="ssl" ${config.secure === 'ssl' ? 'selected' : ''}>SSL (puerto 465)</option>
+              <option value="tls" ${config.secure === 'tls' ? 'selected' : ''}>TLS (puerto 587)</option>
+              <option value="" ${config.secure === '' ? 'selected' : ''}>Sin cifrado</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="${labelCls}">Usuario</label>
+            <input type="text" data-cfg="username" value="${escapeHtml(config.username)}" placeholder="id@bosquespolanco.com" class="${inputCls}">
+          </div>
+        </div>
+        <div>
+          <label class="${labelCls}">Contraseña${config.has_password ? ' <span class="normal-case text-slate-400">(guardada)</span>' : ''}</label>
+          <input type="password" data-cfg="password" autocomplete="off"
+                 placeholder="${config.has_password ? 'Escribe una nueva para reemplazarla' : 'Contraseña de la cuenta de correo'}" class="${inputCls}">
+          <p class="mt-1 text-xs text-slate-400">Es la contraseña de la cuenta en cPanel. Déjala vacía para conservar la actual.</p>
+        </div>
+      </section>
+
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-4">
+        <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Remitente</h4>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="${labelCls}">Correo del remitente</label>
+            <input type="email" data-cfg="from_email" value="${escapeHtml(config.from_email)}" placeholder="id@bosquespolanco.com" class="${inputCls}">
+          </div>
+          <div>
+            <label class="${labelCls}">Nombre visible</label>
+            <input type="text" data-cfg="from_name" value="${escapeHtml(config.from_name)}" class="${inputCls}">
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <label class="${labelCls}">Responder a</label>
+            <input type="email" data-cfg="reply_to" value="${escapeHtml(config.reply_to)}" placeholder="Opcional" class="${inputCls}">
+          </div>
+          <div>
+            <label class="${labelCls}">Copia oculta interna</label>
+            <input type="email" data-cfg="always_bcc" value="${escapeHtml(config.always_bcc)}" placeholder="id@bosquespolanco.com" class="${inputCls}">
+            <p class="mt-1 text-xs text-slate-400">Recibe copia de toda ficha enviada.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
+        <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Probar</h4>
+        <div class="flex flex-wrap items-end gap-2">
+          <div class="min-w-0 flex-1">
+            <label class="${labelCls}">Enviar un correo de prueba a</label>
+            <input type="email" id="test-to" placeholder="tu@correo.com" class="${inputCls}">
+          </div>
+          <button id="btn-test" type="button" class="rounded-lg px-4 py-2.5 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
+            Enviar prueba
+          </button>
+        </div>
+        <div id="test-result" class="hidden rounded-xl px-4 py-3 text-sm"></div>
+        <p class="text-xs text-slate-400">
+          Guarda la configuración antes de probar. Si el correo no llega, revisa en cPanel que
+          <b>Email Deliverability</b> muestre SPF y DKIM correctos para tu dominio.
+        </p>
+      </section>
+
+      <div class="flex justify-end">
+        <button id="btn-save" type="button" class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+          Guardar configuración
+        </button>
+      </div>
+    </div>`;
+
+  const collect = () => {
+    const out = {};
+    root.querySelectorAll('[data-cfg]').forEach((el) => {
+      out[el.dataset.cfg] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    return out;
+  };
+  const result = root.querySelector('#test-result');
+  const showResult = (text, ok) => {
+    result.className = `rounded-xl px-4 py-3 text-sm ${ok ? 'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200' : 'bg-red-50 text-red-700 ring-1 ring-red-200'}`;
+    result.textContent = text;
+    result.classList.remove('hidden');
+  };
+
+  root.querySelector('#btn-test').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const to = root.querySelector('#test-to').value.trim();
+    if (!to) { showResult('Escribe un correo para la prueba.', false); return; }
+    btn.disabled = true;
+    try {
+      await apiPost('mail/save', collect());
+      await apiPost('mail/test', { to });
+      showResult(`Correo enviado a ${to}. Revisa la bandeja (y la carpeta de spam).`, true);
+    } catch (err) {
+      showResult(err.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  root.querySelector('#btn-save').addEventListener('click', async () => {
+    try {
+      await apiPost('mail/save', collect());
+      toast('Configuración guardada');
+      render(root, { args: ['correo'] });
     } catch (e) {
       toast(e.message, 'error');
     }

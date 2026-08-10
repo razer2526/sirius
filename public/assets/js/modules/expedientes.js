@@ -280,6 +280,26 @@ async function renderDetail(root, patientId) {
     });
   });
 
+  root.querySelectorAll('[data-resend-ficha]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirmDialog(
+        'Reenviar ficha',
+        'Se enviará de nuevo la ficha de identificación al correo del paciente. ¿Continuar?',
+        { confirmLabel: 'Enviar' }
+      );
+      if (!ok) return;
+      btn.disabled = true;
+      try {
+        const res = await apiPost('episodes/resend_ficha', { episode_id: +btn.dataset.resendFicha });
+        toast(res.to ? `Ficha enviada a ${res.to}` : 'Ficha enviada (solo copia interna)');
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+
   root.querySelectorAll('[data-delivery-date]').forEach((input) => {
     input.addEventListener('change', async () => {
       try {
@@ -476,6 +496,12 @@ function episodeHtml(e) {
           <p class="text-xs text-slate-500">Admisión: ${fmtDateTime(e.admission_date)}</p>
         </div>
         <span class="rounded-full px-2.5 py-1 text-xs font-semibold ${e.status === 'activo' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${e.status}</span>
+        <div class="flex shrink-0 items-center gap-1">
+          <a href="ficha.php?episode_id=${e.id}" target="_blank" title="Ver la ficha de identificación"
+             class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('file-text', 'h-4 w-4')}</a>
+          <button type="button" data-resend-ficha="${e.id}" title="Reenviar la ficha por correo"
+                  class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('send', 'h-4 w-4')}</button>
+        </div>
       </div>
       <div class="space-y-3 px-5 py-4">
         ${e.reason ? `<p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Motivo:</span> ${escapeHtml(e.reason)}</p>` : ''}

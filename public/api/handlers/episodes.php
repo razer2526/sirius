@@ -2,6 +2,7 @@
 /** Handler episodes: admisiones. Requiere módulo 'admision'. */
 
 require_once __DIR__ . '/../../includes/services.php';
+require_once __DIR__ . '/../../includes/mailer.php';
 
 function handle_episodes(string $action): void
 {
@@ -171,13 +172,39 @@ function handle_episodes(string $action): void
                 'episode',
                 $episodeId
             );
+            $mail = ficha_send_email($episodeId);
+
             json_ok([
                 'episode_id'    => $episodeId,
                 'patient_id'    => $patientId,
                 'file_number'   => $fileNumber,
                 'service_folio' => $serviceFolio,
                 'new_patient'   => $isNewPatient,
+                'mail'          => $mail,
             ]);
+        }
+
+        /** Reenvía la ficha por correo (el envío automático pudo fallar sin que nadie lo note). */
+        case 'resend_ficha': {
+            // Los helpers de la ficha viven junto al generador de PDF; se cargan aquí
+            // y no al inicio del handler para no arrastrar FPDF en cada petición
+            require_once __DIR__ . '/../../includes/pdf_document.php';
+            $b = request_body();
+            $episodeId = (int)($b['episode_id'] ?? 0);
+            $episode = ficha_load_episode($episodeId);
+            if (!$episode) {
+                json_error('Admisión no encontrada', 404);
+            }
+            $me = current_user();
+            if (!is_admin_role($me) && $episode['assigned_user_id'] !== null
+                && (int)$episode['assigned_user_id'] !== (int)$me['id']) {
+                json_error('Esta admisión está asignada a otro usuario', 403);
+            }
+            $result = ficha_send_email($episodeId, true);
+            if (!$result['sent']) {
+                json_error($result['error'] ?: 'No se pudo enviar la ficha', 422);
+            }
+            json_ok($result);
         }
 
         /** Edita la fecha de entrega estimada y/o marca (o desmarca) la entrega de resultados. */
