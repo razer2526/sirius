@@ -1570,7 +1570,9 @@ function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array 
             }
             if ($f['t'] === 'checkbox') {
                 $display = 'Sí';
-            } elseif ($f['t'] === 'checkdetail') {
+            } elseif ($f['t'] === 'checkdetail' || ($f['t'] === 'symptom' && $v === true)) {
+                // En 'symptom', $v === true es un episodio anterior al cambio de tipo:
+                // el síntoma era una casilla y la duración iba en <clave>_det
                 $det = $data[$f['k'] . '_det'] ?? '';
                 $display = $det !== '' ? 'Sí — ' . (string)$det : 'Sí';
             } else {
