@@ -18,6 +18,10 @@ function handle_auth(string $action): void
                 ];
             }
         }
+        // La interfaz necesita saber si el correo saliente está activo para no
+        // ofrecer acciones que siempre fallarían (reenviar la ficha, por ejemplo).
+        require_once __DIR__ . '/../../includes/mailer.php';
+
         json_ok([
             'user' => [
                 'id'        => (int)$user['id'],
@@ -27,6 +31,7 @@ function handle_auth(string $action): void
             ],
             'modules'  => user_modules(),
             'registry' => $registry,
+            'features' => ['mail' => mail_is_ready()],
             'csrf'     => csrf_token(),
         ]);
     }

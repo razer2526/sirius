@@ -499,8 +499,9 @@ function episodeHtml(e) {
         <div class="flex shrink-0 items-center gap-1">
           <a href="ficha.php?episode_id=${e.id}" target="_blank" title="Ver la ficha de identificación"
              class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('file-text', 'h-4 w-4')}</a>
+          ${ctx.features?.mail ? `
           <button type="button" data-resend-ficha="${e.id}" title="Reenviar la ficha por correo"
-                  class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('send', 'h-4 w-4')}</button>
+                  class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('send', 'h-4 w-4')}</button>` : ''}
         </div>
       </div>
       <div class="space-y-3 px-5 py-4">
