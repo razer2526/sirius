@@ -632,6 +632,76 @@ class SiriusDocPDF extends FPDF
     }
 
     /**
+     * Renglones compactos "etiqueta: valor" para la ficha de identificación.
+     *
+     * fieldsTable() apila etiqueta y valor en celdas con recuadro (~12 mm por par),
+     * lo que en la ficha empuja la firma a una segunda hoja. Aquí van en la misma
+     * línea (~6.5 mm), que es como se lee un comprobante y permite que quepa en una
+     * sola página. Un valor largo ocupa el ancho completo en lugar de recortarse.
+     */
+    public function compactRows(array $pairs, int $cols = 2): void
+    {
+        if (!$pairs) {
+            return;
+        }
+        $w = $this->usableWidth();
+        $colW = $w / $cols;
+        $h = 6.2;
+        $gap = 2.0;
+
+        $labelW = static function (SiriusDocPDF $pdf, string $label): float {
+            $pdf->SetFont('Helvetica', '', 7.8);
+            return $pdf->GetStringWidth(pdf_t($label . ':')) + 2.0;
+        };
+
+        $col = 0;
+        foreach ($pairs as [$label, $value]) {
+            $label = (string)$label;
+            $value = trim((string)$value);
+            if ($value === '') {
+                continue;
+            }
+            $lw = $labelW($this, $label);
+            $this->SetFont('Helvetica', 'B', 8.6);
+            $needed = $this->GetStringWidth(pdf_t($value)) + $lw + 4;
+            // Un valor que no cabe en su columna ocupa el renglón completo
+            $full = $needed > $colW;
+
+            if ($full && $col !== 0) {
+                $this->Ln($h);
+                $col = 0;
+            }
+            $this->ensureSpace($h + 1);
+            if ($col === 0) {
+                $this->SetX($this->left());
+            }
+
+            $cellW = $full ? $w : $colW;
+            $x = $this->GetX();
+            $y = $this->GetY();
+
+            $this->SetFont('Helvetica', '', 7.8);
+            $this->SetTextColor(...PDF_MUTED);
+            $this->Cell($lw, $h, pdf_t($label . ':'), 0, 0, 'L');
+
+            $this->SetFont('Helvetica', 'B', 8.6);
+            $this->SetTextColor(...PDF_INK);
+            $this->Cell($cellW - $lw - $gap, $h, pdf_t(pdf_fit($this, $value, $cellW - $lw - $gap)), 0, 0, 'L');
+
+            $this->SetXY($x + $cellW, $y);
+            $col = $full ? 0 : ($col + 1) % $cols;
+            if ($col === 0) {
+                $this->SetXY($this->left(), $y + $h);
+            }
+        }
+        if ($col !== 0) {
+            $this->Ln($h);
+        }
+        $this->SetX($this->left());
+        $this->SetTextColor(...PDF_INK);
+    }
+
+    /**
      * Tabla de 2 columnas para los campos capturados de una sección: cada campo es
      * una celda con fondo y borde (etiqueta arriba, valor abajo, ambos con salto de
      * línea si hace falta), agrupadas en filas — nunca un párrafo corrido de texto.
@@ -1548,8 +1618,172 @@ function render_patient_record_pdf(
     return $pdf->Output('S');
 }
 
+/**
+ * Ficha de identificación de una admisión: el comprobante que se le manda al
+ * paciente por correo al registrarlo. Es un documento de una sola admisión, a
+ * diferencia de render_patient_record_pdf(), que imprime el expediente completo.
+ *
+ * Se omiten las secciones sin datos: la ficha de laboratorio trae estudios y pago,
+ * la de podología no, y ninguna de las dos debe mostrar encabezados vacíos.
+ */
+function render_ficha_pdf(
+    array $episode,
+    array $patient,
+    array $studyLines,
+    string $clinicName,
+    ?string $path = null
+): string {
+    require_once __DIR__ . '/services.php';
+
+    $lh = letterhead_config();
+    $pdf = new SiriusDocPDF($lh, $clinicName);
+
+    $fullName = trim(($patient['first_name'] ?? '') . ' ' . ($patient['paternal_surname'] ?? '') . ' ' . ($patient['maternal_surname'] ?? ''));
+    $age = pdf_calc_age($patient['birth_date'] ?? null);
+    $sex = ['F' => 'Femenino', 'M' => 'Masculino', 'O' => 'Otro'][$patient['sex'] ?? ''] ?? '—';
+    $admittedAt = $episode['admission_date'] ?? date('Y-m-d H:i:s');
+
+    $pdf->setPatientInfo([
+        ['Folio', (string)($patient['file_number'] ?? '—'), 'Fecha y hora', date('d/m/Y H:i', strtotime($admittedAt)), 'bold' => true],
+        ['Paciente', $fullName ?: '—', null, null],
+    ]);
+    $pdf->AddPage();
+    $pdf->studyTitle('Ficha de identificación');
+
+    /* ---- Identificación ---- */
+    $service = (string)($episode['service'] ?? '');
+    $pairs = [
+        ['Fecha de nacimiento', !empty($patient['birth_date']) ? date('d/m/Y', strtotime($patient['birth_date'])) : '—'],
+        ['Edad', $age !== null ? $age . ' años' : '—'],
+        ['Sexo', $sex],
+        ['Teléfono', (string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: '—')],
+        ['Correo electrónico', (string)($patient['email'] ?? '—') ?: '—'],
+        ['Servicio', SERVICE_LABELS[$service] ?? $service ?: '—'],
+    ];
+    if (!empty($episode['service_folio'])) {
+        $pairs[] = ['Folio de orden', (string)$episode['service_folio']];
+    }
+    if (!empty($episode['referring_doctor'])) {
+        $pairs[] = ['Médico solicitante', (string)$episode['referring_doctor']];
+    }
+    $pdf->sectionLabel('Datos del paciente');
+    $pdf->compactRows($pairs);
+    $pdf->Ln(2);
+
+    /* ---- Estudios y pago (laboratorio) ---- */
+    if ($studyLines) {
+        $total = 0.0;
+        $rows = [];
+        foreach ($studyLines as $l) {
+            $amount = (float)($l['amount_charged'] ?? 0);
+            $total += $amount;
+            $rows[] = [(string)($l['study_name'] ?? 'Estudio'), '$' . number_format($amount, 2)];
+        }
+        $pdf->sectionLabel('Estudios');
+        $pdf->compactRows($rows, 1);
+        $pdf->Ln(1);
+
+        $serviceData = is_array($episode['service_data'] ?? null)
+            ? $episode['service_data']
+            : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
+        $pdf->compactRows([
+            ['Método de pago', (string)($serviceData['pago_metodo'] ?? '') ?: '—'],
+            ['Total', '$' . number_format($total, 2)],
+        ]);
+        $pdf->Ln(2);
+    }
+
+    /* ---- Lo capturado en la ficha del servicio (historia, síntomas, medicamentos, firma) ---- */
+    $serviceData = is_array($episode['service_data'] ?? null)
+        ? $episode['service_data']
+        : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
+    if (!empty($episode['reason'])) {
+        $pdf->sectionLabel('Motivo');
+        $pdf->compactRows([['Motivo de la admisión', (string)$episode['reason']]], 1);
+        $pdf->Ln(2);
+    }
+    // El pago ya se imprimió arriba junto con los estudios, y la firma se dibuja
+    // aparte al cierre para que no se quede sola en una hoja nueva
+    $skip = ['lab_pago', 'firma'];
+    $sections = array_values(array_filter(
+        service_sections($service, 'admission'),
+        static fn($s) => !in_array($s['id'] ?? '', $skip, true)
+    ));
+    render_pdf_service_sections($pdf, $sections, $serviceData, true);
+
+    /* ---- Cierre: firma y pie corporativo, medidos juntos ---- */
+    $signature = (string)($serviceData['firma'] ?? '');
+    $closing = ($signature !== '' ? 46.0 : 0.0)
+        + (float)$lh['footer_height'] + (float)$lh['footer_bottom'] + 6;
+    if ($pdf->GetY() + $closing > $pdf->contentLimit()) {
+        $pdf->AddPage();
+    }
+    $pdf->markLastPage();
+
+    if ($signature !== '') {
+        $pdf->Ln(4);
+        $pdf->dataUrlImage($signature, 'Firma del paciente', null, true);
+    }
+
+    if ($path) {
+        $pdf->Output('F', $path);
+        return $path;
+    }
+    return $pdf->Output('S');
+}
+
+/* ---- Datos que necesita la ficha, compartidos por ficha.php y el envío automático ---- */
+
+function ficha_load_episode(int $episodeId): ?array
+{
+    $st = db()->prepare('SELECT * FROM episodes WHERE id = ?');
+    $st->execute([$episodeId]);
+    return $st->fetch() ?: null;
+}
+
+function ficha_study_lines(int $episodeId): array
+{
+    try {
+        $st = db()->prepare('SELECT study_name, amount_charged FROM episode_studies WHERE episode_id = ? ORDER BY id');
+        $st->execute([$episodeId]);
+        return $st->fetchAll();
+    } catch (Throwable $e) {
+        return [];   // instalaciones sin la tabla todavía
+    }
+}
+
+function ficha_clinic_name(): string
+{
+    try {
+        $st = db()->prepare('SELECT svalue FROM settings WHERE skey = ?');
+        $st->execute(['clinic_name']);
+        $row = $st->fetch();
+        if ($row && $row['svalue']) {
+            return (string)$row['svalue'];
+        }
+    } catch (Throwable $e) {
+    }
+    return 'Laboratorio y Clínica Bosques Polanco';
+}
+
+/**
+ * Nombre de archivo seguro a partir del nombre del paciente.
+ *
+ * No se usa iconv con //TRANSLIT porque su resultado depende de la plataforma: en
+ * Windows convierte "í" en "'i", y el apóstrofo termina como guion ("Mar-ia").
+ * El mapa explícito da el mismo nombre en desarrollo y en el servidor.
+ */
+function ficha_slug(string $name): string
+{
+    $ascii = strtr($name, [
+        'á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n',
+        'Á' => 'A', 'É' => 'E', 'Í' => 'I', 'Ó' => 'O', 'Ú' => 'U', 'Ü' => 'U', 'Ñ' => 'N',
+    ]);
+    return trim(preg_replace('/[^A-Za-z0-9]+/', '-', $ascii), '-') ?: 'paciente';
+}
+
 /** Imprime las secciones capturadas del catálogo (admisión o sesión) que traigan datos. */
-function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array $data): void
+function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array $data, bool $compact = false): void
 {
     if (!$data) {
         return;
@@ -1585,7 +1819,9 @@ function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array 
         }
         $pdf->sectionLabel($sec['title']);
         if ($pairs) {
-            $pdf->fieldsTable($pairs);
+            // La ficha usa renglones compactos para caber en una hoja; el expediente
+            // usa celdas con recuadro, que se leen mejor en un documento largo
+            $compact ? $pdf->compactRows($pairs) : $pdf->fieldsTable($pairs);
         }
         if ($signature) {
             $pdf->dataUrlImage(

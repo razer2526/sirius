@@ -9,6 +9,9 @@ const state = {
   user: null,
   modules: [],
   registry: [],
+  // Capacidades del servidor que la interfaz necesita conocer (p. ej. si el
+  // correo saliente está configurado) para no ofrecer acciones inservibles
+  features: {},
   activeModule: 'dashboard',
 };
 
@@ -23,6 +26,7 @@ async function boot() {
   state.user = session.user;
   state.modules = session.modules;
   state.registry = session.registry;
+  state.features = session.features || {};
 
   renderTopbar();
   renderSidebar();
