@@ -69,6 +69,40 @@ if ($episodes) {
     }
 }
 
+/* ---- Impresión acotada a una visita ----
+ * Sin parámetros se imprime el expediente completo, como siempre. Con
+ * episode_id se limita a ese episodio y con consultation_id a una sola
+ * consulta, que es lo que usan los botones de cada pestaña. El filtrado
+ * ocurre aquí sobre los arreglos que ya se arman; el generador de PDF no
+ * necesita saber nada de esto.
+ */
+$onlyEpisode = (int)($_GET['episode_id'] ?? 0);
+$onlyConsult = (int)($_GET['consultation_id'] ?? 0);
+
+if ($onlyEpisode > 0) {
+    $episodes = array_values(array_filter($episodes, fn($e) => (int)$e['id'] === $onlyEpisode));
+    if (!$episodes) {
+        http_response_code(404);
+        exit('Visita no encontrada o sin acceso.');
+    }
+    $consultsByEpisode = array_intersect_key($consultsByEpisode, [$onlyEpisode => true]);
+    $studiesByEpisode = array_intersect_key($studiesByEpisode, [$onlyEpisode => true]);
+
+    if ($onlyConsult > 0) {
+        $filtered = array_values(array_filter(
+            $consultsByEpisode[$onlyEpisode] ?? [],
+            fn($c) => (int)$c['id'] === $onlyConsult
+        ));
+        if (!$filtered) {
+            http_response_code(404);
+            exit('Consulta no encontrada.');
+        }
+        $consultsByEpisode = [$onlyEpisode => $filtered];
+        // Al imprimir una consulta suelta, los estudios de la admisión no aplican
+        $studiesByEpisode = [];
+    }
+}
+
 $clinicName = 'Laboratorio y Clínica Bosques Polanco';
 try {
     $st = db()->prepare('SELECT svalue FROM settings WHERE skey = ?');

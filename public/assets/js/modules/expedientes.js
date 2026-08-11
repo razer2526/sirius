@@ -6,7 +6,7 @@ import {
   inputCls, labelCls, debounce, spinner, fmtDate, fmtDateTime, calcAge, fullName, mdLite,
 } from '../ui.js';
 import { SERVICES, PATIENT_FIELDS, CLINICAL_FIELDS, loadCatalog } from '../services.js';
-import { sectionsHtml, initSections, collectSections, dataRowsHtml } from '../forms.js';
+import { sectionsHtml, initSections, fillSections, collectSections, dataRowsHtml } from '../forms.js';
 
 let ctx;
 let catalog = null;
@@ -25,12 +25,8 @@ function canCompleteEpisode(e) {
 }
 
 /* ================= Gráfica de progreso (Control de peso) ================= */
-const CHART_METRICS = [
-  ['peso_kg', 'Peso (kg)'],
-  ['imc', 'IMC'],
-  ['per_cintura', 'Cintura (cm)'],
-  ['bio_grasa_pct', '% Grasa corporal'],
-];
+// La lista de métricas ya no se fija aquí: la pestaña de Progreso la arma desde
+// el catálogo, así que una medición nueva en el JSON aparece sola.
 
 function chartPoints(e, metricKey) {
   const pts = [];
@@ -74,19 +70,6 @@ function renderChartSvg(points) {
       ${dots}
       ${labels}
     </svg>`;
-}
-
-function progressChartHtml(e) {
-  return `
-    <div class="rounded-xl bg-slate-50 px-4 py-3">
-      <div class="mb-1 flex items-center justify-between">
-        <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Progreso</p>
-        <select data-chart-metric="${e.id}" class="rounded-lg border-0 bg-white px-2 py-1 text-xs shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
-          ${CHART_METRICS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}
-        </select>
-      </div>
-      <div data-chart-box="${e.id}">${renderChartSvg(chartPoints(e, CHART_METRICS[0][0]))}</div>
-    </div>`;
 }
 
 export async function render(root, context) {
@@ -253,92 +236,14 @@ async function renderDetail(root, patientId) {
         <div id="patient-docs">${spinner()}</div>
       </div>
 
-      <!-- Timeline de episodios -->
-      <div>
-        <h4 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Historial por servicio</h4>
-        ${episodes.length ? `<div class="space-y-4">${episodes.map((e) => episodeHtml(e)).join('')}</div>`
-          : '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-500 shadow-sm ring-1 ring-slate-200">Sin episodios registrados.</div>'}
-      </div>
+      <!-- Visitas en pestañas -->
+      <div id="visits-section">${visitsSectionHtml(episodes)}</div>
     </div>`;
+
+  wireVisits(root, p, episodes, patientId);
 
   root.querySelector('#btn-new-consult').addEventListener('click', () => openConsultModal(p, episodes, patientId));
   loadPatientDocs(root, patientId);
-
-  root.querySelectorAll('[data-chart-metric]').forEach((sel) => {
-    sel.addEventListener('change', () => {
-      const ep = episodes.find((x) => x.id === +sel.dataset.chartMetric);
-      const box = root.querySelector(`[data-chart-box="${ep.id}"]`);
-      box.innerHTML = renderChartSvg(chartPoints(ep, sel.value));
-    });
-  });
-  root.querySelectorAll('[data-complete-consult]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const consultId = +btn.dataset.completeConsult;
-      const ep = episodes.find((x) => x.consultations.some((c) => c.id === consultId));
-      const consult = ep.consultations.find((c) => c.id === consultId);
-      openCompleteConsultModal(consult, ep, patientId);
-    });
-  });
-
-  root.querySelectorAll('[data-resend-ficha]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const ok = await confirmDialog(
-        'Reenviar ficha',
-        'Se enviará de nuevo la ficha de identificación al correo del paciente. ¿Continuar?',
-        { confirmLabel: 'Enviar' }
-      );
-      if (!ok) return;
-      btn.disabled = true;
-      try {
-        const res = await apiPost('episodes/resend_ficha', { episode_id: +btn.dataset.resendFicha });
-        toast(res.to ? `Ficha enviada a ${res.to}` : 'Ficha enviada (solo copia interna)');
-      } catch (e) {
-        toast(e.message, 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  });
-
-  root.querySelectorAll('[data-delivery-date]').forEach((input) => {
-    input.addEventListener('change', async () => {
-      try {
-        await apiPost('episodes/set_delivery', {
-          episode_id: +input.dataset.deliveryDate,
-          expected_delivery_date: input.value,
-        });
-        toast('Fecha de entrega actualizada');
-      } catch (e) {
-        toast(e.message, 'error');
-      }
-    });
-  });
-  root.querySelectorAll('[data-mark-delivered]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const ok = await confirmDialog('Marcar como entregado', '¿Confirmas que los resultados de este estudio ya se entregaron?', { confirmLabel: 'Marcar entregado' });
-      if (!ok) return;
-      try {
-        await apiPost('episodes/set_delivery', { episode_id: +btn.dataset.markDelivered, delivered: true });
-        toast('Resultados marcados como entregados');
-        renderDetail(root, patientId);
-      } catch (e) {
-        toast(e.message, 'error');
-      }
-    });
-  });
-  root.querySelectorAll('[data-undo-delivery]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const ok = await confirmDialog('Deshacer entrega', '¿Quitar la marca de "entregado" de este estudio?', { danger: true, confirmLabel: 'Deshacer' });
-      if (!ok) return;
-      try {
-        await apiPost('episodes/set_delivery', { episode_id: +btn.dataset.undoDelivery, delivered: false });
-        toast('Entrega deshecha');
-        renderDetail(root, patientId);
-      } catch (e) {
-        toast(e.message, 'error');
-      }
-    });
-  });
 
   const dxBtn = root.querySelector('#btn-dx');
   if (dxBtn) {
@@ -477,73 +382,363 @@ function deliveryRowHtml(e) {
     </div>`;
 }
 
-function episodeHtml(e) {
-  const svc = SERVICES[e.service] || { label: e.service, color: 'bg-slate-100 text-slate-700', icon: 'folder' };
-  const admSections = catalog[e.service]?.admission || [];
-  const sesSections = catalog[e.service]?.session || [];
-  const isControlPeso = e.service === 'control_peso';
-  // En Control de peso, la sección del médico se oculta al capturar (la llena después, aparte)
-  const nurseSesSections = isControlPeso ? sesSections.filter((s) => s.stage !== 'doctor') : sesSections;
+/* ================= Visitas en pestañas ================= */
+// Qué episodio y qué pestaña se están viendo. Vive en el módulo para que
+// sobreviva a los re-render (marcar entrega, guardar una edición…).
+let activeEpisodeId = null;
+let activeTab = 'admision';
+
+/** Consultas de más antigua a más nueva: "Consulta 1" debe ser la primera visita. */
+function consultsAsc(e) {
+  return [...(e.consultations || [])].sort((a, b) => a.consult_date.localeCompare(b.consult_date));
+}
+
+/** Sólo Control de peso captura antropometría, plicometría y bioimpedancia. */
+function hasProgressTab(e) {
+  return e.service === 'control_peso';
+}
+
+/** Ajusta el estado si el episodio o la pestaña activos ya no existen. */
+function normalizeVisitState(episodes) {
+  if (!episodes.length) {
+    activeEpisodeId = null;
+    return null;
+  }
+  let ep = episodes.find((e) => e.id === activeEpisodeId);
+  if (!ep) {
+    ep = episodes[0];
+    activeEpisodeId = ep.id;
+    activeTab = 'admision';
+  }
+  const valid = ['admision', ...consultsAsc(ep).map((c) => `c:${c.id}`), ...(hasProgressTab(ep) ? ['progreso'] : [])];
+  if (!valid.includes(activeTab)) activeTab = 'admision';
+  return ep;
+}
+
+function visitsSectionHtml(episodes) {
+  const ep = normalizeVisitState(episodes);
+  if (!ep) {
+    return `<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-500 shadow-sm ring-1 ring-slate-200">
+      Sin visitas registradas.</div>`;
+  }
+  const svc = SERVICES[ep.service] || { label: ep.service, color: 'bg-slate-100 text-slate-700', icon: 'folder' };
 
   return `
-    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-      <div class="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-3.5">
-        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${svc.color}">${icon(svc.icon, 'h-5 w-5')}</span>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-bold text-slate-900">${svc.label}
-            ${e.service_folio ? `<span class="ml-2 rounded-md bg-sky-50 px-1.5 py-0.5 text-xs font-bold text-sky-700 ring-1 ring-sky-200">Orden ${escapeHtml(e.service_folio)}</span>` : ''}
-          </p>
-          <p class="text-xs text-slate-500">Admisión: ${fmtDateTime(e.admission_date)}</p>
-        </div>
-        <span class="rounded-full px-2.5 py-1 text-xs font-semibold ${e.status === 'activo' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${e.status}</span>
-        <div class="flex shrink-0 items-center gap-1">
-          <a href="ficha.php?episode_id=${e.id}" target="_blank" title="Ver la ficha de identificación"
-             class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('file-text', 'h-4 w-4')}</a>
-          ${ctx.features?.mail ? `
-          <button type="button" data-resend-ficha="${e.id}" title="Reenviar la ficha por correo"
-                  class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('send', 'h-4 w-4')}</button>` : ''}
-        </div>
-      </div>
-      <div class="space-y-3 px-5 py-4">
-        ${e.reason ? `<p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Motivo:</span> ${escapeHtml(e.reason)}</p>` : ''}
-        ${e.referring_doctor ? `<p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Médico:</span> ${escapeHtml(e.referring_doctor)}</p>` : ''}
-        <p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Responsable asignado:</span> ${e.assigned_user_name ? escapeHtml(e.assigned_user_name) : 'General (todos con acceso lo ven)'}</p>
-        ${e.service === 'laboratorio' ? deliveryRowHtml(e) : ''}
-        ${e.service === 'laboratorio' ? studiesBlockHtml(e) : ''}
-        ${dataRowsHtml(admSections, e.service_data)}
-        ${isControlPeso ? progressChartHtml(e) : ''}
-        ${e.consultations.length ? `
-        <div>
-          <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Consultas subsecuentes (${e.consultations.length})</p>
-          <div class="space-y-2">
-            ${e.consultations.map((c) => {
-              const pending = isControlPeso && c.nurse_closed_at && !c.doctor_closed_at;
-              const complete = isControlPeso && !!c.doctor_closed_at;
-              return `
-              <div class="rounded-xl bg-slate-50 px-4 py-3">
-                <div class="flex flex-wrap items-center justify-between gap-2">
-                  <div class="flex items-center gap-2">
-                    <p class="text-xs font-semibold text-slate-500">${fmtDateTime(c.consult_date)}</p>
-                    ${pending ? '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Pendiente médico</span>' : ''}
-                    ${complete ? '<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Completa</span>' : ''}
-                  </div>
-                  ${c.created_by_name ? `<p class="text-xs text-slate-400">${escapeHtml(c.created_by_name)}</p>` : ''}
-                </div>
-                ${c.notes ? `<p class="mt-1 whitespace-pre-line text-sm text-slate-700">${escapeHtml(c.notes)}</p>` : ''}
-                <div class="mt-2 space-y-2">${dataRowsHtml(isControlPeso ? sesSections : nurseSesSections, c.params)}</div>
-                ${pending && canCompleteEpisode(e) ? `
-                <button type="button" data-complete-consult="${c.id}"
-                        class="mt-3 flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-violet-500">
-                  ${icon('edit', 'h-3.5 w-3.5')} Completar consulta (médico)
-                </button>` : ''}
-              </div>`;
+    <div class="space-y-3">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <h4 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Visitas</h4>
+        ${episodes.length > 1 ? `
+          <select id="episode-select" class="rounded-lg border-0 bg-white px-3 py-1.5 text-sm font-medium shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500">
+            ${episodes.map((e) => {
+              const s = SERVICES[e.service] || { label: e.service };
+              return `<option value="${e.id}" ${e.id === ep.id ? 'selected' : ''}>${escapeHtml(s.label)} · ${fmtDate(e.admission_date)}</option>`;
             }).join('')}
+          </select>` : ''}
+      </div>
+
+      <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="flex items-center gap-2 border-b border-slate-100 px-4 py-3">
+          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${svc.color}">${icon(svc.icon, 'h-5 w-5')}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-bold text-slate-900">${escapeHtml(svc.label)}
+              ${ep.service_folio ? `<span class="ml-1.5 rounded-md bg-sky-50 px-1.5 py-0.5 text-xs font-bold text-sky-700 ring-1 ring-sky-200">Orden ${escapeHtml(ep.service_folio)}</span>` : ''}
+            </p>
           </div>
-        </div>` : ''}
+          <span class="rounded-full px-2.5 py-1 text-xs font-semibold ${ep.status === 'activo' ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">${escapeHtml(ep.status)}</span>
+        </div>
+
+        <div class="flex gap-1 overflow-x-auto border-b border-slate-100 bg-slate-50 px-3 pt-2">
+          ${tabButtonHtml('admision', 'Admisión', fmtDate(ep.admission_date))}
+          ${consultsAsc(ep).map((c, i) => tabButtonHtml(`c:${c.id}`, `Consulta ${i + 1}`, fmtDate(c.consult_date))).join('')}
+          ${hasProgressTab(ep) ? tabButtonHtml('progreso', 'Progreso', `${consultsAsc(ep).length + 1} visita(s)`) : ''}
+        </div>
+
+        <div id="visit-panel" class="px-5 py-4">${visitPanelHtml(ep)}</div>
       </div>
     </div>`;
 }
 
+function tabButtonHtml(id, label, sub) {
+  const on = activeTab === id;
+  return `
+    <button type="button" data-tab="${escapeHtml(id)}"
+            class="shrink-0 rounded-t-lg border-b-2 px-3.5 py-2 text-left transition ${on ? 'border-indigo-600 bg-white' : 'border-transparent hover:bg-white/70'}">
+      <span class="block text-sm font-semibold ${on ? 'text-indigo-700' : 'text-slate-600'}">${escapeHtml(label)}</span>
+      <span class="block text-[11px] ${on ? 'text-indigo-400' : 'text-slate-400'}">${escapeHtml(sub)}</span>
+    </button>`;
+}
+
+/** Barra de acciones común a todas las pestañas. */
+function visitActionsHtml(buttons) {
+  return `<div class="mb-4 flex flex-wrap items-center gap-2 border-b border-slate-100 pb-3">${buttons.join('')}</div>`;
+}
+
+function actionBtn(attrs, iconName, label, cls) {
+  const style = cls || 'text-slate-600 ring-slate-300 hover:bg-slate-50';
+  return `<button type="button" ${attrs} class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold ring-1 ${style}">
+     ${icon(iconName, 'h-4 w-4')} ${escapeHtml(label)}</button>`;
+}
+
+function actionLink(href, iconName, label) {
+  return `<a href="${href}" target="_blank" class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
+     ${icon(iconName, 'h-4 w-4')} ${escapeHtml(label)}</a>`;
+}
+
+function visitPanelHtml(ep) {
+  if (activeTab === 'progreso') return progressPanelHtml(ep);
+  if (activeTab.startsWith('c:')) {
+    const c = (ep.consultations || []).find((x) => x.id === +activeTab.slice(2));
+    return c ? consultPanelHtml(c, ep) : '<p class="text-sm text-slate-500">Consulta no encontrada.</p>';
+  }
+  return admissionPanelHtml(ep);
+}
+
+function admissionPanelHtml(e) {
+  const admSections = catalog[e.service]?.admission || [];
+  const actions = [
+    actionBtn(`data-edit-episode="${e.id}"`, 'edit', 'Editar'),
+    actionLink(`print.php?patient_id=${e.patient_id}&episode_id=${e.id}`, 'printer', 'Imprimir'),
+    actionLink(`ficha.php?episode_id=${e.id}`, 'file-text', 'Ficha'),
+  ];
+  if (ctx.features?.mail) {
+    actions.push(actionBtn(`data-resend-ficha="${e.id}"`, 'send', 'Reenviar ficha'));
+  }
+
+  return `
+    ${visitActionsHtml(actions)}
+    <div class="space-y-3">
+      <p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Admisión:</span> ${fmtDateTime(e.admission_date)}</p>
+      ${e.reason ? `<p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Motivo:</span> ${escapeHtml(e.reason)}</p>` : ''}
+      ${e.referring_doctor ? `<p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Médico:</span> ${escapeHtml(e.referring_doctor)}</p>` : ''}
+      <p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Responsable asignado:</span> ${e.assigned_user_name ? escapeHtml(e.assigned_user_name) : 'General (todos con acceso lo ven)'}</p>
+      ${e.service === 'laboratorio' ? deliveryRowHtml(e) : ''}
+      ${e.service === 'laboratorio' ? studiesBlockHtml(e) : ''}
+      ${dataRowsHtml(admSections, e.service_data)}
+    </div>`;
+}
+
+function consultPanelHtml(c, e) {
+  const sesSections = catalog[e.service]?.session || [];
+  const isControlPeso = e.service === 'control_peso';
+  // En Control de peso la sección médica se llena al consolidar, no al capturar
+  const shown = isControlPeso ? sesSections : sesSections.filter((s) => s.stage !== 'doctor');
+  const pending = isControlPeso && c.nurse_closed_at && !c.doctor_closed_at;
+  const complete = isControlPeso && !!c.doctor_closed_at;
+
+  const actions = [
+    actionBtn(`data-edit-consult="${c.id}"`, 'edit', 'Editar'),
+    actionLink(`print.php?patient_id=${e.patient_id}&episode_id=${e.id}&consultation_id=${c.id}`, 'printer', 'Imprimir'),
+  ];
+  if (pending && canCompleteEpisode(e)) {
+    actions.push(actionBtn(`data-complete-consult="${c.id}"`, 'check-square', 'Consolidar',
+      'bg-violet-600 text-white ring-violet-600 hover:bg-violet-500'));
+  }
+
+  return `
+    ${visitActionsHtml(actions)}
+    <div class="space-y-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <p class="text-sm text-slate-700"><span class="font-semibold text-slate-500">Fecha:</span> ${fmtDateTime(c.consult_date)}</p>
+        ${pending ? '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700">Pendiente médico</span>' : ''}
+        ${complete ? '<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Consolidada</span>' : ''}
+        ${c.created_by_name ? `<span class="text-xs text-slate-400">· ${escapeHtml(c.created_by_name)}</span>` : ''}
+      </div>
+      ${c.notes ? `<p class="whitespace-pre-line text-sm text-slate-700">${escapeHtml(c.notes)}</p>` : ''}
+      ${dataRowsHtml(shown, c.params)}
+    </div>`;
+}
+
+/** Cablea el bloque de visitas. Se vuelve a llamar tras cada cambio de pestaña. */
+function wireVisits(root, patient, episodes, patientId) {
+  const box = root.querySelector('#visits-section');
+  if (!box) return;
+  const rerender = () => {
+    box.innerHTML = visitsSectionHtml(episodes);
+    wireVisits(root, patient, episodes, patientId);
+  };
+  const reload = () => renderDetail(root, patientId);
+
+  box.querySelector('#episode-select')?.addEventListener('change', (ev) => {
+    activeEpisodeId = +ev.target.value;
+    activeTab = 'admision';
+    rerender();
+  });
+  box.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
+    activeTab = b.dataset.tab;
+    rerender();
+  }));
+
+  const ep = episodes.find((e) => e.id === activeEpisodeId);
+  if (!ep) return;
+
+  box.querySelector('[data-edit-episode]')?.addEventListener('click', () => openEpisodeEditModal(ep, patientId));
+  box.querySelector('[data-edit-consult]')?.addEventListener('click', (ev) => {
+    const c = ep.consultations.find((x) => x.id === +ev.currentTarget.dataset.editConsult);
+    if (c) openConsultEditModal(c, ep, patientId);
+  });
+  box.querySelector('[data-complete-consult]')?.addEventListener('click', (ev) => {
+    const c = ep.consultations.find((x) => x.id === +ev.currentTarget.dataset.completeConsult);
+    if (c) openCompleteConsultModal(c, ep, patientId);
+  });
+
+  box.querySelector('[data-resend-ficha]')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const ok = await confirmDialog(
+      'Reenviar ficha',
+      'Se enviará de nuevo la ficha de identificación al correo del paciente. ¿Continuar?',
+      { confirmLabel: 'Enviar' }
+    );
+    if (!ok) return;
+    btn.disabled = true;
+    try {
+      const res = await apiPost('episodes/resend_ficha', { episode_id: +btn.dataset.resendFicha });
+      toast(res.to ? `Ficha enviada a ${res.to}` : 'Ficha enviada (solo copia interna)');
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  box.querySelector('[data-delivery-date]')?.addEventListener('change', async (ev) => {
+    try {
+      await apiPost('episodes/set_delivery', {
+        episode_id: +ev.target.dataset.deliveryDate,
+        expected_delivery_date: ev.target.value,
+      });
+      toast('Fecha de entrega actualizada');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
+  box.querySelector('[data-mark-delivered]')?.addEventListener('click', async (ev) => {
+    const ok = await confirmDialog('Marcar como entregado', '¿Confirmas que los resultados de este estudio ya se entregaron?', { confirmLabel: 'Marcar entregado' });
+    if (!ok) return;
+    try {
+      await apiPost('episodes/set_delivery', { episode_id: +ev.currentTarget.dataset.markDelivered, delivered: true });
+      toast('Resultados marcados como entregados');
+      reload();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+  box.querySelector('[data-undo-delivery]')?.addEventListener('click', async (ev) => {
+    const ok = await confirmDialog('Deshacer entrega', '¿Quitar la marca de "entregado" de este estudio?', { danger: true, confirmLabel: 'Deshacer' });
+    if (!ok) return;
+    try {
+      await apiPost('episodes/set_delivery', { episode_id: +ev.currentTarget.dataset.undoDelivery, delivered: false });
+      toast('Entrega deshecha');
+      reload();
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  box.querySelector('[data-chart-metric]')?.addEventListener('change', (ev) => {
+    const chartBox = box.querySelector('[data-chart-box]');
+    if (chartBox) chartBox.innerHTML = renderChartSvg(chartPoints(ep, ev.target.value));
+  });
+}
+
+/* ================= Pestaña de Progreso ================= */
+
+// Los grupos salen del catálogo, así que agregar una medición nueva al JSON
+// la incorpora sola a la comparativa.
+const PROGRESS_GROUPS = [
+  ['cp_antro', 'Antropometría'],
+  ['cp_pli', 'Plicometría'],
+  ['cp_bio', 'Bioimpedancia'],
+];
+
+/** Métricas numéricas de un grupo del catálogo, con su etiqueta. */
+function progressMetrics(service, sectionId) {
+  const secs = catalog[service]?.session || [];
+  const sec = secs.find((s) => s.id === sectionId);
+  if (!sec) return [];
+  return sec.fields
+    .filter((f) => f.t === 'number' || f.t === 'calc')
+    .map((f) => [f.k, f.l]);
+}
+
+/** Una columna por visita: la admisión y cada consulta, de más antigua a más nueva. */
+function progressVisits(e) {
+  return [
+    { label: 'Admisión', date: e.admission_date, data: e.service_data || {} },
+    ...consultsAsc(e).map((c, i) => ({ label: `Consulta ${i + 1}`, date: c.consult_date, data: c.params || {} })),
+  ];
+}
+
+const numOrNull = (v) => {
+  const n = parseFloat(v);
+  return isNaN(n) ? null : n;
+};
+
+/** Δ entre el primer y el último valor capturado de una métrica. */
+function metricDelta(visits, key) {
+  const vals = visits.map((v) => numOrNull(v.data[key])).filter((n) => n !== null);
+  if (vals.length < 2) return null;
+  return Math.round((vals[vals.length - 1] - vals[0]) * 100) / 100;
+}
+
+function progressPanelHtml(e) {
+  const visits = progressVisits(e);
+  if (visits.length < 2) {
+    return `<p class="py-8 text-center text-sm text-slate-500">
+      Todavía no hay con qué comparar: se necesita al menos una consulta subsecuente además de la admisión.</p>`;
+  }
+
+  const allMetrics = PROGRESS_GROUPS.flatMap(([id]) => progressMetrics(e.service, id));
+
+  return `
+    <div class="space-y-5">
+      ${PROGRESS_GROUPS.map(([id, title]) => {
+        const metrics = progressMetrics(e.service, id)
+          // Sólo se listan las métricas con algún dato capturado: una tabla llena
+          // de guiones no informa nada
+          .filter(([k]) => visits.some((v) => numOrNull(v.data[k]) !== null));
+        if (!metrics.length) return '';
+        return `
+          <div>
+            <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">${escapeHtml(title)}</p>
+            <div class="overflow-x-auto rounded-xl ring-1 ring-slate-200">
+              <table class="w-full text-left text-sm">
+                <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th class="px-3 py-2">Medición</th>
+                    ${visits.map((v) => `<th class="px-3 py-2 text-right whitespace-nowrap">${escapeHtml(v.label)}<span class="block font-normal normal-case text-slate-400">${fmtDate(v.date)}</span></th>`).join('')}
+                    <th class="px-3 py-2 text-right">Cambio</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  ${metrics.map(([k, label]) => {
+                    const d = metricDelta(visits, k);
+                    // En este contexto bajar es mejorar (peso, grasa, pliegues):
+                    // verde para negativo, ámbar para positivo
+                    const cls = d === null || d === 0 ? 'text-slate-400' : (d < 0 ? 'text-emerald-600' : 'text-amber-600');
+                    const txt = d === null ? '—' : `${d > 0 ? '+' : ''}${d}`;
+                    return `
+                      <tr>
+                        <td class="px-3 py-1.5 text-slate-700">${escapeHtml(label)}</td>
+                        ${visits.map((v) => {
+                          const n = numOrNull(v.data[k]);
+                          return `<td class="px-3 py-1.5 text-right ${n === null ? 'text-slate-300' : 'font-medium text-slate-800'}">${n === null ? '—' : n}</td>`;
+                        }).join('')}
+                        <td class="px-3 py-1.5 text-right font-bold ${cls}">${txt}</td>
+                      </tr>`;
+                  }).join('')}
+                </tbody>
+              </table>
+            </div>
+          </div>`;
+      }).join('')}
+
+      <div class="rounded-xl bg-slate-50 px-4 py-3">
+        <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Gráfica</p>
+          <select data-chart-metric="${e.id}" class="rounded-lg border-0 bg-white px-2 py-1 text-xs shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500">
+            ${allMetrics.map(([k, l]) => `<option value="${escapeHtml(k)}">${escapeHtml(l)}</option>`).join('')}
+          </select>
+        </div>
+        <div data-chart-box="${e.id}">${renderChartSvg(chartPoints(e, allMetrics[0]?.[0] || 'peso_kg'))}</div>
+      </div>
+    </div>`;
+}
 /* ================= Dx Assist ================= */
 
 /** ¿Hay asistente configurado? Se consulta una sola vez por carga de la app. */
@@ -725,6 +920,109 @@ function openCompleteConsultModal(consult, episode, patientId) {
       },
     ],
   });
+  initSections(form);
+}
+
+/* ================= Edición de visitas ================= */
+
+/** Corrige los datos capturados en la admisión. */
+function openEpisodeEditModal(episode, patientId) {
+  const sections = catalog[episode.service]?.admission || [];
+  const form = document.createElement('form');
+  form.innerHTML = `
+    <div class="space-y-4">
+      <div>
+        <label class="${labelCls}">Motivo de la admisión</label>
+        <input type="text" name="__reason" value="${escapeHtml(episode.reason || '')}" class="${inputCls}">
+      </div>
+      <div>
+        <label class="${labelCls}">Médico que refiere</label>
+        <input type="text" name="__referring_doctor" value="${escapeHtml(episode.referring_doctor || '')}" class="${inputCls}">
+      </div>
+      ${sectionsHtml(sections, { compact: true })}
+    </div>`;
+
+  modal({
+    title: `Editar admisión · ${fmtDate(episode.admission_date)}`,
+    content: form,
+    size: 'max-w-3xl',
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Guardar cambios',
+        primary: true,
+        onClick: async (close, btn) => {
+          if (!form.reportValidity()) return;
+          btn.disabled = true;
+          try {
+            await apiPost('episodes/update', {
+              episode_id: episode.id,
+              reason: form.querySelector('[name="__reason"]').value.trim(),
+              referring_doctor: form.querySelector('[name="__referring_doctor"]').value.trim(),
+              // El responsable no se toca desde aquí: se omite para conservarlo
+              service_data: collectSections(form, sections),
+            });
+            toast('Admisión actualizada');
+            close();
+            renderDetail(document.getElementById('module-root'), patientId);
+          } catch (e) {
+            btn.disabled = false;
+            toast(e.message, 'error');
+          }
+        },
+      },
+    ],
+  });
+  // El orden importa: primero los valores, luego los widgets se autoinicializan
+  fillSections(form, sections, episode.service_data);
+  initSections(form);
+}
+
+/** Corrige una consulta ya registrada, esté consolidada o no. */
+function openConsultEditModal(consult, episode, patientId) {
+  const all = catalog[episode.service]?.session || [];
+  // Se editan todas las secciones, incluida la médica: si ya se consolidó,
+  // sus datos también deben poder corregirse.
+  const form = document.createElement('form');
+  form.innerHTML = `
+    <div class="space-y-4">
+      <div>
+        <label class="${labelCls}">Notas</label>
+        <textarea name="__notes" rows="3" class="${inputCls}">${escapeHtml(consult.notes || '')}</textarea>
+      </div>
+      ${sectionsHtml(all, { compact: true })}
+    </div>`;
+
+  modal({
+    title: `Editar consulta · ${fmtDate(consult.consult_date)}`,
+    content: form,
+    size: 'max-w-3xl',
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Guardar cambios',
+        primary: true,
+        onClick: async (close, btn) => {
+          if (!form.reportValidity()) return;
+          btn.disabled = true;
+          try {
+            await apiPost('consultations/update', {
+              id: consult.id,
+              notes: form.querySelector('[name="__notes"]').value.trim(),
+              params: collectSections(form, all),
+            });
+            toast('Consulta actualizada');
+            close();
+            renderDetail(document.getElementById('module-root'), patientId);
+          } catch (e) {
+            btn.disabled = false;
+            toast(e.message, 'error');
+          }
+        },
+      },
+    ],
+  });
+  fillSections(form, all, consult.params);
   initSections(form);
 }
 
