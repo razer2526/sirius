@@ -1,11 +1,29 @@
 /**
  * Motor de formularios dinámicos basado en services_catalog.json.
  * Soporta: text/number/date/email/tel, textarea, select, checkbox,
- * checkdetail (checkbox que despliega "especificar"), calc (calculado) y
- * signature (canvas de firma). Secciones condicionales por sexo (showIf).
+ * checkdetail (checkbox que despliega "especificar"), symptom (síntoma con
+ * duración), calc (calculado) y signature (canvas de firma).
+ * Secciones condicionales por sexo (showIf).
  */
 
 import { escapeHtml, inputCls, labelCls } from './ui.js';
+
+/**
+ * Duraciones de un síntoma. Se ofrecen como botones y no como texto libre
+ * porque ahí es donde se escribía "mucho tiempo": con opciones fijas el dato
+ * queda comparable entre pacientes.
+ *
+ * Los cortes siguen el criterio clínico habitual (en diarrea, aguda es menos
+ * de dos semanas y crónica más de un mes), no una escala arbitraria.
+ */
+const SYMPTOM_DURATIONS = [
+  'Hoy o ayer',
+  '2 a 6 días',
+  '1 a 2 semanas',
+  '2 a 4 semanas',
+  'Más de 1 mes',
+  'Más de 6 meses',
+];
 
 /* ---- Cálculos automáticos ---- */
 const r1 = (n) => Math.round(n * 10) / 10;
@@ -62,6 +80,25 @@ function fieldHtml(f) {
           ${escapeHtml(f.l)}</label>
         <input type="text" name="${f.k}_det" placeholder="${escapeHtml(f.d || 'Especificar')}" class="${inputCls} mt-1.5 hidden">
       </div>`;
+    case 'symptom':
+      // El valor guardado es la duración, así que sigue siendo un escalar y el
+      // whitelist del servidor lo acepta sin cambios. Vacío = no presenta el síntoma.
+      return `<div class="${span} rounded-xl ring-1 ring-slate-200 p-3" data-symptom="${f.k}">
+        <label class="flex cursor-pointer items-center gap-2.5">
+          <input type="checkbox" data-sym-check="${f.k}"
+                 class="h-5 w-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+          <span class="text-sm font-semibold text-slate-800">${escapeHtml(f.l)}</span>
+        </label>
+        <div data-sym-durations="${f.k}" class="mt-2.5 hidden flex-wrap gap-1.5">
+          ${SYMPTOM_DURATIONS.map((d) => `
+            <button type="button" data-sym-pick="${f.k}" data-value="${escapeHtml(d)}"
+                    class="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
+              ${escapeHtml(d)}
+            </button>`).join('')}
+        </div>
+        <p data-sym-hint="${f.k}" class="mt-1.5 hidden text-xs font-semibold text-amber-700">Indica desde cuándo</p>
+        <input type="hidden" name="${f.k}">
+      </div>`;
     case 'calc':
       return `<div class="${span}">${label}
         <input type="text" name="${f.k}" data-calc="${f.calc}" readonly tabindex="-1"
@@ -108,6 +145,51 @@ export function initSections(formEl) {
     const det = formEl.querySelector(`[name="${cb.dataset.cd}_det"]`);
     if (!det) return;
     cb.addEventListener('change', () => det.classList.toggle('hidden', !cb.checked));
+  });
+
+  // síntomas: al marcarlos se pide la duración, que es el valor que se guarda
+  formEl.querySelectorAll('[data-symptom]').forEach((box) => {
+    const key = box.dataset.symptom;
+    const check = box.querySelector('[data-sym-check]');
+    const durations = box.querySelector('[data-sym-durations]');
+    const hint = box.querySelector('[data-sym-hint]');
+    const hidden = box.querySelector(`input[type=hidden][name="${key}"]`);
+    const buttons = [...box.querySelectorAll('[data-sym-pick]')];
+
+    const paintPicked = () => {
+      buttons.forEach((b) => {
+        const on = b.dataset.value === hidden.value;
+        b.className = on
+          ? 'rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm'
+          : 'rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50';
+      });
+      // Marcado pero sin duración: se avisa en vez de guardar un dato a medias
+      hint.classList.toggle('hidden', !check.checked || hidden.value !== '');
+      box.classList.toggle('ring-indigo-300', check.checked);
+      box.classList.toggle('bg-indigo-50/40', check.checked);
+    };
+
+    const sync = () => {
+      durations.classList.toggle('hidden', !check.checked);
+      durations.classList.toggle('flex', check.checked);
+      if (!check.checked) {
+        hidden.value = '';
+      }
+      paintPicked();
+    };
+
+    check.addEventListener('change', sync);
+    buttons.forEach((b) => b.addEventListener('click', () => {
+      // Volver a tocar la opción elegida la desmarca
+      hidden.value = hidden.value === b.dataset.value ? '' : b.dataset.value;
+      paintPicked();
+    }));
+
+    // Si viene con valor (edición), el síntoma se muestra ya marcado
+    if (hidden.value !== '') {
+      check.checked = true;
+    }
+    sync();
   });
 
   // cálculos automáticos
@@ -247,6 +329,11 @@ export function dataRowsHtml(sections, data) {
       let display;
       if (f.t === 'checkbox') display = 'Sí';
       else if (f.t === 'checkdetail') {
+        const det = data[f.k + '_det'];
+        display = det ? `Sí — ${escapeHtml(String(det))}` : 'Sí';
+      } else if (f.t === 'symptom' && v === true) {
+        // Episodios anteriores al cambio: el síntoma era una casilla y la duración
+        // iba en <clave>_det. Se sigue mostrando para no perder el historial.
         const det = data[f.k + '_det'];
         display = det ? `Sí — ${escapeHtml(String(det))}` : 'Sí';
       } else display = escapeHtml(String(v));

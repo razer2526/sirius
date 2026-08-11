@@ -58,42 +58,56 @@
             {
                 "id": "lab_sintomas",
                 "title": "Síntomas",
+                "note": "Marca los que presente el paciente e indica desde cuándo.",
                 "fields": [
-                    {
-                        "k": "sintomas",
-                        "l": "Síntomas (motivo por el que se envía el estudio)",
-                        "t": "textarea",
-                        "span": 3
-                    },
                     {
                         "k": "diarrea",
                         "l": "Diarrea",
-                        "t": "checkdetail",
-                        "d": "¿Por cuánto tiempo?"
+                        "t": "symptom"
+                    },
+                    {
+                        "k": "nauseas",
+                        "l": "Náuseas",
+                        "t": "symptom"
                     },
                     {
                         "k": "fiebre",
                         "l": "Fiebre",
-                        "t": "checkdetail",
-                        "d": "¿Por cuánto tiempo?"
-                    },
-                    {
-                        "k": "perdida_apetito",
-                        "l": "Pérdida de apetito",
-                        "t": "checkbox"
-                    },
-                    {
-                        "k": "dolor_abdominal",
-                        "l": "Dolor abdominal",
-                        "t": "checkbox"
+                        "t": "symptom"
                     },
                     {
                         "k": "dolor_cabeza",
                         "l": "Dolor de cabeza",
-                        "t": "checkbox"
+                        "t": "symptom"
+                    },
+                    {
+                        "k": "dolor_abdominal",
+                        "l": "Dolor de estómago",
+                        "t": "symptom"
+                    },
+                    {
+                        "k": "perdida_apetito",
+                        "l": "Pérdida de apetito",
+                        "t": "symptom"
+                    },
+                    {
+                        "k": "apetito_abundante",
+                        "l": "Apetito abundante",
+                        "t": "symptom"
+                    },
+                    {
+                        "k": "cansancio",
+                        "l": "Cansancio",
+                        "t": "symptom"
+                    },
+                    {
+                        "k": "sintomas",
+                        "l": "Otro — especificar",
+                        "t": "textarea",
+                        "span": 3
                     }
                 ],
-                "grid": 3
+                "grid": 2
             },
             {
                 "id": "lab_estudios",
