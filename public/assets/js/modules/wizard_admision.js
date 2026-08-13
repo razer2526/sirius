@@ -100,6 +100,19 @@ function move(root, dir) {
   paint(root);
 }
 
+/**
+ * Salida al formulario completo. Sólo para quien entró aquí por decisión propia
+ * (el enlace "modo asistido" de la parrilla); al recolector con el privilegio no
+ * se le ofrece, porque el asistente es toda su interfaz.
+ */
+function exitLinkHtml() {
+  const isCollector = !!ctx.modules.find((m) => m.key === 'admision')?.flags?.wizard;
+  return isCollector ? '' : `
+    <a href="#/admision/laboratorio" class="text-sm font-medium text-slate-400 hover:text-slate-600">
+      Usar el formulario completo
+    </a>`;
+}
+
 function paint(root) {
   const s = STEPS[step];
   const shown = STEPS.filter((x) => !isSkipped(x.key));
@@ -110,7 +123,9 @@ function paint(root) {
       <div class="mb-5">
         <div class="mb-2 flex items-center justify-between">
           <span class="text-sm font-semibold text-slate-500">Paso ${pos} de ${shown.length}</span>
-          ${step > 0 ? `<button type="button" id="wz-cancel" class="text-sm font-medium text-slate-400 hover:text-slate-600">Cancelar</button>` : ''}
+          ${step > 0
+            ? `<button type="button" id="wz-cancel" class="text-sm font-medium text-slate-400 hover:text-slate-600">Cancelar</button>`
+            : exitLinkHtml()}
         </div>
         <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
           <div class="h-full rounded-full bg-indigo-600 transition-all" style="width:${Math.round((pos / shown.length) * 100)}%"></div>
