@@ -37,52 +37,153 @@ function lab_slug_key(string $name, string $unit = ''): string
 }
 
 /**
+ * Unidad normalizada para comparar. lab_slug() borra los signos y deja '%' en
+ * nada, con lo que un porcentaje se vuelve indistinguible de una determinación
+ * sin unidad —y son cosas distintas: los linfocitos en % van de 15.5 a 51.7 y en
+ * Cels/uL de 0.99 a 3.36—. No se usa para la clave guardada en lab_tests.slug,
+ * que no se toca para no invalidar el catálogo ya capturado.
+ */
+function lab_slug_unit(string $unit): string
+{
+    return lab_slug(str_replace('%', ' porciento ', $unit));
+}
+
+/** Estudios del catálogo a los que pertenece una determinación. Vacío = entrada suelta. */
+function lab_test_study_ids(int $testId): array
+{
+    $st = db()->prepare('SELECT study_id FROM lab_study_items WHERE test_id = ?');
+    $st->execute([$testId]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/** Busca un estudio del catálogo por su nombre o por sus alias. */
+function lab_study_find(string $name): ?array
+{
+    $slug = lab_slug($name);
+    if ($slug === '') {
+        return null;
+    }
+    $st = db()->prepare('SELECT * FROM lab_studies WHERE slug = ?');
+    $st->execute([$slug]);
+    $row = $st->fetch();
+    if ($row) {
+        return $row;
+    }
+    $tight = lab_slug_tight($name);
+    foreach (db()->query('SELECT * FROM lab_studies')->fetchAll() as $candidate) {
+        foreach (preg_split('/\r?\n/', (string)($candidate['aliases'] ?? '')) as $alias) {
+            if ($alias !== '' && lab_slug_tight($alias) === $tight) {
+                return $candidate;
+            }
+        }
+    }
+    return null;
+}
+
+/** La única candidata de la lista, o null si hay cero o hay duda. */
+function lab_only_one(array $candidates): ?array
+{
+    $list = array_values($candidates);
+    return count($list) === 1 ? $list[0] : null;
+}
+
+/** ¿El nombre leído corresponde a esta determinación, por nombre o por alias? */
+function lab_test_named(array $test, string $tightName): bool
+{
+    if (lab_slug_tight((string)$test['name']) === $tightName) {
+        return true;
+    }
+    foreach (preg_split('/\r?\n/', (string)($test['aliases'] ?? '')) as $alias) {
+        if ($alias !== '' && lab_slug_tight($alias) === $tightName) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * Busca una determinación por nombre, por alias o —cuando el PDF pegó las
  * palabras— comparando sin espacios. Al encontrarla se usa el nombre del
  * catálogo, que es el que el usuario ya validó.
+ *
+ * Distintos estudios repiten nombres midiendo cosas que no tienen nada que ver:
+ * los ERITROCITOS de una biometría hemática van en Cels/uL y rondan 3.87–5.46,
+ * mientras que los de un coprológico son un conteo por campo microscópico. Por
+ * eso una determinación sólo se da por encontrada si nada la contradice: ni la
+ * unidad ni el estudio del que viene el renglón. Ante la duda no se empareja y
+ * los rangos salen del texto del PDF, que se ve y se corrige; heredar los de
+ * otro estudio no se nota y sale impreso en el reporte del paciente.
+ *
+ * $studyName es el estudio donde venía el renglón, cuando quien llama lo sabe.
  */
-function lab_find_test(string $name, string $unit = ''): ?array
+function lab_find_test(string $name, string $unit = '', string $studyName = ''): ?array
 {
     if (lab_slug($name) === '') {
         return null;
     }
+    $noUnit = trim($unit) === '';
+
     // Primero la coincidencia exacta nombre + unidad
     $st = db()->prepare('SELECT * FROM lab_tests WHERE slug = ?');
     $st->execute([lab_slug_key($name, $unit)]);
     $row = $st->fetch();
 
+    // El slug no distingue "sin unidad" de una unidad que se normaliza a nada: '%'
+    // pierde todos sus caracteres, así que LINFOCITOS en porcentaje quedó guardado
+    // con la misma clave que uno sin unidad. Si el renglón no traía unidad y la del
+    // catálogo sí dice algo, la coincidencia es casual y hay que desempatar abajo.
+    if ($row && $noUnit && trim((string)$row['unit']) !== '') {
+        $row = false;
+    }
+
     if (!$row) {
         $tight = lab_slug_tight($name);
-        $u = lab_slug($unit);
-        $all = db()->query('SELECT * FROM lab_tests')->fetchAll();
-        $fallback = null;
-        foreach ($all as $candidate) {
-            $sameName = lab_slug_tight((string)$candidate['name']) === $tight;
-            if (!$sameName) {
-                foreach (preg_split('/\r?\n/', (string)($candidate['aliases'] ?? '')) as $alias) {
-                    if ($alias !== '' && lab_slug_tight($alias) === $tight) {
-                        $sameName = true;
-                        break;
-                    }
-                }
-            }
-            if (!$sameName) {
+        $u = lab_slug_unit($unit);
+        $studyId = $studyName !== '' ? (int)(lab_study_find($studyName)['id'] ?? 0) : 0;
+
+        // Candidatas: mismo nombre y sin contradicción de estudio. Una determinación
+        // declarada en otros estudios y no en éste es otra medición con el mismo
+        // nombre; una que no está en ningún estudio es una entrada suelta del
+        // diccionario y no contradice nada.
+        $viables = [];
+        foreach (db()->query('SELECT * FROM lab_tests')->fetchAll() as $candidate) {
+            if (!lab_test_named($candidate, $tight)) {
                 continue;
             }
-            // Con el nombre pegado por el PDF, la unidad desempata entre variantes
-            if ($u !== '' && lab_slug((string)$candidate['unit']) === $u) {
-                $row = $candidate;
-                break;
+            $studies = lab_test_study_ids((int)$candidate['id']);
+            if ($studyId > 0 && $studies && !in_array($studyId, $studies, true)) {
+                continue;
             }
-            if ($fallback === null && ($u === '' || lab_slug((string)$candidate['unit']) === '')) {
-                $fallback = $candidate;
+            $candidate['__in_study'] = $studyId > 0 && in_array($studyId, $studies, true);
+            $viables[] = $candidate;
+        }
+
+        // La unidad es el mejor desempate: la misma determinación se informa en
+        // porcentaje y en absolutos con rangos que no se parecen.
+        if ($u !== '') {
+            foreach ($viables as $c) {
+                if (lab_slug_unit((string)$c['unit']) === $u) {
+                    $row = $c;
+                    break;
+                }
             }
         }
-        $row = $row ?: $fallback;
+        // Si el catálogo no declara unidad, la del renglón no puede contradecirlo.
+        // Se mira la columna, no el slug, para no volver a confundir '%' con vacío.
+        if (!$row) {
+            $row = lab_only_one(array_filter($viables, fn($c) => trim((string)$c['unit']) === ''));
+        }
+        // Renglón sin unidad: vale si el estudio deja una sola candidata en pie.
+        // Con dos (LINFOCITOS en % y en Cels/uL) no hay con qué elegir y se deja
+        // sin emparejar, que es visible, en vez de acertar la mitad de las veces.
+        if (!$row && $noUnit) {
+            $row = lab_only_one(array_filter($viables, fn($c) => $c['__in_study']));
+        }
     }
     if (!$row) {
         return null;
     }
+    unset($row['__in_study']);
     $row['ranges'] = lab_ranges_of((int)$row['id']);
     return $row;
 }
