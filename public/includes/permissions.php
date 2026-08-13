@@ -91,3 +91,36 @@ function user_modules(): array
     }
     return $out;
 }
+
+/* ---------- Acceso a episodios ---------- */
+
+/**
+ * Carga un episodio con el folio de su paciente, o corta con 404.
+ * Vive aquí y no en un handler porque lo usan varios (episodes, consultations)
+ * y cada archivo de handler se carga por separado en cada petición.
+ */
+function find_open_episode(int $episodeId): array
+{
+    $st = db()->prepare(
+        'SELECT e.*, p.file_number, p.is_deleted FROM episodes e
+         JOIN patients p ON p.id = e.patient_id WHERE e.id = ?'
+    );
+    $st->execute([$episodeId]);
+    $episode = $st->fetch();
+    if (!$episode || (int)$episode['is_deleted'] === 1) {
+        json_error('Episodio no encontrado', 404);
+    }
+    return $episode;
+}
+
+/** Un episodio restringido a otro usuario no debe aceptar consultas ni ediciones de quien no tiene acceso. */
+function require_episode_visible(array $episode, array $me): void
+{
+    if (is_admin_role($me)) {
+        return;
+    }
+    $assigned = $episode['assigned_user_id'] ?? null;
+    if ($assigned !== null && (int)$assigned !== (int)$me['id']) {
+        json_error('No tienes acceso a este expediente', 403);
+    }
+}

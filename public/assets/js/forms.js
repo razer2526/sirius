@@ -138,6 +138,48 @@ function fieldHtml(f) {
   }
 }
 
+/**
+ * Prellena un formulario del catálogo con datos ya guardados (edición).
+ *
+ * Se llama ANTES de initSections(): los widgets se autoinicializan a partir
+ * del valor que encuentran —el tipo 'symptom' marca su casilla si trae
+ * duración, y setupSignature() dibuja la firma existente—, así que basta con
+ * dejar los valores puestos y dejar que initSections() haga el resto.
+ */
+export function fillSections(formEl, sections, data) {
+  if (!data) return;
+  for (const sec of sections) {
+    for (const f of sec.fields) {
+      const el = formEl.querySelector(`[name="${f.k}"]`);
+      if (!el) continue;
+      const v = data[f.k];
+      if (v === undefined || v === null) continue;
+
+      if (f.t === 'checkbox' || f.t === 'checkdetail') {
+        el.checked = v === true || v === '1' || v === 1;
+        if (f.t === 'checkdetail') {
+          const det = formEl.querySelector(`[name="${f.k}_det"]`);
+          if (det) det.value = data[`${f.k}_det`] ?? '';
+        }
+        continue;
+      }
+      // Un síntoma capturado antes del cambio de tipo guardaba true + <clave>_det.
+      // Se conserva ese texto tal cual —no se traduce a una de las opciones
+      // nuevas, porque sería inventar una precisión que el dato original no tiene.
+      if (f.t === 'symptom' && v === true) {
+        el.value = String(data[`${f.k}_det`] ?? '').trim();
+        if (el.value === '') {
+          // Marcado sin duración: se refleja con la casilla, no con un valor falso
+          const box = formEl.querySelector(`[data-symptom="${f.k}"] [data-sym-check]`);
+          if (box) box.checked = true;
+        }
+        continue;
+      }
+      el.value = String(v);
+    }
+  }
+}
+
 /* ---- Comportamiento (llamar con el form YA insertado en el DOM) ---- */
 export function initSections(formEl) {
   // checkdetail: mostrar el "especificar" al palomear
@@ -163,8 +205,18 @@ export function initSections(formEl) {
           ? 'rounded-lg bg-indigo-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow-sm'
           : 'rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50';
       });
-      // Marcado pero sin duración: se avisa en vez de guardar un dato a medias
-      hint.classList.toggle('hidden', !check.checked || hidden.value !== '');
+      const known = SYMPTOM_DURATIONS.includes(hidden.value);
+      if (check.checked && hidden.value !== '' && !known) {
+        // Duración capturada antes de que existieran estas opciones: se muestra
+        // tal cual para no perderla ni fingir que equivale a una de las nuevas
+        hint.textContent = `Registrado antes como: “${hidden.value}”. Toca una opción para actualizarlo.`;
+        hint.className = 'mt-1.5 text-xs font-semibold text-slate-500';
+      } else {
+        hint.textContent = 'Indica desde cuándo';
+        hint.className = 'mt-1.5 text-xs font-semibold text-amber-700';
+        // Marcado pero sin duración: se avisa en vez de guardar un dato a medias
+        hint.classList.toggle('hidden', !check.checked || hidden.value !== '');
+      }
       box.classList.toggle('ring-indigo-300', check.checked);
       box.classList.toggle('bg-indigo-50/40', check.checked);
     };
@@ -247,6 +299,19 @@ function setupSignature(formEl, canvas) {
     ctx.lineJoin = 'round';
   };
   resize();
+
+  // Al editar, la firma ya capturada se dibuja en el lienzo. Sin esto se vería
+  // en blanco aunque el dato exista, y parecería que se perdió.
+  if (hidden && hidden.value) {
+    const img = new Image();
+    img.onload = () => {
+      const w = canvas.offsetWidth || 600;
+      const h = canvas.offsetHeight || 160;
+      ctx.drawImage(img, 0, 0, w, h);
+      hasInk = true;
+    };
+    img.src = hidden.value;
+  }
 
   const pos = (e) => {
     const r = canvas.getBoundingClientRect();

@@ -207,6 +207,71 @@ function handle_episodes(string $action): void
             json_ok($result);
         }
 
+        /**
+         * Corrige los datos capturados en la admisión. El cambio queda en la
+         * bitácora, igual que toda acción del sistema.
+         */
+        case 'update': {
+            $b = request_body();
+            $me = current_user();
+            $episodeId = (int)($b['episode_id'] ?? 0);
+            $episode = find_open_episode($episodeId);
+            require_episode_visible($episode, $me);
+
+            $service = (string)$episode['service'];
+            $serviceData = service_filter_data($service, 'admission', $b['service_data'] ?? []);
+
+            // Responsable asignado. En una edición hay que distinguir "no lo mandaron"
+            // (conservar el actual) de "lo mandaron vacío" (dejarlo sin responsable):
+            // array_key_exists es true también para null, y (int)null daría 0.
+            $assignedUserId = $episode['assigned_user_id'] !== null ? (int)$episode['assigned_user_id'] : null;
+            if (array_key_exists('assigned_user_id', $b)) {
+                $raw = $b['assigned_user_id'];
+                $assignedUserId = ($raw === null || $raw === '') ? null : (int)$raw;
+            }
+            if ($assignedUserId !== null) {
+                $st = db()->prepare('SELECT id FROM users WHERE id = ? AND is_active = 1');
+                $st->execute([$assignedUserId]);
+                if (!$st->fetch()) {
+                    json_error('El responsable asignado no es válido', 422);
+                }
+            }
+
+            // Médico de convenio: si se elige uno del catálogo, su nombre manda
+            // sobre el texto libre, igual que en create
+            $linkedDoctorId = !empty($b['linked_doctor_id']) ? (int)$b['linked_doctor_id'] : null;
+            $referringDoctor = trim((string)($b['referring_doctor'] ?? '')) ?: null;
+            if ($linkedDoctorId !== null) {
+                $st = db()->prepare('SELECT name FROM vinculacion_doctors WHERE id = ?');
+                $st->execute([$linkedDoctorId]);
+                $doctorRow = $st->fetch();
+                if (!$doctorRow) {
+                    json_error('El médico seleccionado no es válido', 422);
+                }
+                $referringDoctor = $doctorRow['name'];
+            }
+
+            db()->prepare(
+                'UPDATE episodes SET reason = ?, referring_doctor = ?, linked_doctor_id = ?, assigned_user_id = ?, service_data = ? WHERE id = ?'
+            )->execute([
+                trim((string)($b['reason'] ?? '')) ?: null,
+                $referringDoctor,
+                $linkedDoctorId,
+                $assignedUserId,
+                $serviceData ? json_encode($serviceData, JSON_UNESCAPED_UNICODE) : null,
+                $episodeId,
+            ]);
+
+            log_activity(
+                'admision',
+                'episode_update',
+                'Editó la admisión ' . (SERVICE_LABELS[$service] ?? $service) . ' · folio ' . $episode['file_number'],
+                'episode',
+                $episodeId
+            );
+            json_ok(['episode_id' => $episodeId]);
+        }
+
         /** Edita la fecha de entrega estimada y/o marca (o desmarca) la entrega de resultados. */
         case 'set_delivery': {
             $b = request_body();

@@ -54,6 +54,48 @@ function handle_consultations(string $action): void
             json_ok(['id' => $id]);
         }
 
+        /**
+         * Corrige una consulta ya registrada. Se permite incluso después de
+         * consolidarla; el cambio queda en la bitácora, igual que toda acción
+         * del sistema.
+         */
+        case 'update': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $st = db()->prepare('SELECT * FROM consultations WHERE id = ?');
+            $st->execute([$id]);
+            $consult = $st->fetch();
+            if (!$consult) {
+                json_error('Consulta no encontrada', 404);
+            }
+            $episode = find_open_episode((int)$consult['episode_id']);
+            require_episode_visible($episode, $me);
+
+            $notes = trim((string)($b['notes'] ?? ''));
+            $params = service_filter_data($episode['service'], 'session', $b['params'] ?? []);
+            if ($notes === '' && !$params) {
+                json_error('Registra al menos una nota o un parámetro', 422);
+            }
+
+            // Se reemplaza lo capturado, no se fusiona: al editar, un campo vaciado
+            // a propósito debe quedar vacío. El cierre (nurse/doctor) no se toca.
+            db()->prepare('UPDATE consultations SET notes = ?, params = ? WHERE id = ?')
+                ->execute([
+                    $notes ?: null,
+                    $params ? json_encode($params, JSON_UNESCAPED_UNICODE) : null,
+                    $id,
+                ]);
+
+            log_activity(
+                'expedientes',
+                'consultation_update',
+                'Editó una consulta · folio ' . $episode['file_number'],
+                'consultation',
+                $id
+            );
+            json_ok(['id' => $id]);
+        }
+
         /** El médico responsable completa la parte médica y consolida la sesión. */
         case 'complete_doctor': {
             $b = request_body();
@@ -97,28 +139,6 @@ function handle_consultations(string $action): void
     }
 }
 
-function find_open_episode(int $episodeId): array
-{
-    $st = db()->prepare(
-        'SELECT e.*, p.file_number, p.is_deleted FROM episodes e
-         JOIN patients p ON p.id = e.patient_id WHERE e.id = ?'
-    );
-    $st->execute([$episodeId]);
-    $episode = $st->fetch();
-    if (!$episode || (int)$episode['is_deleted'] === 1) {
-        json_error('Episodio no encontrado', 404);
-    }
-    return $episode;
-}
-
-/** Un episodio restringido a otro usuario no debe aceptar consultas de quien no tiene acceso. */
-function require_episode_visible(array $episode, array $me): void
-{
-    if (is_admin_role($me)) {
-        return;
-    }
-    $assigned = $episode['assigned_user_id'] ?? null;
-    if ($assigned !== null && (int)$assigned !== (int)$me['id']) {
-        json_error('No tienes acceso a este expediente', 403);
-    }
-}
+// find_open_episode() y require_episode_visible() viven en includes/permissions.php:
+// los usan también los handlers episodes y patients, y cada handler se carga por
+// separado, así que no pueden quedarse aquí.

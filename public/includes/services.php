@@ -38,7 +38,10 @@ function service_allowed_keys(string $service, string $stage): array
     foreach (service_sections($service, $stage) as $section) {
         foreach ($section['fields'] as $f) {
             $keys[] = $f['k'];
-            if ($f['t'] === 'checkdetail') {
+            // 'symptom' incluido a propósito: varios síntomas eran 'checkdetail' antes
+            // y su duración quedó guardada en <clave>_det. Sin esto, editar un episodio
+            // anterior al cambio borraría ese detalle en silencio.
+            if ($f['t'] === 'checkdetail' || $f['t'] === 'symptom') {
                 $keys[] = $f['k'] . '_det';
             }
         }
