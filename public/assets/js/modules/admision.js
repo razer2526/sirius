@@ -16,6 +16,17 @@ function defaultDeliveryDate() {
 export async function render(root, context) {
   ctx = context;
   const [serviceKey] = context.args;
+
+  // Recolectores a domicilio (privilegio admision.wizard): en vez del formulario
+  // completo entran directo al asistente paso a paso de laboratorio, que es lo
+  // único que capturan. Se carga aparte para no pesar en la carga normal.
+  const wizard = context.modules.find((m) => m.key === 'admision')?.flags?.wizard;
+  if (wizard && (!serviceKey || serviceKey === 'laboratorio')) {
+    const mod = await import('./wizard_admision.js');
+    await mod.render(root, context);
+    return;
+  }
+
   if (serviceKey && SERVICES[serviceKey]) {
     await renderForm(root, serviceKey);
   } else {

@@ -17,6 +17,14 @@ return [
         'label' => 'Admisión',
         'icon'  => 'user-plus',
         'phase' => 1,
+        'flags' => [
+            // Pensado para los recolectores a domicilio: una pregunta por pantalla
+            // y sólo los campos indispensables, en vez del formulario completo.
+            'wizard' => 'Formulario simplificado paso a paso (recolectores)',
+        ],
+        // 'wizard' recorta la interfaz en vez de ampliarla, así que no se hereda
+        // por el rol: un administrador quedaría encerrado en el asistente.
+        'mode_flags' => ['wizard'],
     ],
     'expedientes' => [
         'label' => 'Expedientes',
