@@ -167,7 +167,7 @@ function handle_lab_templates(string $action): void
             foreach ($read['studies'] as $study) {
                 $items = [];
                 foreach ($study['items'] as $it) {
-                    $known = lab_find_test($it['name'], $it['unit']);
+                    $known = lab_find_test($it['name'], $it['unit'], (string)$study['name']);
                     $items[] = [
                         'name'          => $known ? (string)$known['name'] : $it['name'],
                         'unit'          => $it['unit'] !== '' ? $it['unit'] : (string)($known['unit'] ?? ''),

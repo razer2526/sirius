@@ -47,7 +47,7 @@ function handle_labs(string $action): void
                 foreach ($read['studies'] as $study) {
                     $items = [];
                     foreach ($study['items'] as $it) {
-                        $items[] = lab_prepare_item($it, $sex, $age);
+                        $items[] = lab_prepare_item($it, $sex, $age, (string)$study['name']);
                     }
                     $studies[] = ['name' => $study['name'], 'items' => $items];
                 }
@@ -173,6 +173,10 @@ function lab_match_studies(array $studyIds, array $readStudies, ?string $sex, ?f
     $readItems = [];
     foreach ($readStudies as $study) {
         foreach ($study['items'] as $it) {
+            // Se conserva de qué estudio salió el renglón: lo que no espera ninguna
+            // plantilla se busca luego en el catálogo y el estudio evita confundir
+            // determinaciones que sólo comparten el nombre.
+            $it['study'] = (string)$study['name'];
             $readItems[] = $it;
         }
     }
@@ -221,7 +225,7 @@ function lab_match_studies(array $studyIds, array $readStudies, ?string $sex, ?f
         if (isset($usedRead[$i]) || trim((string)$it['name']) === '') {
             continue;
         }
-        $extra = lab_prepare_item($it, $sex, $age);
+        $extra = lab_prepare_item($it, $sex, $age, (string)($it['study'] ?? ''));
         $extra['origin'] = 'extra';
         $extra['dropped'] = false;
         $extras[] = $extra;
@@ -322,9 +326,9 @@ function lab_split_merged(array $it, bool $wantFirst): ?array
  * Combina lo leído del PDF con el catálogo: si la determinación ya está registrada
  * se usan sus rangos validados; si no, se proponen a partir del texto del laboratorio.
  */
-function lab_prepare_item(array $it, ?string $sex, ?float $age): array
+function lab_prepare_item(array $it, ?string $sex, ?float $age, string $studyName = ''): array
 {
-    $known = lab_find_test($it['name'], $it['unit']);
+    $known = lab_find_test($it['name'], $it['unit'], $studyName);
     $name = $it['name'];
     if ($known) {
         // El catálogo tiene el nombre ya validado (el PDF a veces pega las palabras)
