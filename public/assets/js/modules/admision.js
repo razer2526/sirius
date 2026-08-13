@@ -13,9 +13,28 @@ function defaultDeliveryDate() {
   return d.toISOString().slice(0, 10);
 }
 
+/** El asistente es de laboratorio; el privilegio lo vuelve la única vista del usuario. */
+export function hasWizardFlag(context) {
+  return !!context.modules.find((m) => m.key === 'admision')?.flags?.wizard;
+}
+
 export async function render(root, context) {
   ctx = context;
-  const [serviceKey] = context.args;
+  const [serviceKey, subRoute] = context.args;
+
+  // Dos maneras de llegar al asistente paso a paso:
+  //   · Recolectores a domicilio (privilegio admision.wizard): es su vista única,
+  //     entran ahí directo sin pasar por la parrilla de servicios.
+  //   · Cualquiera con acceso a Admisión que pida #/admision/laboratorio/wizard,
+  //     que es a donde apunta el enlace "modo asistido" de la parrilla.
+  // Se carga aparte para no pesar en la carga normal del módulo.
+  const wizardByFlag = hasWizardFlag(context) && (!serviceKey || serviceKey === 'laboratorio');
+  if (wizardByFlag || (serviceKey === 'laboratorio' && subRoute === 'wizard')) {
+    const mod = await import('./wizard_admision.js');
+    await mod.render(root, context);
+    return;
+  }
+
   if (serviceKey && SERVICES[serviceKey]) {
     await renderForm(root, serviceKey);
   } else {
@@ -42,7 +61,27 @@ function renderGrid(root) {
             </span>
           </a>`).join('')}
       </div>
+      ${wizardLinkHtml()}
     </div>`;
+}
+
+/**
+ * Atajo al asistente paso a paso para quien no trae el privilegio de recolector.
+ * Va fuera de las tarjetas porque cada una ya es un <a> y no se pueden anidar.
+ */
+function wizardLinkHtml() {
+  if (hasWizardFlag(ctx) || !['administrador', 'developper'].includes(ctx.user.role)) {
+    return '';
+  }
+  return `
+    <a href="#/admision/laboratorio/wizard"
+       class="mt-4 flex items-center gap-3 rounded-2xl bg-white/60 px-5 py-4 ring-1 ring-slate-200 transition hover:bg-white hover:ring-indigo-300">
+      <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">${icon('user-plus', 'h-5 w-5')}</span>
+      <div>
+        <p class="text-sm font-semibold text-slate-700">Laboratorio en modo asistido</p>
+        <p class="text-sm text-slate-500">El formulario paso a paso de los recolectores a domicilio</p>
+      </div>
+    </a>`;
 }
 
 /* ---- Formulario de admisión ---- */

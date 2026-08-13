@@ -51,14 +51,23 @@ function user_can(string $moduleKey): bool
     return array_key_exists($moduleKey, user_permission_rows((int)$user['id']));
 }
 
-/** Privilegio extra dentro de un módulo (ej. 'dx_assist' en expedientes). */
+/**
+ * Privilegio extra dentro de un módulo (ej. 'dx_assist' en expedientes).
+ *
+ * Los flags declarados en 'mode_flags' son la excepción a "el administrador puede
+ * todo": no otorgan permisos sino que cambian la forma de trabajar (ej. 'wizard'
+ * sustituye el formulario completo por el asistente). Concederlos por rol dejaría
+ * al administrador sin manera de volver a la interfaz normal, así que se exigen
+ * marcados explícitamente en la matriz de permisos.
+ */
 function user_flag(string $moduleKey, string $flag): bool
 {
     $user = current_user();
     if (!$user) {
         return false;
     }
-    if (is_admin_role($user)) {
+    $isMode = in_array($flag, modules_registry()[$moduleKey]['mode_flags'] ?? [], true);
+    if (is_admin_role($user) && !$isMode) {
         return true;
     }
     $rows = user_permission_rows((int)$user['id']);
