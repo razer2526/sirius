@@ -808,10 +808,12 @@ class SiriusDocPDF extends FPDF
             @$this->Image($path, $x, $y, $w, $h);
 
             $this->SetY($y + $h + 2);
-            $this->SetFont('Helvetica', '', 8);
-            $this->SetTextColor(...PDF_MUTED);
-            $this->SetX($this->left());
-            $this->Cell($this->usableWidth(), 4, pdf_t($caption), 0, 1, 'C');
+            if ($caption !== '') {
+                $this->SetFont('Helvetica', '', 8);
+                $this->SetTextColor(...PDF_MUTED);
+                $this->SetX($this->left());
+                $this->Cell($this->usableWidth(), 4, pdf_t($caption), 0, 1, 'C');
+            }
             $this->Ln(2);
             $this->SetTextColor(...PDF_INK);
             return;
@@ -1578,7 +1580,20 @@ function render_patient_record_pdf(
             $pdf->fieldsTable($rows);
         }
 
-        foreach ($consultsByEpisode[$e['id']] ?? [] as $c) {
+        // La admisión cierra con la firma del paciente. Las consultas de seguimiento
+        // arrancan en hoja nueva, con su propia barra, para que no se lean como parte
+        // de lo que el paciente firmó ese día.
+        $consults = $consultsByEpisode[$e['id']] ?? [];
+        if ($consults) {
+            $pdf->AddPage();
+            $pdf->panelBar(
+                'Consultas de seguimiento',
+                $svcLabel . ' · ' . count($consults) . ' visita' . (count($consults) === 1 ? '' : 's')
+            );
+            $pdf->Ln(3);
+        }
+
+        foreach ($consults as $c) {
             $params = $c['params'] ? json_decode($c['params'], true) : [];
             $pdf->ensureSpace(12);
             $pdf->SetFont('Helvetica', 'B', 9);
@@ -1602,20 +1617,96 @@ function render_patient_record_pdf(
         $pdf->Ln(4);
     }
 
-    // Reserva la última página para el pie corporativo solo si hay imagen de pie configurada.
-    if (letterhead_path($lh['footer_file'])) {
-        $footerSpace = (float)$lh['footer_height'] + (float)$lh['footer_bottom'] + 4;
-        if ($pdf->GetY() + $footerSpace > $pdf->contentLimit()) {
-            $pdf->AddPage();
-        }
-    }
+    // El expediente cierra en hoja propia con el aviso de privacidad. Antes esa
+    // última hoja existía de todas formas cuando el pie corporativo no cabía, y
+    // salía en blanco; ahora lleva el respaldo legal del tratamiento de los datos.
+    $pdf->AddPage();
     $pdf->markLastPage();
+    render_privacy_notice($pdf, $clinicName);
 
     if ($path) {
         $pdf->Output('F', $path);
         return $path;
     }
     return $pdf->Output('S');
+}
+
+/**
+ * Aviso de privacidad al cierre del expediente.
+ *
+ * El texto es editable sin tocar código: si existe el ajuste `privacy_notice` en
+ * `settings`, sustituye el contenido completo (un párrafo por bloque separado con
+ * una línea en blanco). El texto de aquí abajo es el predeterminado y debe
+ * revisarlo el asesor legal de la clínica antes de darlo por bueno.
+ */
+function privacy_notice_blocks(string $clinicName): array
+{
+    try {
+        $st = db()->prepare('SELECT svalue FROM settings WHERE skey = ?');
+        $st->execute(['privacy_notice']);
+        $custom = trim((string)($st->fetch()['svalue'] ?? ''));
+        if ($custom !== '') {
+            return array_map(
+                static fn($p) => ['', trim($p)],
+                preg_split('/\n\s*\n/', $custom) ?: [$custom]
+            );
+        }
+    } catch (Throwable $e) {
+        // Sin tabla de ajustes (instalación antigua) se usa el texto por defecto
+    }
+
+    return [
+        ['Responsable del tratamiento',
+            $clinicName . ' es responsable del tratamiento de los datos personales que se recaban con motivo de '
+            . 'la atención médica y de laboratorio, así como de su protección conforme a la Ley Federal de '
+            . 'Protección de Datos Personales en Posesión de los Particulares y su Reglamento.'],
+        ['Datos que se recaban',
+            'Datos de identificación y contacto (nombre, fecha de nacimiento, domicilio, teléfono y correo '
+            . 'electrónico) y datos personales sensibles relativos al estado de salud: antecedentes, signos y '
+            . 'síntomas, mediciones antropométricas, resultados de estudios y notas de evolución.'],
+        ['Finalidades',
+            'Los datos se tratan para prestar los servicios de salud solicitados, integrar y conservar el '
+            . 'expediente clínico, dar seguimiento a la evolución del paciente, emitir y entregar resultados, y '
+            . 'cumplir las obligaciones administrativas y fiscales correspondientes. No se utilizan con fines '
+            . 'de mercadotecnia ni se transfieren a terceros sin consentimiento del titular, salvo en los '
+            . 'supuestos previstos en el artículo 37 de la Ley.'],
+        ['Conservación',
+            'El expediente clínico se conserva por un plazo mínimo de cinco años contados a partir de la fecha '
+            . 'del último acto médico, conforme a la Norma Oficial Mexicana NOM-004-SSA3-2012 del expediente '
+            . 'clínico.'],
+        ['Derechos ARCO',
+            'El titular puede solicitar el acceso, rectificación, cancelación u oposición al tratamiento de sus '
+            . 'datos, así como revocar el consentimiento otorgado, mediante solicitud presentada en el domicilio '
+            . 'de la clínica o en el correo de contacto que aparece en este documento. La solicitud debe '
+            . 'acreditar la identidad del titular o de su representante legal.'],
+        ['Confidencialidad de este documento',
+            'Este impreso contiene información clínica confidencial. Su consulta, reproducción o divulgación '
+            . 'está limitada al titular, a su representante legal y al personal de salud que interviene en su '
+            . 'atención. Quien lo reciba por error debe devolverlo o destruirlo.'],
+    ];
+}
+
+function render_privacy_notice(SiriusDocPDF $pdf, string $clinicName): void
+{
+    $pdf->panelBar('Aviso de privacidad', 'Datos personales y datos personales sensibles de salud');
+    $pdf->Ln(4);
+
+    foreach (privacy_notice_blocks($clinicName) as [$title, $body]) {
+        if ($title !== '') {
+            $pdf->SetFont('Helvetica', 'B', 8.6);
+            $pdf->SetTextColor(...PDF_INK);
+            $pdf->Cell(0, 5, pdf_t($title), 0, 1, 'L');
+        }
+        $pdf->SetFont('Helvetica', '', 8.4);
+        $pdf->SetTextColor(...PDF_INK);
+        $pdf->MultiCell($pdf->usableWidth(), 4.4, pdf_t($body), 0, 'J');
+        $pdf->Ln(2.5);
+    }
+
+    $pdf->SetFont('Helvetica', 'I', 7.8);
+    $pdf->SetTextColor(...PDF_MUTED);
+    $pdf->MultiCell($pdf->usableWidth(), 4, pdf_t('Aviso vigente a la fecha de impresión de este documento.'), 0, 'L');
+    $pdf->SetTextColor(...PDF_INK);
 }
 
 /**
@@ -1824,11 +1915,20 @@ function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array 
             $compact ? $pdf->compactRows($pairs) : $pdf->fieldsTable($pairs);
         }
         if ($signature) {
+            // El pie de la imagen sobra cuando repite el título de la sección
+            // ("FIRMA DEL PACIENTE" arriba y "Firma del paciente" abajo).
+            $caption = (string)($signatureField['l'] ?? 'Firma del paciente');
+            if (mb_strtolower($caption, 'UTF-8') === mb_strtolower((string)$sec['title'], 'UTF-8')) {
+                $caption = '';
+            }
+            // En el expediente la firma cierra la visita, así que va centrada y en
+            // grande: pegada al margen izquierdo y a 14 mm se leía como una miniatura
+            // suelta. La ficha (compacta) dibuja la suya aparte, al final del documento.
             $pdf->dataUrlImage(
                 $signature,
-                $signatureField['l'] ?? 'Firma del paciente',
+                $caption,
                 $signatureField['legend'] ?? null,
-                !empty($signatureField['large'])
+                !$compact || !empty($signatureField['large'])
             );
         }
     }
