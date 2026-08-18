@@ -612,19 +612,23 @@ function wireVisits(root, patient, episodes, patientId) {
     }
   });
   box.querySelector('[data-mark-delivered]')?.addEventListener('click', async (ev) => {
+    // currentTarget se limpia en cuanto termina el despacho del evento: hay que
+    // leer el dataset antes del await de confirmDialog, no después.
+    const episodeId = +ev.currentTarget.dataset.markDelivered;
     const ok = await confirmDialog('Marcar como entregado', '¿Confirmas que los resultados de este estudio ya se entregaron?', { confirmLabel: 'Marcar entregado' });
     if (!ok) return;
     try {
-      await apiPost('episodes/set_delivery', { episode_id: +ev.currentTarget.dataset.markDelivered, delivered: true });
+      await apiPost('episodes/set_delivery', { episode_id: episodeId, delivered: true });
       toast('Resultados marcados como entregados');
       reload();
     } catch (e) { toast(e.message, 'error'); }
   });
   box.querySelector('[data-undo-delivery]')?.addEventListener('click', async (ev) => {
+    const episodeId = +ev.currentTarget.dataset.undoDelivery;
     const ok = await confirmDialog('Deshacer entrega', '¿Quitar la marca de "entregado" de este estudio?', { danger: true, confirmLabel: 'Deshacer' });
     if (!ok) return;
     try {
-      await apiPost('episodes/set_delivery', { episode_id: +ev.currentTarget.dataset.undoDelivery, delivered: false });
+      await apiPost('episodes/set_delivery', { episode_id: episodeId, delivered: false });
       toast('Entrega deshecha');
       reload();
     } catch (e) { toast(e.message, 'error'); }

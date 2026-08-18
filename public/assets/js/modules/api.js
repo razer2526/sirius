@@ -191,9 +191,12 @@ async function renderAI(root) {
   };
 
   root.querySelectorAll('[data-btn-test]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      const name = e.currentTarget.dataset.btnTest;
-      e.currentTarget.disabled = true;
+    // btn viene del forEach, no de e.currentTarget: el navegador limpia
+    // currentTarget en cuanto termina el despacho del evento, así que tras el
+    // await de abajo ya no sirve (el finally lo necesita para reactivar el botón).
+    btn.addEventListener('click', async () => {
+      const name = btn.dataset.btnTest;
+      btn.disabled = true;
       try {
         const data = await apiPost('ai/test', {
           provider: name,
@@ -205,7 +208,7 @@ async function renderAI(root) {
       } catch (err) {
         showResult(err.message, false);
       } finally {
-        e.currentTarget.disabled = false;
+        btn.disabled = false;
       }
     });
   });
