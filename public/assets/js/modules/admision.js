@@ -1,7 +1,7 @@
 /** Módulo Admisión: grid de servicios → formulario de admisión (fichas oficiales). */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, modal, field, formValues, inputCls, labelCls, debounce, fullName, fmtDate } from '../ui.js';
+import { icon, escapeHtml, toast, modal, field, formValues, inputCls, labelCls, debounce, fullName, fmtDate, recurrenceText } from '../ui.js';
 import { SERVICES, PATIENT_FIELDS, loadCatalog } from '../services.js';
 import { sectionsHtml, initSections, collectSections } from '../forms.js';
 
@@ -120,12 +120,17 @@ async function renderForm(root, serviceKey) {
             <input id="patient-search" type="text" placeholder="Nombre, folio o teléfono…" autocomplete="off" class="${inputCls}">
             <div id="search-results" class="absolute inset-x-0 top-full z-10 mt-1 hidden overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-200"></div>
           </div>
-          <div id="selected-patient" class="mt-3 hidden items-center justify-between gap-3 rounded-xl bg-indigo-50 px-4 py-3 ring-1 ring-indigo-200">
-            <div>
-              <p id="selected-name" class="text-sm font-semibold text-indigo-900"></p>
-              <p id="selected-file" class="text-xs text-indigo-600"></p>
+          <div id="selected-patient" class="mt-3 hidden flex-col gap-2 rounded-xl bg-indigo-50 px-4 py-3 ring-1 ring-indigo-200">
+            <div class="flex items-center justify-between gap-3">
+              <div>
+                <p id="selected-name" class="text-sm font-semibold text-indigo-900"></p>
+                <p id="selected-file" class="text-xs text-indigo-600"></p>
+              </div>
+              <button type="button" id="clear-selected" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Quitar</button>
             </div>
-            <button type="button" id="clear-selected" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800">Quitar</button>
+            <p id="selected-recurrence" class="hidden items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-xs font-medium text-indigo-700">
+              ${icon('repeat', 'h-3.5 w-3.5 shrink-0')} <span id="selected-recurrence-text"></span>
+            </p>
           </div>
         </section>
 
@@ -338,6 +343,15 @@ async function renderForm(root, serviceKey) {
     root.querySelector('#selected-patient').classList.add('flex');
     root.querySelector('#selected-name').textContent = fullName(p);
     root.querySelector('#selected-file').textContent = `${p.file_number}${p.birth_date ? ' · Nac. ' + fmtDate(p.birth_date) : ''}`;
+    const recurrenceEl = root.querySelector('#selected-recurrence');
+    if (p.last_visit) {
+      root.querySelector('#selected-recurrence-text').textContent = recurrenceText(p.last_visit);
+      recurrenceEl.classList.remove('hidden');
+      recurrenceEl.classList.add('flex');
+    } else {
+      recurrenceEl.classList.add('hidden');
+      recurrenceEl.classList.remove('flex');
+    }
     patientSection.classList.add('hidden');
     // Deshabilitar sus campos para que no bloqueen la validación del formulario
     patientSection.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = true; });
@@ -426,6 +440,7 @@ async function renderForm(root, serviceKey) {
             <div class="mt-3 rounded-xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
               <p class="text-sm font-semibold text-amber-900">${escapeHtml(fullName(d))}</p>
               <p class="text-xs text-amber-700">${escapeHtml(d.file_number)}${d.birth_date ? ' · Nac. ' + fmtDate(d.birth_date) : ''}</p>
+              ${d.last_visit ? `<p class="mt-2 text-xs font-medium text-amber-800">${escapeHtml(recurrenceText(d.last_visit))}</p>` : ''}
             </div>`,
           actions: [
             { label: 'Usar el existente', primary: true, onClick: (close) => { close(); selectPatient(d); submit(false); } },
