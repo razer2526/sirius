@@ -16,6 +16,35 @@ function handle_episodes(string $action): void
 
             $pdo = db();
             $me = current_user();
+
+            // Reintento del outbox del wizard sin conexión: mismo client_uuid que un
+            // envío que ya se guardó. Se devuelve el resultado original ANTES de
+            // llegar al aviso de posible duplicado (nombre + fecha de nacimiento) más
+            // abajo, porque un reintento del propio dispositivo no es un paciente
+            // repetido, es la misma admisión que no pudo confirmar si ya se había
+            // guardado. No se reenvía la ficha por correo: eso ya pasó (o no) la
+            // primera vez.
+            $clientUuid = trim((string)($b['client_uuid'] ?? '')) ?: null;
+            if ($clientUuid !== null) {
+                $st = $pdo->prepare(
+                    'SELECT e.id AS episode_id, e.patient_id, e.service_folio, p.file_number
+                     FROM episodes e JOIN patients p ON p.id = e.patient_id
+                     WHERE e.client_uuid = ?'
+                );
+                $st->execute([$clientUuid]);
+                $existing = $st->fetch();
+                if ($existing) {
+                    json_ok([
+                        'episode_id'    => (int)$existing['episode_id'],
+                        'patient_id'    => (int)$existing['patient_id'],
+                        'file_number'   => $existing['file_number'],
+                        'service_folio' => $existing['service_folio'],
+                        'new_patient'   => false,
+                        'mail'          => null,
+                    ]);
+                }
+            }
+
             $patientId = (int)($b['patient_id'] ?? 0);
             $p = $b['patient'] ?? [];
 
@@ -125,8 +154,8 @@ function handle_episodes(string $action): void
                 }
 
                 $st = $pdo->prepare(
-                    'INSERT INTO episodes (patient_id, service, service_folio, admission_date, reason, referring_doctor, linked_doctor_id, assigned_user_id, service_data, status, expected_delivery_date, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                    'INSERT INTO episodes (patient_id, service, service_folio, admission_date, reason, referring_doctor, linked_doctor_id, assigned_user_id, service_data, status, expected_delivery_date, client_uuid, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
                 );
                 $st->execute([
                     $patientId,
@@ -140,6 +169,7 @@ function handle_episodes(string $action): void
                     $serviceData ? json_encode($serviceData, JSON_UNESCAPED_UNICODE) : null,
                     'activo',
                     $expectedDelivery,
+                    $clientUuid,
                     (int)$me['id'],
                 ]);
                 $episodeId = (int)$pdo->lastInsertId();
@@ -157,6 +187,29 @@ function handle_episodes(string $action): void
             } catch (Throwable $e) {
                 if ($pdo->inTransaction()) {
                     $pdo->rollBack();
+                }
+                // Dos reintentos del mismo client_uuid casi al mismo tiempo (el
+                // dispositivo reintenta al reconectar justo cuando el Background Sync
+                // también dispara): el índice único rechaza el segundo INSERT. No es
+                // un error real, es la misma admisión llegando dos veces.
+                if ($clientUuid !== null && str_contains($e->getMessage(), 'client_uuid')) {
+                    $st = $pdo->prepare(
+                        'SELECT e.id AS episode_id, e.patient_id, e.service_folio, p.file_number
+                         FROM episodes e JOIN patients p ON p.id = e.patient_id
+                         WHERE e.client_uuid = ?'
+                    );
+                    $st->execute([$clientUuid]);
+                    $existing = $st->fetch();
+                    if ($existing) {
+                        json_ok([
+                            'episode_id'    => (int)$existing['episode_id'],
+                            'patient_id'    => (int)$existing['patient_id'],
+                            'file_number'   => $existing['file_number'],
+                            'service_folio' => $existing['service_folio'],
+                            'new_patient'   => false,
+                            'mail'          => null,
+                        ]);
+                    }
                 }
                 throw $e;
             }

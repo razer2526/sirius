@@ -46,6 +46,7 @@ const SHELL = [
   'assets/js/modules/vinculacion.js',
   'assets/js/modules/plantillas_estudios.js',
   'assets/js/doc_templates.json',
+  'assets/js/outbox.js',
 ];
 
 self.addEventListener('install', (e) => {
@@ -88,3 +89,84 @@ self.addEventListener('fetch', (e) => {
     caches.match(e.request, { ignoreSearch: true }).then((hit) => hit || fetch(e.request))
   );
 });
+
+/**
+ * Background Sync: refuerzo del outbox del wizard para cuando el sistema
+ * operativo recupera señal con la app cerrada. El listener de 'online' en
+ * outbox.js (primer plano) sigue siendo la vía principal; esto solo cubre el
+ * caso en que nadie tiene la app abierta cuando vuelve la conexión.
+ */
+self.addEventListener('sync', (e) => {
+  if (e.tag === 'sync-wizard-outbox') {
+    e.waitUntil(flushWizardOutbox());
+  }
+});
+
+/**
+ * Duplica el CRUD de outbox.js en vez de importarlo: este archivo se registra
+ * como service worker clásico (sin `type: module`), así que no puede compartir
+ * el módulo ES de la página. Debe seguir exactamente el mismo esquema de
+ * IndexedDB (sirius-wizard-outbox / pending) que outbox.js.
+ */
+function openOutboxDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('sirius-wizard-outbox', 1);
+    req.onupgradeneeded = () => {
+      req.result.createObjectStore('pending', { keyPath: 'client_uuid' });
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function promisifyRequest(req) {
+  return new Promise((resolve, reject) => {
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function flushWizardOutbox() {
+  const db = await openOutboxDb();
+  const all = await promisifyRequest(db.transaction('pending', 'readonly').objectStore('pending').getAll());
+  const toRetry = all.filter((r) => !r.failed);
+  if (!toRetry.length) return;
+
+  // El token CSRF vive en la sesión del servidor, no en una variable de JS que
+  // el service worker pudiera heredar de la página; se pide aquí con la cookie
+  // de sesión que el navegador ya envía sola en peticiones del mismo origen.
+  let csrf;
+  try {
+    const sessionRes = await fetch('api/index.php?r=auth%2Fsession', { credentials: 'same-origin' });
+    const session = await sessionRes.json();
+    csrf = session?.data?.csrf;
+  } catch {
+    return; // sin señal real todavía: se reintenta en el próximo 'sync'
+  }
+  if (!csrf) return; // sesión expirada: se resuelve cuando alguien abra la app y vuelva a entrar
+
+  for (const rec of toRetry) {
+    try {
+      const res = await fetch('api/index.php?r=episodes%2Fcreate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
+        body: JSON.stringify({ ...rec.payload, client_uuid: rec.client_uuid }),
+        credentials: 'same-origin',
+      });
+      const json = await res.json();
+      const tx = db.transaction('pending', 'readwrite');
+      const store = tx.objectStore('pending');
+      if (json.ok) {
+        await promisifyRequest(store.delete(rec.client_uuid));
+      } else {
+        // El servidor respondió y rechazó la captura: reintentarla a ciegas no
+        // lo arregla. Se marca para que alguien la revise, igual que en outbox.js.
+        const fresh = await promisifyRequest(store.get(rec.client_uuid));
+        if (fresh) await promisifyRequest(store.put({ ...fresh, failed: true, error: json.error || 'Error del servidor' }));
+      }
+    } catch {
+      // Sigue sin señal real pese a lo que creyó el sistema operativo: se deja
+      // en la cola para el próximo 'sync'.
+    }
+  }
+}
