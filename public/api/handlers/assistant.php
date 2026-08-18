@@ -8,6 +8,7 @@
  */
 
 require_once __DIR__ . '/../../includes/ai.php';
+require_once __DIR__ . '/../../includes/assistant_tools.php';
 
 function handle_assistant(string $action): void
 {
@@ -41,8 +42,12 @@ function handle_assistant(string $action): void
             $module = preg_replace('/[^a-z_]/', '', (string)($b['module'] ?? 'dashboard'));
             $history = assistant_history($b['history'] ?? [], $message);
 
+            // Solo Gemini sabe usarlas por ahora; con otro proveedor activo se manda
+            // un arreglo vacío y el asistente responde como siempre (ver ai_generate()).
+            $tools = $cfg['provider'] === 'gemini' ? assistant_tools($me) : [];
+
             try {
-                $reply = ai_generate($history, assistant_system_prompt($cfg, $module, $me));
+                $reply = ai_generate($history, assistant_system_prompt($cfg, $module, $me, !!$tools), null, 1200, $tools);
             } catch (Throwable $e) {
                 error_log('assistant: ' . $e->getMessage());
                 json_error($e->getMessage(), 502);
@@ -113,7 +118,7 @@ function assistant_history($history, string $message): array
 }
 
 /** Instrucciones + contexto de lo que el usuario está viendo. */
-function assistant_system_prompt(array $cfg, string $module, array $me): string
+function assistant_system_prompt(array $cfg, string $module, array $me, bool $hasTools = false): string
 {
     $labels = [
         'dashboard' => 'el panel principal', 'admision' => 'el módulo de Admisión',
@@ -133,7 +138,13 @@ function assistant_system_prompt(array $cfg, string $module, array $me): string
     if ($facts !== '') {
         $prompt .= "\nDATOS DEL SISTEMA (úsalos para responder; no inventes otros):\n" . $facts;
     }
-    $prompt .= "\nSi te piden algo que requiera datos que no aparecen arriba, indica en qué módulo se consultan.";
+    if ($hasTools) {
+        $prompt .= "\nTienes herramientas para consultar la agenda de un día y para buscar un paciente con sus "
+            . "episodios. Úsalas cuando la pregunta las necesite, en vez de adivinar o de solo repetir los datos "
+            . "de arriba; si buscas un paciente y hay varios con nombre parecido, pregunta cuál antes de asumir.";
+    } else {
+        $prompt .= "\nSi te piden algo que requiera datos que no aparecen arriba, indica en qué módulo se consultan.";
+    }
     return $prompt;
 }
 
