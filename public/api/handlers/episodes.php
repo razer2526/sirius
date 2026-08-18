@@ -41,6 +41,7 @@ function handle_episodes(string $action): void
                     $st->execute([$first, $pat, $bd, $bd]);
                     $dup = $st->fetch();
                     if ($dup) {
+                        $dup['last_visit'] = patient_last_visit((int)$dup['id']);
                         json_ok(['duplicate' => $dup]);
                     }
                 }
@@ -348,7 +349,14 @@ function handle_episodes(string $action): void
                  ORDER BY paternal_surname, first_name LIMIT 10"
             );
             $st->execute([$like, $like, $like, $like]);
-            json_ok(['patients' => $st->fetchAll()]);
+            $patients = $st->fetchAll();
+            // Máximo 10 resultados: una consulta más por fila es más simple que
+            // armar el JOIN agregado, y aquí no pesa.
+            foreach ($patients as &$pt) {
+                $pt['last_visit'] = patient_last_visit((int)$pt['id']);
+            }
+            unset($pt);
+            json_ok(['patients' => $patients]);
         }
 
         /** Estudios activos del catálogo, para el picker de "Estudios a realizar" en admisión de laboratorio. */
@@ -434,6 +442,33 @@ function valid_episode_date($v): ?string
     }
     $d = DateTime::createFromFormat('Y-m-d', $v);
     return ($d && $d->format('Y-m-d') === $v) ? $v : null;
+}
+
+/**
+ * Última visita de un paciente, para avisar cuando es recurrente. Todo paciente
+ * tiene al menos un episodio (se crea siempre junto con el primero, ver
+ * insert_patient() más abajo), así que quien aparece en una búsqueda o en el
+ * aviso de duplicado siempre trae esta información.
+ */
+function patient_last_visit(int $patientId): ?array
+{
+    $st = db()->prepare(
+        'SELECT service, admission_date, service_folio,
+                (SELECT COUNT(*) FROM episodes e2 WHERE e2.patient_id = episodes.patient_id) AS visit_count
+         FROM episodes WHERE patient_id = ? ORDER BY admission_date DESC LIMIT 1'
+    );
+    $st->execute([$patientId]);
+    $row = $st->fetch();
+    if (!$row) {
+        return null;
+    }
+    return [
+        'service'       => (string)$row['service'],
+        'service_label' => SERVICE_LABELS[$row['service']] ?? $row['service'],
+        'date'          => (string)$row['admission_date'],
+        'service_folio' => $row['service_folio'],
+        'visit_count'   => (int)$row['visit_count'],
+    ];
 }
 
 /** Inserta un paciente nuevo generando folio BP-YYYY-#### de forma segura. */

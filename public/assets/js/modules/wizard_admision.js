@@ -11,7 +11,7 @@
  */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, modal, debounce, fullName, fmtDate } from '../ui.js';
+import { icon, escapeHtml, toast, modal, debounce, fullName, fmtDate, recurrenceText } from '../ui.js';
 import { loadCatalog } from '../services.js';
 
 let ctx;
@@ -196,6 +196,10 @@ function bodyHtml(key) {
             <div class="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
               <p class="text-lg font-bold text-emerald-900">${escapeHtml(fullName(data.existingPatient))}</p>
               <p class="text-sm text-emerald-700">${escapeHtml(data.existingPatient.file_number)}</p>
+              ${data.existingPatient.last_visit ? `
+              <p class="mt-2 flex items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-sm font-medium text-emerald-800">
+                ${icon('repeat', 'h-4 w-4 shrink-0')} ${escapeHtml(recurrenceText(data.existingPatient.last_visit))}
+              </p>` : ''}
               <button type="button" id="wz-clear-patient" class="mt-2 text-sm font-semibold text-emerald-700 underline">Elegir otro</button>
             </div>` : `
             <input type="search" id="wz-search" placeholder="Buscar por nombre o teléfono…" autocomplete="off" class="${bigInput}">
@@ -642,6 +646,7 @@ async function submit(root, ignoreDuplicate = false) {
           <div class="mt-3 rounded-xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200">
             <p class="text-base font-bold text-amber-900">${escapeHtml(fullName(d))}</p>
             <p class="text-sm text-amber-700">${escapeHtml(d.file_number)}</p>
+            ${d.last_visit ? `<p class="mt-2 text-sm font-medium text-amber-800">${escapeHtml(recurrenceText(d.last_visit))}</p>` : ''}
           </div>`,
         actions: [
           { label: 'Es el mismo', primary: true, onClick: (close) => { close(); data.existingPatient = d; submit(root, false); } },

@@ -208,6 +208,29 @@ export function fmtDateTime(str) {
     + ' · ' + d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
 }
 
+/** "hace 3 días" / "hoy" / "hace 2 meses" — para avisos de recurrencia, no para fechas exactas. */
+export function fmtRelative(str) {
+  if (!str) return '';
+  const d = parseLocal(str);
+  if (isNaN(d)) return '';
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000);
+  if (days <= 0) return 'hoy';
+  if (days === 1) return 'ayer';
+  if (days < 30) return `hace ${days} días`;
+  const months = Math.round(days / 30.44);
+  if (months < 12) return `hace ${months} mes${months === 1 ? '' : 'es'}`;
+  const years = Math.round(days / 365.25);
+  return `hace ${years} año${years === 1 ? '' : 's'}`;
+}
+
+/** Texto del aviso de paciente recurrente, a partir de patient_last_visit() del backend. */
+export function recurrenceText(lastVisit) {
+  if (!lastVisit) return '';
+  const when = fmtRelative(lastVisit.date);
+  const previous = lastVisit.visit_count > 1 ? ` · ${lastVisit.visit_count} visitas previas` : '';
+  return `Paciente recurrente: última visita de ${lastVisit.service_label}, ${when}${previous}`;
+}
+
 export function calcAge(birthDate) {
   if (!birthDate) return null;
   const b = parseLocal(birthDate);
