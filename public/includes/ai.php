@@ -289,8 +289,11 @@ function ai_list_models_claude(string $apiKey): array
 /**
  * Envía una conversación al asistente, con el proveedor configurado.
  * $history: [['role' => 'user'|'assistant', 'text' => '...'], …]
+ * $tools: solo lo honra Gemini (ver ai_generate_gemini). Con otro proveedor activo,
+ * se ignora en silencio y el asistente responde como siempre, sin poder consultar
+ * nada por su cuenta — no es un error, es la degradación esperada.
  */
-function ai_generate(array $history, string $systemPrompt = '', ?string $modelOverride = null, int $maxTokens = 1200): string
+function ai_generate(array $history, string $systemPrompt = '', ?string $modelOverride = null, int $maxTokens = 1200, array $tools = []): string
 {
     $cfg = ai_config();
     if (!ai_is_ready()) {
@@ -316,15 +319,34 @@ function ai_generate(array $history, string $systemPrompt = '', ?string $modelOv
     }
 
     return match ($provider) {
-        'gemini' => ai_generate_gemini($turns, $systemPrompt, $model, $maxTokens, $pcfg['api_key']),
+        'gemini' => ai_generate_gemini($turns, $systemPrompt, $model, $maxTokens, $pcfg['api_key'], $tools),
         'openai' => ai_generate_openai($turns, $systemPrompt, $model, $maxTokens, $pcfg['api_key']),
         'claude' => ai_generate_claude($turns, $systemPrompt, $model, $maxTokens, $pcfg['api_key']),
         default  => throw new RuntimeException('Proveedor no reconocido.'),
     };
 }
 
-function ai_generate_gemini(array $turns, string $systemPrompt, string $model, int $maxTokens, string $apiKey): string
+/**
+ * $tools: ['nombre_funcion' => ['declaration' => [...esquema Gemini...], 'handler' => callable]].
+ *
+ * Cuando el modelo pide una herramienta, Gemini exige que el turno se repita tal
+ * cual —incluida una "thoughtSignature" opaca que viaja junto al functionCall—
+ * para poder continuar razonando en la siguiente vuelta; omitirla es un 400
+ * ("Function call is missing a thought_signature"), verificado contra la API real
+ * antes de escribir esto. Por eso $parts se reenvía sin tocar, no reconstruido.
+ */
+function ai_generate_gemini(array $turns, string $systemPrompt, string $model, int $maxTokens, string $apiKey, array $tools = []): string
 {
+    // ai_http() da a cURL hasta 45s por llamada; el límite por defecto de PHP
+    // (30s) puede cortar la petición ANTES de que cURL alcance a fallar por su
+    // cuenta, y entonces el usuario ve un error 500 en blanco en vez del mensaje
+    // claro que ya arma ai_error_message(). Con herramientas la exposición es
+    // mayor (hasta 4 vueltas), pero se vio también sin herramientas: se amplía
+    // aquí siempre, no solo cuando $tools no está vacío.
+    if (strpos((string)ini_get('disable_functions'), 'set_time_limit') === false) {
+        @set_time_limit(120);
+    }
+
     $contents = [];
     foreach ($turns as $t) {
         $contents[] = [
@@ -340,22 +362,56 @@ function ai_generate_gemini(array $turns, string $systemPrompt, string $model, i
     if (trim($systemPrompt) !== '') {
         $payload['systemInstruction'] = ['parts' => [['text' => $systemPrompt]]];
     }
-
-    [$code, $data] = ai_http(
-        'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent',
-        ['x-goog-api-key: ' . $apiKey],
-        $payload
-    );
-    if ($code !== 200) {
-        throw new RuntimeException(ai_error_message($code, $data));
+    if ($tools) {
+        $payload['tools'] = [[
+            'functionDeclarations' => array_values(array_map(fn($t) => $t['declaration'], $tools)),
+        ]];
     }
 
-    $parts = $data['candidates'][0]['content']['parts'] ?? [];
+    // Tope de vueltas herramienta->respuesta: una consulta normal resuelve en una,
+    // pero sin límite un modelo que insiste en llamar herramientas dejaría la
+    // petición del usuario colgada indefinidamente.
+    for ($round = 0; $round < 4; $round++) {
+        [$code, $data] = ai_http(
+            'https://generativelanguage.googleapis.com/v1beta/models/' . rawurlencode($model) . ':generateContent',
+            ['x-goog-api-key: ' . $apiKey],
+            $payload
+        );
+        if ($code !== 200) {
+            throw new RuntimeException(ai_error_message($code, $data));
+        }
+
+        $parts = $data['candidates'][0]['content']['parts'] ?? [];
+        $reason = $data['candidates'][0]['finishReason'] ?? '';
+        $calls = $tools ? array_values(array_filter($parts, fn($p) => isset($p['functionCall']))) : [];
+
+        if (!$calls) {
+            return ai_gemini_final_text($parts, $reason);
+        }
+
+        // El modelo pidió una o más herramientas: se ejecutan aquí (nunca en el
+        // proveedor) y se le devuelve el resultado para que complete la respuesta.
+        $payload['contents'][] = ['role' => 'model', 'parts' => $parts];
+        $resultParts = [];
+        foreach ($calls as $call) {
+            $name = (string)($call['functionCall']['name'] ?? '');
+            $args = $call['functionCall']['args'] ?? [];
+            $tool = $tools[$name] ?? null;
+            $result = $tool ? ($tool['handler'])(is_array($args) ? $args : [])
+                             : ['error' => "Herramienta \"$name\" no reconocida."];
+            $resultParts[] = ['functionResponse' => ['name' => $name, 'response' => $result]];
+        }
+        $payload['contents'][] = ['role' => 'user', 'parts' => $resultParts];
+    }
+    throw new RuntimeException('El asistente no pudo completar la consulta tras varios intentos.');
+}
+
+function ai_gemini_final_text(array $parts, string $reason): string
+{
     $text = '';
     foreach ($parts as $p) {
         $text .= $p['text'] ?? '';
     }
-    $reason = $data['candidates'][0]['finishReason'] ?? '';
     if (trim($text) === '') {
         if ($reason === 'SAFETY') {
             return 'La respuesta fue bloqueada por los filtros de seguridad del proveedor. Reformula la consulta.';
