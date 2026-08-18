@@ -116,6 +116,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 status ENUM('activo','cerrado') NOT NULL DEFAULT 'activo',
                 expected_delivery_date DATE NULL,
                 results_delivered_at DATETIME NULL,
+                client_uuid VARCHAR(64) NULL,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -124,6 +125,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_episode_assigned (assigned_user_id),
                 INDEX idx_episode_delivery (expected_delivery_date),
                 INDEX idx_episode_linked_doctor (linked_doctor_id),
+                UNIQUE KEY uq_episode_client_uuid (client_uuid),
                 CONSTRAINT fk_episode_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE CASCADE,
                 CONSTRAINT fk_episode_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
                 CONSTRAINT fk_episode_assigned FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL,
@@ -588,6 +590,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 status TEXT NOT NULL DEFAULT 'activo',
                 expected_delivery_date TEXT NULL,
                 results_delivered_at TEXT NULL,
+                client_uuid TEXT NULL UNIQUE,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
@@ -949,6 +952,10 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE episodes ADD COLUMN results_delivered_at " . ($isMysql ? 'DATETIME NULL' : 'TEXT NULL'),
         "ALTER TABLE episodes ADD COLUMN linked_doctor_id " . ($isMysql ? 'INT UNSIGNED NULL' : 'INTEGER NULL'),
         "ALTER TABLE quote_studies ADD COLUMN commission_group {$varchar(20)}",
+        // Identifica una admisión capturada por el wizard sin conexión: si el
+        // outbox reintenta el mismo envío (recarga, doble sync), el índice único
+        // hace que la segunda inserción falle en vez de duplicar al paciente.
+        "ALTER TABLE episodes ADD COLUMN client_uuid {$varchar(64)}",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
@@ -959,11 +966,22 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
             // columna ya existe
         }
     }
+    // Aparte del bucle: en MySQL, ADD UNIQUE sobre una tabla con filas existentes
+    // se rechaza si la columna todavía no existe en esa conexión (algunos motores
+    // no ven la columna recién creada dentro de la misma transacción implícita).
+    if ($isMysql) {
+        try {
+            $pdo->exec('ALTER TABLE episodes ADD UNIQUE KEY uq_episode_client_uuid (client_uuid)');
+        } catch (Throwable $e) {
+            // índice ya existe
+        }
+    }
 
     if (!$isMysql) {
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_assigned ON episodes (assigned_user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_delivery ON episodes (expected_delivery_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_linked_doctor ON episodes (linked_doctor_id)');
+        $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_episode_client_uuid ON episodes (client_uuid)');
     }
 
     return ["Migraciones aplicadas: $applied"];

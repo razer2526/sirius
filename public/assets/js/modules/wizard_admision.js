@@ -13,6 +13,7 @@
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, debounce, fullName, fmtDate } from '../ui.js';
 import { loadCatalog } from '../services.js';
+import { outboxEnqueue, outboxCount, outboxFlush } from '../outbox.js';
 
 let ctx;
 let catalog = null;
@@ -20,6 +21,12 @@ let catalog = null;
 /** Estado de la captura. Vive aquí para sobrevivir al re-render de cada paso. */
 let step = 0;
 let data = null;
+
+/* ---- Outbox: cuántas admisiones esperan señal, y cuántas se atoraron ---- */
+let outboxState = { pending: 0, failed: 0 };
+// El listener de 'online' se registra una sola vez aunque el módulo se monte
+// varias veces al navegar; #module-root es el mismo nodo durante toda la SPA.
+let onlineListenerWired = false;
 
 function blankData() {
   return {
@@ -66,6 +73,50 @@ export async function render(root, context) {
   step = 0;
   data = blankData();
   paint(root);
+
+  outboxState = await outboxCount();
+  refreshPendingBanner(root);
+  attemptFlush(root); // por si ya hay señal desde antes de entrar al wizard
+
+  if (!onlineListenerWired) {
+    onlineListenerWired = true;
+    window.addEventListener('online', () => attemptFlush(root));
+  }
+}
+
+/** Reintenta lo que esté en la cola. No hace nada si sigue sin haber señal. */
+async function attemptFlush(root) {
+  if (!navigator.onLine) return;
+  const synced = await outboxFlush();
+  if (synced > 0) {
+    toast(`${synced} admisión${synced === 1 ? '' : 'es'} pendiente${synced === 1 ? '' : 's'} enviada${synced === 1 ? '' : 's'}`, 'success');
+  }
+  outboxState = await outboxCount();
+  refreshPendingBanner(root);
+}
+
+function pendingBannerHtml() {
+  const { pending, failed } = outboxState;
+  if (!pending && !failed) return '';
+  return `
+    <div class="mb-4 space-y-2">
+      ${pending ? `
+        <div class="flex items-center gap-2.5 rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm font-medium text-amber-800 ring-1 ring-amber-200">
+          ${icon('upload', 'h-4 w-4 shrink-0')}
+          <span>${pending} admisión${pending === 1 ? '' : 'es'} guardada${pending === 1 ? '' : 's'} sin conexión, pendiente${pending === 1 ? '' : 's'} de enviar.</span>
+        </div>` : ''}
+      ${failed ? `
+        <div class="flex items-center gap-2.5 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm font-medium text-red-800 ring-1 ring-red-200">
+          ${icon('alert-triangle', 'h-4 w-4 shrink-0')}
+          <span>${failed} admisión${failed === 1 ? '' : 'es'} no se pudo${failed === 1 ? '' : 'ieron'} enviar. Avisa a la oficina para revisarla${failed === 1 ? '' : 's'}.</span>
+        </div>` : ''}
+    </div>`;
+}
+
+/** Actualiza solo el aviso, sin repintar el paso completo (perdería el foco del campo activo). */
+function refreshPendingBanner(root) {
+  const el = root.querySelector('#wz-pending-banner');
+  if (el) el.innerHTML = pendingBannerHtml();
 }
 
 /* ================== Armazón ================== */
@@ -120,6 +171,7 @@ function paint(root) {
 
   root.innerHTML = `
     <div class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-xl flex-col">
+      <div id="wz-pending-banner">${pendingBannerHtml()}</div>
       <div class="mb-5">
         <div class="mb-2 flex items-center justify-between">
           <span class="text-sm font-semibold text-slate-500">Paso ${pos} de ${shown.length}</span>
@@ -620,17 +672,19 @@ async function submit(root, ignoreDuplicate = false) {
     firma: data.signature,
   };
 
+  const payload = {
+    service: 'laboratorio',
+    patient_id: data.existingPatient ? +data.existingPatient.id : 0,
+    patient: data.existingPatient ? {} : data.patient,
+    linked_doctor_id: data.linkedDoctorId === 'otro' ? null : data.linkedDoctorId,
+    referring_doctor: data.linkedDoctorId === 'otro' ? data.doctorOther.trim() : '',
+    service_data: serviceData,
+    study_lines: data.studies.map((s) => ({ study_id: s.study_id, study_name: s.name, amount_charged: s.amount })),
+    ignore_duplicate: ignoreDuplicate,
+  };
+
   try {
-    const res = await apiPost('episodes/create', {
-      service: 'laboratorio',
-      patient_id: data.existingPatient ? +data.existingPatient.id : 0,
-      patient: data.existingPatient ? {} : data.patient,
-      linked_doctor_id: data.linkedDoctorId === 'otro' ? null : data.linkedDoctorId,
-      referring_doctor: data.linkedDoctorId === 'otro' ? data.doctorOther.trim() : '',
-      service_data: serviceData,
-      study_lines: data.studies.map((s) => ({ study_id: s.study_id, study_name: s.name, amount_charged: s.amount })),
-      ignore_duplicate: ignoreDuplicate,
-    });
+    const res = await apiPost('episodes/create', payload);
 
     if (res.duplicate) {
       btn.disabled = false;
@@ -653,10 +707,70 @@ async function submit(root, ignoreDuplicate = false) {
 
     showDone(root, res);
   } catch (e) {
+    // Sin e.code: fetch nunca llegó a obtener respuesta del servidor (sin señal
+    // o red intermitente), a diferencia de un rechazo válido (nombre faltante,
+    // permiso, etc.), que sí trae código y no se arregla reintentando a ciegas.
+    if (e.code === undefined) {
+      await queueOffline(root, payload);
+      return;
+    }
     btn.disabled = false;
     btn.textContent = 'Guardar admisión';
     toast(e.message, 'error');
   }
+}
+
+/**
+ * Sin conexión no hay forma de preguntar al servidor si el paciente ya existe
+ * (el aviso de recurrencia de F1 depende de esa consulta); se guarda como
+ * "es otra persona" y, si de verdad era el mismo, el propio detector de
+ * recurrencia lo señala en cuanto alguien vuelva a admitir a ese paciente.
+ */
+async function queueOffline(root, payload) {
+  await outboxEnqueue({ ...payload, ignore_duplicate: true });
+  registerBackgroundSync();
+  outboxState = await outboxCount();
+  showQueued(root);
+}
+
+async function registerBackgroundSync() {
+  try {
+    if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+    const reg = await navigator.serviceWorker.ready;
+    await reg.sync.register('sync-wizard-outbox');
+  } catch {
+    // Sin soporte de Background Sync: el listener de 'online' en primer plano
+    // sigue cubriendo el reintento en cuanto se reabra la app con señal.
+  }
+}
+
+function showQueued(root) {
+  root.innerHTML = `
+    <div class="mx-auto flex max-w-xl flex-col items-center pt-12 text-center">
+      <div class="mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-amber-100 text-amber-600">
+        ${icon('upload', 'h-10 w-10')}
+      </div>
+      <h2 class="text-2xl font-bold text-slate-900">Guardado sin conexión</h2>
+      <p class="mt-3 max-w-sm text-base text-slate-500">
+        No hay señal en este momento, pero la captura no se perdió. Se enviará sola
+        en cuanto el dispositivo recupere internet.
+      </p>
+      <p class="mt-4 text-sm font-semibold text-amber-700">
+        ${outboxState.pending} admisión${outboxState.pending === 1 ? '' : 'es'} pendiente${outboxState.pending === 1 ? '' : 's'} de enviar
+      </p>
+      <div class="mt-10 w-full space-y-3">
+        <button type="button" id="wz-again"
+                class="w-full rounded-xl bg-indigo-600 px-5 py-4 text-base font-bold text-white shadow-sm hover:bg-indigo-500">
+          Registrar otro paciente
+        </button>
+      </div>
+    </div>`;
+
+  root.querySelector('#wz-again').addEventListener('click', () => {
+    step = 0;
+    data = blankData();
+    paint(root);
+  });
 }
 
 function showDone(root, res) {
