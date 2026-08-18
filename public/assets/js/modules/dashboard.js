@@ -178,6 +178,13 @@ function alertsSection(alerts) {
       ))));
   }
 
+  if (alerts.documents_pending_review?.length) {
+    // Sin destino único por tipo o categoría (un borrador puede ser de cualquiera),
+    // así que enlaza al Membretador y de ahí el usuario entra a revisarlo.
+    blocks.push(alertBlock('file-text', 'Estudios por revisar', 'text-amber-600 bg-amber-50', '#/apps/membretador',
+      alerts.documents_pending_review.map((d) => rowText(d.patient_name, d.type_label))));
+  }
+
   if (!blocks.length) return '';
 
   return `
