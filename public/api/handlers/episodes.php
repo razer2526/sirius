@@ -314,10 +314,18 @@ function handle_episodes(string $action): void
             $params[] = $episodeId;
             db()->prepare('UPDATE episodes SET ' . implode(', ', $sets) . ' WHERE id = ?')->execute($params);
 
+            // 'delivered' distingue marcar de deshacer; sin esa llave, solo cambió la
+            // fecha estimada. Con la condición anterior, deshacer entrega quedaba en
+            // el log como "Actualizó fecha de entrega", que no es lo que pasó.
+            if (array_key_exists('delivered', $b)) {
+                $deliveryMsg = !empty($b['delivered']) ? 'Marcó resultados como entregados' : 'Deshizo la marca de entrega';
+            } else {
+                $deliveryMsg = 'Actualizó fecha de entrega';
+            }
             log_activity(
                 'admision',
                 'episode_delivery',
-                !empty($b['delivered']) ? 'Marcó resultados como entregados' : 'Actualizó fecha de entrega',
+                $deliveryMsg,
                 'episode',
                 $episodeId
             );
