@@ -122,6 +122,23 @@ function dash_alerts(array $me): array
         $out['birthdays'] = dash_upcoming_birthdays($me);
     }
 
+    // Estudios membretados en borrador: sin esto, encontrarlos significa leer el
+    // estado renglón por renglón en cada categoría del Membretador.
+    if (user_can('apps') && (is_admin_role($me) || user_flag('apps', 'review'))) {
+        require_once __DIR__ . '/../../includes/doc_templates.php';
+        $st = $pdo->query(
+            "SELECT id, patient_name, doc_type, created_at FROM documents
+             WHERE status = 'borrador' ORDER BY created_at LIMIT 8"
+        );
+        $rows = $st->fetchAll();
+        $templates = doc_templates();
+        foreach ($rows as &$r) {
+            $r['type_label'] = $templates[$r['doc_type']]['short'] ?? $r['doc_type'];
+        }
+        unset($r);
+        $out['documents_pending_review'] = $rows;
+    }
+
     return $out;
 }
 

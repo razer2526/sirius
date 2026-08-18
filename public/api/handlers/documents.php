@@ -18,11 +18,16 @@ function handle_documents(string $action): void
         case 'list': {
             $q = trim((string)($_GET['q'] ?? ''));
             $type = trim((string)($_GET['type'] ?? ''));
+            $status = trim((string)($_GET['status'] ?? ''));
             $params = [];
             $where = '1=1';
             if ($type !== '') {
                 $where .= ' AND d.doc_type = ?';
                 $params[] = $type;
+            }
+            if (in_array($status, ['borrador', 'revisado'], true)) {
+                $where .= ' AND d.status = ?';
+                $params[] = $status;
             }
             if ($q !== '') {
                 $where .= ' AND (d.patient_name LIKE ? OR d.folio LIKE ?)';

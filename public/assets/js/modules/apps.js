@@ -171,6 +171,7 @@ function comingSoon(root, label, backHref) {
 /* ================== Panel de estudios membretados ================== */
 async function renderList(root, category, type) {
   const tpl = catalog.templates[type];
+  let status = '';
   root.innerHTML = `
     <div class="mx-auto max-w-5xl space-y-4">
       <a href="#/apps/membretador/${category}" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
@@ -187,19 +188,56 @@ async function renderList(root, category, type) {
           ${icon('plus', 'h-4 w-4')} Nuevo ${escapeHtml(tpl.short)}
         </a>
       </div>
+      <div id="doc-status-filter">${statusFilterHtml(status)}</div>
       <div id="doc-list">${spinner()}</div>
     </div>`;
 
   const input = root.querySelector('#doc-q');
   const load = async () => {
-    listState = await apiGet('documents/list', { q: input.value.trim(), type });
-    paintList(root.querySelector('#doc-list'), category, type);
+    listState = await apiGet('documents/list', { q: input.value.trim(), type, status });
+    paintList(root.querySelector('#doc-list'), load, (id) => `#/apps/membretador/${category}/${type}/${id}`);
   };
   input.addEventListener('input', debounce(load, 300));
+  wireStatusFilter(root, (next) => { status = next; load(); });
   await load();
 }
 
-function paintList(box, category, type) {
+/**
+ * Filtro de estado para la lista de estudios membretados: "Por revisar" es lo
+ * que necesita quien tiene el privilegio de revisión para encontrar su cola de
+ * trabajo sin tener que leer el estado renglón por renglón.
+ */
+function statusFilterHtml(active) {
+  const opt = (value, label) => `
+    <button type="button" data-status-filter="${value}"
+            class="rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+              active === value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 ring-1 ring-slate-200 hover:bg-slate-50'}">
+      ${label}
+    </button>`;
+  return `
+    <div class="flex flex-wrap gap-1.5">
+      ${opt('', 'Todos')}
+      ${opt('borrador', 'Por revisar')}
+      ${opt('revisado', 'Revisado')}
+    </div>`;
+}
+
+function wireStatusFilter(root, onChange) {
+  root.querySelectorAll('[data-status-filter]').forEach((b) => b.addEventListener('click', () => {
+    const box = root.querySelector('#doc-status-filter');
+    box.innerHTML = statusFilterHtml(b.dataset.statusFilter);
+    wireStatusFilter(root, onChange);
+    onChange(b.dataset.statusFilter);
+  }));
+}
+
+/**
+ * reload recarga la lista tal como está (con su búsqueda y filtro vigentes);
+ * editHref arma el enlace de edición de un documento, que difiere entre el
+ * flujo por plantilla (#/…/<categoria>/<tipo>/<id>) y el de órdenes de
+ * análisis clínicos (#/…/<categoria>/<id>, sin segmento de tipo).
+ */
+function paintList(box, reload, editHref) {
   const { documents, can_delete } = listState;
   if (!documents.length) {
     box.innerHTML = `
@@ -245,7 +283,7 @@ function paintList(box, category, type) {
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
                     <a href="documento.php?id=${d.id}&download=1" title="Guardar PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('download', 'h-4 w-4')}</a>
-                    <a href="#/apps/membretador/${category}/${type}/${d.id}" title="Editar"
+                    <a href="${editHref(d.id)}" title="Editar"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</a>
                     ${can_delete ? `<button type="button" data-del="${d.id}" title="Borrar"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
@@ -265,7 +303,7 @@ function paintList(box, category, type) {
       try {
         await apiPost('documents/delete', { id: d.id });
         toast('Estudio eliminado');
-        renderList(document.getElementById('module-root'), category, type);
+        reload();
       } catch (e) {
         toast(e.message, 'error');
       }
@@ -276,6 +314,7 @@ function paintList(box, category, type) {
 
 /** Panel con las órdenes ya membretadas y el acceso para crear una nueva. */
 async function renderOrders(root, category, cat, docType) {
+  let status = '';
   root.innerHTML = `
     <div class="mx-auto max-w-5xl space-y-4">
       <a href="#/apps/membretador" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
@@ -292,15 +331,17 @@ async function renderOrders(root, category, cat, docType) {
           ${icon('plus', 'h-4 w-4')} Nueva orden
         </a>
       </div>
+      <div id="doc-status-filter">${statusFilterHtml(status)}</div>
       <div id="doc-list">${spinner()}</div>
     </div>`;
 
   const input = root.querySelector('#doc-q');
   const load = async () => {
-    listState = await apiGet('documents/list', { q: input.value.trim(), type: docType });
-    paintList(root.querySelector('#doc-list'), category, docType);
+    listState = await apiGet('documents/list', { q: input.value.trim(), type: docType, status });
+    paintList(root.querySelector('#doc-list'), load, (id) => `#/apps/membretador/${category}/${id}`);
   };
   input.addEventListener('input', debounce(load, 300));
+  wireStatusFilter(root, (next) => { status = next; load(); });
   await load();
 }
 
