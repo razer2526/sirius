@@ -133,3 +133,18 @@ function require_episode_visible(array $episode, array $me): void
         json_error('No tienes acceso a este expediente', 403);
     }
 }
+
+/** ¿Puede $me ver este paciente? Admin ve todo; el resto solo si tiene al menos un
+ *  episodio general o asignado a él. Vive aquí (no en patients.php) porque también
+ *  la usa episodes.php al adjuntar documentos, y cada handler se carga por separado. */
+function patient_is_visible(array $patient, array $me): bool
+{
+    if (is_admin_role($me)) {
+        return true;
+    }
+    $st = db()->prepare(
+        'SELECT 1 FROM episodes WHERE patient_id = ? AND (assigned_user_id IS NULL OR assigned_user_id = ?) LIMIT 1'
+    );
+    $st->execute([$patient['id'], (int)$me['id']]);
+    return (bool)$st->fetch();
+}
