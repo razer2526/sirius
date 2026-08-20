@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/../../includes/ai.php';
 require_once __DIR__ . '/../../includes/assistant_tools.php';
+require_once __DIR__ . '/../../includes/pdf_text.php';
 
 function handle_assistant(string $action): void
 {
@@ -256,7 +257,53 @@ function assistant_patient_record(int $patientId, array $me): ?string
     }
 
     $out = array_merge($out, assistant_patient_studies($patientId));
+    $out = array_merge($out, assistant_patient_attachments($patientId));
     return implode("\n", array_filter($out, fn($l) => trim((string)$l) !== ''));
+}
+
+/**
+ * Documentos adjuntos del expediente (estudios previos, imagenología, historial…).
+ * Los PDF se leen de verdad: el mismo extractor de texto plano que usa el lector
+ * de RAPHA, aquí sin buscar una tabla porque el formato de cada adjunto es libre.
+ * Lo que no es PDF (una imagen, por ejemplo) solo se anuncia por nombre y categoría,
+ * porque el asistente no tiene forma de leer su contenido.
+ */
+function assistant_patient_attachments(int $patientId): array
+{
+    // Los más recientes primero y acotados: un expediente con muchos adjuntos no
+    // debe inflar el contexto de cada pregunta al asistente.
+    $st = db()->prepare(
+        'SELECT name, stored_name, mime, category, document_date FROM patient_documents
+         WHERE patient_id = ? ORDER BY created_at DESC LIMIT 10'
+    );
+    $st->execute([$patientId]);
+    $docs = $st->fetchAll();
+    if (!$docs) {
+        return [];
+    }
+
+    $out = ["\n--- Documentos adjuntos al expediente ---"];
+    $dir = __DIR__ . '/../../uploads/expedientes/';
+    foreach ($docs as $d) {
+        $label = $d['name'] . ($d['category'] ? ' (' . $d['category'] . ')' : '')
+            . ($d['document_date'] ? ' · ' . $d['document_date'] : '');
+
+        if ($d['mime'] !== 'application/pdf') {
+            $out[] = "· $label — archivo no legible por el asistente (no es PDF).";
+            continue;
+        }
+        $path = $dir . basename((string)$d['stored_name']);
+        $text = is_file($path) ? trim(pdf_extract_text($path)) : '';
+        if ($text === '') {
+            $out[] = "· $label — no se pudo extraer texto del PDF.";
+            continue;
+        }
+        // Un adjunto largo (historial completo, por ejemplo) no debe dominar el
+        // contexto: se corta y se avisa, en vez de mandarlo entero o descartarlo.
+        $truncated = mb_strlen($text) > 6000;
+        $out[] = "· $label:\n" . mb_substr($text, 0, 6000) . ($truncated ? "\n[...texto recortado...]" : '');
+    }
+    return $out;
 }
 
 /** Resultados de los estudios ya membretados de un paciente (moleculares y de análisis clínicos). */
