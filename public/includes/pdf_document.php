@@ -1226,47 +1226,14 @@ function pdf_fit(FPDF $pdf, string $text, float $maxWidth): string
 }
 
 /**
- * FPDF no admite PNG con canal alfa: se aplana sobre blanco y se cachea.
- * Devuelve una ruta utilizable o null.
+ * Ruta utilizable de la imagen, o null si no existe.
+ * El FPDF vendorizado (1.9) sí soporta el canal alfa de PNG (lo escribe como SMask
+ * del PDF), así que aquí ya no se aplana sobre blanco: eso era lo que dejaba la firma
+ * con un cuadro blanco encima de la marca de agua en vez de transparencia real.
  */
 function pdf_safe_image(?string $path): ?string
 {
-    if (!$path || !is_file($path)) {
-        return null;
-    }
-    $info = @getimagesize($path);
-    if (!$info) {
-        return null;
-    }
-    if ($info[2] !== IMAGETYPE_PNG || !function_exists('imagecreatetruecolor')) {
-        return $path;
-    }
-    // Color type 4 (gris+alfa) y 6 (RGBA) llevan canal alfa; 3 (paleta) puede traer tRNS
-    $colorType = @ord(file_get_contents($path, false, null, 25, 1));
-    if (!in_array($colorType, [3, 4, 6], true)) {
-        return $path;
-    }
-    $cacheDir = dirname($path) . '/cache/';
-    if (!is_dir($cacheDir)) {
-        @mkdir($cacheDir, 0775, true);
-    }
-    $cache = $cacheDir . 'flat-' . substr(md5($path . filemtime($path)), 0, 12) . '.png';
-    if (is_file($cache)) {
-        return $cache;
-    }
-    $src = @imagecreatefrompng($path);
-    if (!$src) {
-        return $path;
-    }
-    $w = imagesx($src);
-    $h = imagesy($src);
-    $flat = imagecreatetruecolor($w, $h);
-    imagefill($flat, 0, 0, imagecolorallocate($flat, 255, 255, 255));
-    imagecopy($flat, $src, 0, 0, 0, 0, $w, $h);
-    imagepng($flat, $cache);
-    imagedestroy($src);
-    imagedestroy($flat);
-    return is_file($cache) ? $cache : $path;
+    return ($path && is_file($path)) ? $path : null;
 }
 
 /**
