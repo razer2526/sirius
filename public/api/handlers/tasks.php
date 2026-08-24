@@ -230,6 +230,141 @@ function handle_tasks(string $action): void
             log_activity('tareas', 'task_delete', "Eliminó tarea \"{$task['title']}\"", 'task', $id);
             json_ok();
         }
+
+        /* ---- Resultados por entregar (pizarra de entregas: paciente, fechas, checklist de estudios) ---- */
+        case 'results_list': {
+            $rows = db()->query(
+                'SELECT r.*, u.full_name AS creator_name FROM result_deliveries r
+                 LEFT JOIN users u ON u.id = r.created_by
+                 ORDER BY r.due_date IS NULL, r.due_date, r.created_at DESC'
+            )->fetchAll();
+            foreach ($rows as &$r) {
+                $r['id'] = (int)$r['id'];
+                $r['needs_invoice'] = (bool)$r['needs_invoice'];
+                $r['studies'] = $r['studies'] ? json_decode($r['studies'], true) : [];
+                $r['created_by'] = $r['created_by'] !== null ? (int)$r['created_by'] : null;
+            }
+            unset($r);
+            json_ok(['can_manage' => $canManage, 'me' => (int)$me['id'], 'items' => $rows]);
+        }
+
+        /** Estudios del catálogo, para autocompletar el checklist (mismo criterio que quotes/search_studies:
+         *  cualquiera con acceso a este módulo puede buscar, sin necesitar el permiso de administrar el catálogo). */
+        case 'search_studies': {
+            $q = trim((string)($_GET['q'] ?? ''));
+            $params = [];
+            $where = 'is_active = 1';
+            if ($q !== '') {
+                $where .= ' AND name LIKE ?';
+                $params[] = '%' . $q . '%';
+            }
+            $st = db()->prepare("SELECT id, name FROM quote_studies WHERE $where ORDER BY name LIMIT 20");
+            $st->execute($params);
+            json_ok(['items' => $st->fetchAll()]);
+        }
+
+        /** Pacientes registrados, para autocompletar el nombre. Sin resultado no pasa nada: el
+         *  registro se guarda con el texto tal cual, no depende de que exista un expediente. */
+        case 'search_patients': {
+            $q = trim((string)($_GET['q'] ?? ''));
+            if (mb_strlen($q) < 2) {
+                json_ok(['items' => []]);
+            }
+            $fullName = sql_full_name('p');
+            $like = '%' . $q . '%';
+            $st = db()->prepare(
+                "SELECT p.id, p.file_number, $fullName AS name FROM patients p
+                 WHERE p.is_deleted = 0 AND ($fullName LIKE ? OR p.file_number LIKE ?)
+                 ORDER BY p.paternal_surname LIMIT 15"
+            );
+            $st->execute([$like, $like]);
+            json_ok(['items' => $st->fetchAll()]);
+        }
+
+        case 'results_save': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $item = null;
+            if ($id > 0) {
+                $item = find_result_delivery($id);
+                if (!$canManage && (int)$item['created_by'] !== (int)$me['id']) {
+                    // Cualquiera con acceso a Tareas puede marcar el checklist, pero editar
+                    // los datos del registro (paciente, fechas, factura) queda para quien lo
+                    // creó o un gestor — mismo criterio que editar una tarea ajena.
+                    $onlyStudies = !array_diff(array_keys($b), ['id', 'studies']);
+                    if (!$onlyStudies) {
+                        json_error('Solo puedes editar los datos de un registro que creaste tú', 403);
+                    }
+                }
+            }
+
+            $fields = [];
+            if (array_key_exists('patient_name', $b)) {
+                $name = trim((string)$b['patient_name']);
+                if ($name === '') {
+                    json_error('El nombre del paciente es obligatorio', 422);
+                }
+                $fields['patient_name'] = mb_substr($name, 0, 200);
+            } elseif (!$item) {
+                json_error('El nombre del paciente es obligatorio', 422);
+            }
+            if (array_key_exists('sample_date', $b)) {
+                $fields['sample_date'] = valid_date($b['sample_date']);
+            }
+            if (array_key_exists('due_date', $b)) {
+                $fields['due_date'] = valid_date($b['due_date']);
+            }
+            if (array_key_exists('needs_invoice', $b)) {
+                $fields['needs_invoice'] = !empty($b['needs_invoice']) ? 1 : 0;
+            }
+            if (array_key_exists('observations', $b)) {
+                $obs = trim((string)$b['observations']);
+                $fields['observations'] = $obs !== '' ? mb_substr($obs, 0, 500) : null;
+            }
+            if (array_key_exists('studies', $b)) {
+                $items = [];
+                foreach ((array)$b['studies'] as $s) {
+                    $text = trim((string)($s['text'] ?? ''));
+                    if ($text === '') {
+                        continue;
+                    }
+                    $items[] = ['text' => mb_substr($text, 0, 200), 'done' => !empty($s['done'])];
+                }
+                $fields['studies'] = json_encode($items, JSON_UNESCAPED_UNICODE);
+            }
+
+            if ($item) {
+                if ($fields) {
+                    $sets = implode(', ', array_map(fn($k) => "$k = ?", array_keys($fields)));
+                    db()->prepare("UPDATE result_deliveries SET $sets WHERE id = ?")->execute([...array_values($fields), $id]);
+                }
+                json_ok(['id' => $id]);
+            }
+
+            $fields += ['sample_date' => null, 'due_date' => null, 'needs_invoice' => 0, 'studies' => '[]', 'observations' => null];
+            db()->prepare(
+                'INSERT INTO result_deliveries (patient_name, sample_date, due_date, studies, needs_invoice, observations, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
+            )->execute([
+                $fields['patient_name'], $fields['sample_date'], $fields['due_date'],
+                $fields['studies'], $fields['needs_invoice'], $fields['observations'], (int)$me['id'],
+            ]);
+            $id = (int)db()->lastInsertId();
+            log_activity('tareas', 'result_delivery_create', "Registró resultados pendientes de \"{$fields['patient_name']}\"", 'result_delivery', $id);
+            json_ok(['id' => $id]);
+        }
+
+        case 'results_delete': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $item = find_result_delivery($id);
+            if (!$canManage && (int)$item['created_by'] !== (int)$me['id']) {
+                json_error('Solo puedes eliminar los registros que creaste tú', 403);
+            }
+            db()->prepare('DELETE FROM result_deliveries WHERE id = ?')->execute([$id]);
+            log_activity('tareas', 'result_delivery_delete', "Eliminó el registro de \"{$item['patient_name']}\"", 'result_delivery', $id);
+            json_ok();
+        }
     }
 }
 
@@ -240,6 +375,17 @@ function find_task(int $id): array
     $row = $st->fetch();
     if (!$row) {
         json_error('Tarea no encontrada', 404);
+    }
+    return $row;
+}
+
+function find_result_delivery(int $id): array
+{
+    $st = db()->prepare('SELECT * FROM result_deliveries WHERE id = ?');
+    $st->execute([$id]);
+    $row = $st->fetch();
+    if (!$row) {
+        json_error('Registro no encontrado', 404);
     }
     return $row;
 }

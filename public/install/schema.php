@@ -496,6 +496,19 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_cstatement_party (party_type, party_id),
                 CONSTRAINT fk_cstatement_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'result_deliveries' => "CREATE TABLE IF NOT EXISTS result_deliveries (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                patient_name VARCHAR(200) NOT NULL,
+                sample_date DATE NULL,
+                due_date DATE NULL,
+                studies TEXT NULL,
+                needs_invoice TINYINT(1) NOT NULL DEFAULT 0,
+                observations VARCHAR(500) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_result_delivery_due (due_date),
+                CONSTRAINT fk_result_delivery_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -884,6 +897,17 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'result_deliveries' => "CREATE TABLE IF NOT EXISTS result_deliveries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                patient_name TEXT NOT NULL,
+                sample_date TEXT NULL,
+                due_date TEXT NULL,
+                studies TEXT NULL,
+                needs_invoice INTEGER NOT NULL DEFAULT 0,
+                observations TEXT NULL,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
         ];
     }
 
@@ -903,6 +927,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_task_assignee ON tasks (assigned_to, status)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_task_project ON tasks (project_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_task_parent ON tasks (parent_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_result_delivery_due ON result_deliveries (due_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_item_active ON inventory_items (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_item ON inventory_lots (item_id, received_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_expiry ON inventory_lots (expiry_date)');

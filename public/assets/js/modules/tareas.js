@@ -1,7 +1,7 @@
 /** Módulo Tareas: mis tareas, frecuentes, proyectos con subtareas y monitor de equipo. */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate } from '../ui.js';
+import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce } from '../ui.js';
 
 const PRIORITY = {
   baja:    { label: 'Baja',    cls: 'bg-slate-100 text-slate-600' },
@@ -20,9 +20,13 @@ let ctx;
 let data = null;
 let tab = 'mis';
 let projectFilter = null;
+let resultsData = null;
 
 export async function render(root, context) {
   ctx = context;
+  // Enlaces desde fuera del módulo (p. ej. el dashboard) pueden pedir una pestaña
+  // concreta, como #/tareas/resultados.
+  if (context.args[0] === 'resultados') tab = 'resultados';
   root.innerHTML = spinner();
   await load(root);
 }
@@ -37,6 +41,7 @@ function paint(root) {
     ['mis', 'Mis tareas', 'check-square'],
     ['frecuentes', 'Frecuentes', 'repeat'],
     ['proyectos', 'Proyectos', 'briefcase'],
+    ['resultados', 'Resultados', 'flask'],
   ];
   if (data.can_manage) tabs.push(['equipo', 'Equipo', 'users']);
 
@@ -51,13 +56,17 @@ function paint(root) {
             </button>`).join('')}
         </div>
         <div class="flex gap-2">
+          ${tab === 'resultados' ? `
+          <button id="btn-new-result" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+            ${icon('plus', 'h-4 w-4')} Nuevos resultados
+          </button>` : `
           ${data.can_manage ? `
           <button id="btn-new-project" type="button" class="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
             ${icon('briefcase', 'h-4 w-4')} Nuevo proyecto
           </button>` : ''}
           <button id="btn-new-task" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
             ${icon('plus', 'h-4 w-4')} Nueva tarea
-          </button>
+          </button>`}
         </div>
       </div>
       <div id="tasks-view"></div>
@@ -65,13 +74,15 @@ function paint(root) {
 
   root.querySelectorAll('[data-tab]').forEach((b) =>
     b.addEventListener('click', () => { tab = b.dataset.tab; projectFilter = null; paint(root); }));
-  root.querySelector('#btn-new-task').addEventListener('click', () => openTaskModal(null, {}));
+  root.querySelector('#btn-new-task')?.addEventListener('click', () => openTaskModal(null, {}));
   root.querySelector('#btn-new-project')?.addEventListener('click', () => openProjectModal(null));
+  root.querySelector('#btn-new-result')?.addEventListener('click', () => openResultModal(null));
 
   const view = root.querySelector('#tasks-view');
   if (tab === 'mis') paintMis(view);
   else if (tab === 'frecuentes') paintFrecuentes(view);
   else if (tab === 'proyectos') paintProyectos(view);
+  else if (tab === 'resultados') paintResultados(view);
   else paintEquipo(view);
 }
 
@@ -221,6 +232,232 @@ function paintEquipo(view) {
   }).filter(Boolean).join('');
   view.innerHTML = html ? `<div class="space-y-6">${html}</div>` : emptyState('Sin tareas asignadas', 'Crea tareas y asígnalas al equipo.');
   wireTaskEvents(view);
+}
+
+/* ================= Resultados por entregar ================= */
+async function paintResultados(view) {
+  view.innerHTML = spinner();
+  if (!resultsData) {
+    try {
+      resultsData = await apiGet('tasks/results_list');
+    } catch (e) {
+      view.innerHTML = `<div class="rounded-xl bg-red-50 p-6 text-sm text-red-700 ring-1 ring-red-200">${escapeHtml(e.message)}</div>`;
+      return;
+    }
+  }
+  paintResultadosList(view);
+}
+
+function paintResultadosList(view) {
+  const items = resultsData.items;
+  view.innerHTML = items.length
+    ? `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${items.map((r) => resultCard(r)).join('')}</div>`
+    : emptyState('Sin resultados pendientes', 'Registra un paciente con "Nuevos resultados" para darle seguimiento.');
+  wireResultEvents(view);
+}
+
+function resultCard(r) {
+  const items = r.studies || [];
+  const total = items.length;
+  const done = items.filter((i) => i.done).length;
+  const complete = total > 0 && done === total;
+  const overdue = r.due_date && r.due_date < today() && !complete;
+  const dueCls = complete ? 'bg-emerald-100 text-emerald-700' : overdue ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
+  const canEditThis = resultsData.can_manage || r.created_by === resultsData.me;
+  return `
+    <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 ${complete ? 'opacity-70' : ''}" data-result-card="${r.id}">
+      <div class="flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-bold text-slate-900">${escapeHtml(r.patient_name)}</p>
+          ${r.sample_date ? `<p class="mt-0.5 text-xs text-slate-500">Toma: ${fmtDate(r.sample_date)}</p>` : ''}
+        </div>
+        <div class="flex shrink-0 gap-1">
+          ${canEditThis ? `
+          <button type="button" data-edit-result="${r.id}" title="Editar" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-3.5 w-3.5')}</button>
+          <button type="button" data-del-result="${r.id}" title="Eliminar" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-3.5 w-3.5')}</button>` : ''}
+        </div>
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5">
+        ${r.due_date ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueCls}">${complete ? '✓ ' : overdue ? '⚠ ' : ''}Entrega ${fmtDate(r.due_date)}</span>` : ''}
+        ${r.needs_invoice ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">Factura</span>` : ''}
+        ${total ? `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200">${done}/${total}</span>` : ''}
+      </div>
+      ${total ? `
+      <div class="mt-3 space-y-1 border-t border-slate-100 pt-3">
+        ${items.map((it, idx) => `
+          <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" data-item="${idx}" ${it.done ? 'checked' : ''}
+                   class="h-3.5 w-3.5 shrink-0 rounded border-slate-400 text-indigo-600 focus:ring-indigo-500">
+            <span class="${it.done ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(it.text)}</span>
+          </label>`).join('')}
+      </div>` : `<p class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">Sin estudios capturados.</p>`}
+      ${r.observations ? `<p class="mt-2 whitespace-pre-line text-xs text-slate-500">${escapeHtml(r.observations)}</p>` : ''}
+      ${r.creator_name ? `<p class="mt-2 text-[10px] text-slate-400">${escapeHtml(r.creator_name)}</p>` : ''}
+    </div>`;
+}
+
+function wireResultEvents(view) {
+  view.querySelectorAll('[data-result-card]').forEach((card) => {
+    const id = +card.dataset.resultCard;
+    const r = resultsData.items.find((x) => x.id === id);
+    card.querySelectorAll('[data-item]').forEach((cb) => {
+      cb.addEventListener('change', async () => {
+        const idx = +cb.dataset.item;
+        const prev = r.studies[idx].done;
+        r.studies[idx].done = cb.checked;
+        try {
+          await apiPost('tasks/results_save', { id, studies: r.studies });
+        } catch (e) {
+          toast(e.message, 'error');
+          r.studies[idx].done = prev;
+        }
+        paintResultadosList(view);
+      });
+    });
+  });
+  view.querySelectorAll('[data-edit-result]').forEach((b) =>
+    b.addEventListener('click', () => openResultModal(resultsData.items.find((x) => x.id === +b.dataset.editResult))));
+  view.querySelectorAll('[data-del-result]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const r = resultsData.items.find((x) => x.id === +b.dataset.delResult);
+      const ok = await confirmDialog('Eliminar registro', `Se eliminará el seguimiento de resultados de "${r.patient_name}". ¿Continuar?`, { danger: true, confirmLabel: 'Eliminar' });
+      if (!ok) return;
+      try {
+        await apiPost('tasks/results_delete', { id: r.id });
+        resultsData.items = resultsData.items.filter((x) => x.id !== r.id);
+        toast('Registro eliminado');
+        paintResultadosList(view);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }));
+}
+
+/** Dropdown de búsqueda genérico bajo un input: cierra al hacer clic fuera del propio
+ *  formulario (no de document), así el listener muere con el modal y no se acumula
+ *  entre aperturas repetidas. Sin coincidencia no pasa nada: el texto tecleado se
+ *  conserva tal cual, el resultado nunca depende de encontrar algo. */
+function wireSearchDropdown(form, input, results, { searchFn, renderRow, onPick }) {
+  input.addEventListener('input', debounce(async () => {
+    const q = input.value.trim();
+    if (q.length < 2) { results.classList.add('hidden'); return; }
+    const items = await searchFn(q);
+    results.innerHTML = items.length
+      ? items.map((it, i) => `<button type="button" data-idx="${i}" class="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-indigo-50">${renderRow(it)}</button>`).join('')
+      : '<p class="px-4 py-3 text-sm text-slate-500">Sin coincidencias. Se guarda tal cual lo escribas.</p>';
+    results.querySelectorAll('button').forEach((b) =>
+      b.addEventListener('click', () => { onPick(items[+b.dataset.idx]); results.classList.add('hidden'); }));
+    results.classList.remove('hidden');
+  }, 250));
+  form.addEventListener('click', (e) => {
+    if (e.target !== input && !results.contains(e.target)) results.classList.add('hidden');
+  });
+}
+
+function openResultModal(item) {
+  const form = document.createElement('form');
+  const studies = item ? item.studies.map((s) => ({ ...s })) : [];
+  form.innerHTML = `
+    <div class="space-y-4">
+      <div class="relative">
+        <label class="${labelCls}">Nombre del paciente *</label>
+        <input type="text" name="patient_name" required autocomplete="off" value="${escapeHtml(item?.patient_name || '')}" class="${inputCls}">
+        <div id="result-patient-results" class="absolute inset-x-0 top-full z-10 mt-1 hidden overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-200"></div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="${labelCls}">Toma de muestra</label>
+          <input type="date" name="sample_date" value="${item?.sample_date || ''}" class="${inputCls}">
+        </div>
+        <div>
+          <label class="${labelCls}">Entrega de resultados</label>
+          <input type="date" name="due_date" value="${item?.due_date || ''}" class="${inputCls}">
+        </div>
+      </div>
+      <div>
+        <label class="${labelCls}">Estudios a enviar</label>
+        <div id="result-studies" class="space-y-1.5"></div>
+        <button type="button" id="btn-add-study" class="mt-1.5 flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-indigo-600">
+          ${icon('plus', 'h-3.5 w-3.5')} agregar estudio
+        </button>
+      </div>
+      <div>
+        <label class="${labelCls}">Observaciones</label>
+        <textarea name="observations" rows="2" class="${inputCls}" placeholder="Opcional">${escapeHtml(item?.observations || '')}</textarea>
+      </div>
+      <label class="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="needs_invoice" value="1" ${item?.needs_invoice ? 'checked' : ''}
+               class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+        Enviarle factura
+      </label>
+    </div>`;
+
+  wireSearchDropdown(form, form.querySelector('[name=patient_name]'), form.querySelector('#result-patient-results'), {
+    searchFn: async (q) => (await apiGet('tasks/search_patients', { q })).items,
+    renderRow: (p) => `<span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">${escapeHtml(p.name)}</span><span class="shrink-0 text-xs text-slate-500">${escapeHtml(p.file_number)}</span>`,
+    onPick: (p) => { form.querySelector('[name=patient_name]').value = p.name; },
+  });
+
+  const studiesBox = form.querySelector('#result-studies');
+  const renderStudies = () => {
+    studiesBox.innerHTML = studies.length ? studies.map((s, idx) => `
+      <div class="flex items-center gap-2">
+        <input type="checkbox" data-s-done="${idx}" ${s.done ? 'checked' : ''} class="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+        <div class="relative min-w-0 flex-1">
+          <input type="text" data-s-text="${idx}" autocomplete="off" value="${escapeHtml(s.text)}" placeholder="Estudio…" class="${inputCls}">
+          <div id="result-study-results-${idx}" class="absolute inset-x-0 top-full z-10 mt-1 hidden overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-200"></div>
+        </div>
+        <button type="button" data-s-rm="${idx}" class="shrink-0 text-slate-300 hover:text-red-500">${icon('x', 'h-4 w-4')}</button>
+      </div>`).join('') : `<p class="text-xs text-slate-400">Sin estudios agregados.</p>`;
+    studiesBox.querySelectorAll('[data-s-done]').forEach((cb) => cb.addEventListener('change', () => { studies[+cb.dataset.sDone].done = cb.checked; }));
+    studiesBox.querySelectorAll('[data-s-text]').forEach((inp) => {
+      const idx = +inp.dataset.sText;
+      inp.addEventListener('input', () => { studies[idx].text = inp.value; });
+      wireSearchDropdown(form, inp, studiesBox.querySelector(`#result-study-results-${idx}`), {
+        searchFn: async (q) => (await apiGet('tasks/search_studies', { q })).items,
+        renderRow: (s) => `<span class="text-sm font-medium text-slate-800">${escapeHtml(s.name)}</span>`,
+        onPick: (s) => { inp.value = s.name; studies[idx].text = s.name; },
+      });
+    });
+    studiesBox.querySelectorAll('[data-s-rm]').forEach((b) => b.addEventListener('click', () => { studies.splice(+b.dataset.sRm, 1); renderStudies(); }));
+  };
+  renderStudies();
+  form.querySelector('#btn-add-study').addEventListener('click', () => {
+    studies.push({ text: '', done: false });
+    renderStudies();
+    [...studiesBox.querySelectorAll('[data-s-text]')].pop()?.focus();
+  });
+
+  modal({
+    title: item ? 'Editar resultados pendientes' : 'Nuevos resultados',
+    content: form,
+    size: 'max-w-xl',
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: item ? 'Guardar cambios' : 'Registrar', primary: true,
+        onClick: async (close, btn) => {
+          if (!form.reportValidity()) return;
+          btn.disabled = true;
+          const v = formValues(form);
+          try {
+            await apiPost('tasks/results_save', {
+              ...(item ? { id: item.id } : {}),
+              patient_name: v.patient_name, sample_date: v.sample_date, due_date: v.due_date,
+              needs_invoice: v.needs_invoice, observations: v.observations, studies,
+            });
+            toast(item ? 'Registro actualizado' : 'Resultados registrados');
+            close();
+            resultsData = null;
+            paintResultados(document.getElementById('tasks-view'));
+          } catch (e) {
+            btn.disabled = false;
+            toast(e.message, 'error');
+          }
+        },
+      },
+    ],
+  });
 }
 
 /* ---------- componentes ---------- */
