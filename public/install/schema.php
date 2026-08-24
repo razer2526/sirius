@@ -458,6 +458,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 mime VARCHAR(120) NULL,
                 size BIGINT UNSIGNED NOT NULL DEFAULT 0,
                 notes VARCHAR(255) NULL,
+                category VARCHAR(60) NULL,
+                document_date DATE NULL,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_pdoc_patient (patient_id, created_at),
@@ -855,6 +857,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 mime TEXT NULL,
                 size INTEGER NOT NULL DEFAULT 0,
                 notes TEXT NULL,
+                category TEXT NULL,
+                document_date TEXT NULL,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
@@ -956,6 +960,8 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // outbox reintenta el mismo envío (recarga, doble sync), el índice único
         // hace que la segunda inserción falle en vez de duplicar al paciente.
         "ALTER TABLE episodes ADD COLUMN client_uuid {$varchar(64)}",
+        "ALTER TABLE patient_documents ADD COLUMN category {$varchar(60)}",
+        "ALTER TABLE patient_documents ADD COLUMN document_date " . ($isMysql ? 'DATE NULL' : 'TEXT NULL'),
     ];
     $applied = 0;
     foreach ($migrations as $sql) {

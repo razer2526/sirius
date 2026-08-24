@@ -232,8 +232,18 @@ async function renderDetail(root, patientId) {
 
       <!-- Documentos adjuntos -->
       <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <h4 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Documentos adjuntos</h4>
-        <div id="patient-docs">${spinner()}</div>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <h4 class="text-sm font-semibold uppercase tracking-wide text-slate-500">Documentos adjuntos</h4>
+          <div class="flex flex-wrap gap-2">
+            <button id="btn-upload-doc" type="button" class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
+              ${icon('upload', 'h-4 w-4')} Subir archivo
+            </button>
+            <button id="btn-view-docs" type="button" class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
+              ${icon('folder-open', 'h-4 w-4')} Archivos adjuntos
+              <span id="patient-docs-count" class="rounded-full bg-slate-100 px-1.5 text-xs font-bold text-slate-500"></span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- Visitas en pestañas -->
@@ -243,7 +253,9 @@ async function renderDetail(root, patientId) {
   wireVisits(root, p, episodes, patientId);
 
   root.querySelector('#btn-new-consult').addEventListener('click', () => openConsultModal(p, episodes, patientId));
-  loadPatientDocs(root, patientId);
+  refreshPatientDocsCount(root, patientId);
+  root.querySelector('#btn-upload-doc').addEventListener('click', () => openUploadDocModal(patientId, () => refreshPatientDocsCount(root, patientId)));
+  root.querySelector('#btn-view-docs').addEventListener('click', () => openDocsModal(patientId, () => refreshPatientDocsCount(root, patientId)));
 
   const dxBtn = root.querySelector('#btn-dx');
   if (dxBtn) {
@@ -272,13 +284,96 @@ async function renderDetail(root, patientId) {
 }
 
 /* ================= Documentos adjuntos ================= */
+const DOC_CATEGORIES = ['Análisis clínicos', 'Estudio de imagen', 'Historial médico previo', 'Nota médica', 'Otro'];
+
 function fmtBytes(bytes) {
   return bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-async function loadPatientDocs(root, patientId) {
-  const box = root.querySelector('#patient-docs');
-  if (!box) return;
+async function refreshPatientDocsCount(root, patientId) {
+  const badge = root.querySelector('#patient-docs-count');
+  if (!badge) return;
+  try {
+    const { documents } = await apiGet('patients/doc_list', { patient_id: patientId });
+    badge.textContent = documents.length || '';
+  } catch (e) {
+    badge.textContent = '';
+  }
+}
+
+/** Formulario para adjuntar un archivo nuevo (estudio previo, imagenología…), con a qué corresponde y su fecha. */
+function openUploadDocModal(patientId, onSaved) {
+  const form = document.createElement('form');
+  const today = new Date().toISOString().slice(0, 10);
+  form.innerHTML = `
+    <div class="space-y-4">
+      <div>
+        <label class="${labelCls}">Archivo *</label>
+        <input type="file" name="file" required class="${inputCls}">
+      </div>
+      <div>
+        <label class="${labelCls}">Corresponde a *</label>
+        <select name="category" required class="${inputCls}">
+          <option value="">—</option>
+          ${DOC_CATEGORIES.map((c) => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="${labelCls}">Fecha del documento *</label>
+        <input type="date" name="document_date" required value="${today}" class="${inputCls}">
+      </div>
+      <div>
+        <label class="${labelCls}">Notas</label>
+        <input type="text" name="notes" maxlength="255" class="${inputCls}" placeholder="Opcional">
+      </div>
+    </div>`;
+
+  modal({
+    title: 'Subir archivo al expediente',
+    content: form,
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Subir', primary: true,
+        onClick: async (close, btn) => {
+          if (!form.reportValidity()) return;
+          const file = form.querySelector('[name=file]').files[0];
+          if (!file) return;
+          btn.disabled = true;
+          const v = formValues(form);
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('patient_id', patientId);
+          fd.append('category', v.category);
+          fd.append('document_date', v.document_date);
+          fd.append('notes', v.notes);
+          try {
+            const res = await fetch('api/index.php?r=episodes/doc_upload', {
+              method: 'POST',
+              headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
+              body: fd,
+            });
+            const json = await res.json();
+            if (!json.ok) throw new Error(json.error);
+            toast('Archivo adjuntado al expediente');
+            close();
+            onSaved();
+          } catch (e) {
+            btn.disabled = false;
+            toast(e.message, 'error');
+          }
+        },
+      },
+    ],
+  });
+}
+
+/** Modal con los archivos ya adjuntados al expediente. */
+async function openDocsModal(patientId, onChanged) {
+  const box = document.createElement('div');
+  box.innerHTML = spinner();
+  modal({ title: 'Archivos adjuntos', content: box, size: 'max-w-2xl', actions: [{ label: 'Cerrar' }] });
+
   let documents;
   try {
     ({ documents } = await apiGet('patients/doc_list', { patient_id: patientId }));
@@ -286,10 +381,10 @@ async function loadPatientDocs(root, patientId) {
     box.innerHTML = `<p class="text-sm text-red-600">${escapeHtml(e.message)}</p>`;
     return;
   }
-  paintPatientDocs(box, documents, patientId);
+  paintPatientDocs(box, documents, patientId, onChanged);
 }
 
-function paintPatientDocs(box, documents, patientId) {
+function paintPatientDocs(box, documents, patientId, onChanged) {
   const isAdmin = isAdminUser();
   if (!documents.length) {
     box.innerHTML = '<p class="text-sm text-slate-400">Sin documentos adjuntos.</p>';
@@ -302,6 +397,8 @@ function paintPatientDocs(box, documents, patientId) {
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm font-medium text-slate-800">${escapeHtml(d.name)}</p>
             <p class="text-xs text-slate-400">
+              ${d.category ? `<span class="rounded-full bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-600">${escapeHtml(d.category)}</span> · ` : ''}
+              ${d.document_date ? fmtDate(d.document_date) + ' · ' : ''}
               ${fmtBytes(d.size)} · ${fmtDateTime(d.created_at)}${d.created_by_name ? ' · ' + escapeHtml(d.created_by_name) : ''}
               ${d.notes ? ' · ' + escapeHtml(d.notes) : ''}
             </p>
@@ -326,7 +423,8 @@ function paintPatientDocs(box, documents, patientId) {
         await apiPost('patients/doc_delete', { id: d.id });
         toast('Documento eliminado');
         const { documents: fresh } = await apiGet('patients/doc_list', { patient_id: patientId });
-        paintPatientDocs(box, fresh, patientId);
+        paintPatientDocs(box, fresh, patientId, onChanged);
+        onChanged();
       } catch (e) {
         toast(e.message, 'error');
       }
