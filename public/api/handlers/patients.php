@@ -204,20 +204,6 @@ function handle_patients(string $action): void
     }
 }
 
-/** ¿Puede $me ver este paciente? Mismo criterio que visible_episodes(): admin ve todo,
- *  el resto solo si tiene al menos un episodio general o asignado a él. */
-function patient_is_visible(array $patient, array $me): bool
-{
-    if (is_admin_role($me)) {
-        return true;
-    }
-    $st = db()->prepare(
-        'SELECT 1 FROM episodes WHERE patient_id = ? AND (assigned_user_id IS NULL OR assigned_user_id = ?) LIMIT 1'
-    );
-    $st->execute([$patient['id'], (int)$me['id']]);
-    return (bool)$st->fetch();
-}
-
 function find_patient_document(int $id): array
 {
     $st = db()->prepare('SELECT * FROM patient_documents WHERE id = ?');

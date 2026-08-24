@@ -1,9 +1,9 @@
 /**
  * Módulo Dashboard: compilado de lo más importante de cada módulo — reloj y saludo,
  * franja compacta de KPIs, alertas sin fecha concreta, y la agenda accionable de
- * hoy y mañana (citas, tareas y laboratorio por entregar). La cuadrícula de módulos
- * ya no vive aquí en escritorio (para eso está el sidebar); en móvil se conserva
- * una versión compacta, porque ahí el sidebar queda oculto tras el menú.
+ * hoy y mañana (citas, tareas y laboratorio por entregar). No repite la navegación
+ * a módulos: para eso está el sidebar, alcanzable en cualquier tamaño de pantalla
+ * (en móvil, con el botón de menú).
  */
 
 import { apiGet } from '../api.js';
@@ -32,7 +32,6 @@ export async function render(root, ctx) {
       </div>
 
       ${kpiStrip(stats.kpis)}
-      ${mobileModuleGrid(ctx.modules)}
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         ${agendaCard('¿Qué tenemos para hoy?', stats.today, 'today')}
@@ -68,20 +67,6 @@ function kpiStrip(kpis) {
             <p class="text-[11px] font-medium leading-tight text-slate-500">${label}</p>
           </div>
         </div>`).join('')}
-    </div>`;
-}
-
-/* ================= Cuadrícula de módulos: solo móvil ================= */
-function mobileModuleGrid(modules) {
-  return `
-    <div class="lg:hidden">
-      <div class="grid grid-cols-4 gap-2.5 sm:grid-cols-6">
-        ${modules.map((m) => `
-          <a href="#/${m.key}" class="flex flex-col items-center gap-1.5 rounded-xl bg-white p-2.5 text-center shadow-sm ring-1 ring-slate-200">
-            <span class="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-white">${icon(m.icon, 'h-4.5 w-4.5')}</span>
-            <span class="truncate text-[10px] font-semibold text-slate-700">${escapeHtml(m.label)}</span>
-          </a>`).join('')}
-      </div>
     </div>`;
 }
 

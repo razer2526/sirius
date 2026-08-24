@@ -454,8 +454,12 @@ function handle_episodes(string $action): void
             $patientId = (int)($_POST['patient_id'] ?? 0);
             $st = db()->prepare('SELECT id FROM patients WHERE id = ? AND is_deleted = 0');
             $st->execute([$patientId]);
-            if (!$st->fetch()) {
+            $patient = $st->fetch();
+            if (!$patient) {
                 json_error('Paciente no encontrado', 404);
+            }
+            if (!patient_is_visible($patient, $me)) {
+                json_error('No tienes acceso a este expediente', 403);
             }
             if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
                 if (!empty($_FILES['file']) && in_array($_FILES['file']['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
@@ -483,11 +487,14 @@ function handle_episodes(string $action): void
             $mime = @mime_content_type($dir . $storedName) ?: 'application/octet-stream';
             $name = mb_substr(trim((string)($file['name'] ?? '')), 0, 200) ?: 'documento';
             $notes = mb_substr(trim((string)($_POST['notes'] ?? '')), 0, 255) ?: null;
+            $category = mb_substr(trim((string)($_POST['category'] ?? '')), 0, 60) ?: null;
+            $docDate = trim((string)($_POST['document_date'] ?? ''));
+            $docDate = preg_match('/^\d{4}-\d{2}-\d{2}$/', $docDate) ? $docDate : null;
 
             db()->prepare(
-                'INSERT INTO patient_documents (patient_id, name, stored_name, mime, size, notes, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)'
-            )->execute([$patientId, $name, $storedName, $mime, (int)$file['size'], $notes, (int)$me['id']]);
+                'INSERT INTO patient_documents (patient_id, name, stored_name, mime, size, notes, category, document_date, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([$patientId, $name, $storedName, $mime, (int)$file['size'], $notes, $category, $docDate, (int)$me['id']]);
             $id = (int)db()->lastInsertId();
             log_activity('admision', 'patient_doc_upload', "Adjuntó documento \"$name\" al expediente", 'patient_document', $id);
             json_ok(['id' => $id]);
