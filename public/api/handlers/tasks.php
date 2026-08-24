@@ -248,6 +248,39 @@ function handle_tasks(string $action): void
             json_ok(['can_manage' => $canManage, 'me' => (int)$me['id'], 'items' => $rows]);
         }
 
+        /** Estudios del catálogo, para autocompletar el checklist (mismo criterio que quotes/search_studies:
+         *  cualquiera con acceso a este módulo puede buscar, sin necesitar el permiso de administrar el catálogo). */
+        case 'search_studies': {
+            $q = trim((string)($_GET['q'] ?? ''));
+            $params = [];
+            $where = 'is_active = 1';
+            if ($q !== '') {
+                $where .= ' AND name LIKE ?';
+                $params[] = '%' . $q . '%';
+            }
+            $st = db()->prepare("SELECT id, name FROM quote_studies WHERE $where ORDER BY name LIMIT 20");
+            $st->execute($params);
+            json_ok(['items' => $st->fetchAll()]);
+        }
+
+        /** Pacientes registrados, para autocompletar el nombre. Sin resultado no pasa nada: el
+         *  registro se guarda con el texto tal cual, no depende de que exista un expediente. */
+        case 'search_patients': {
+            $q = trim((string)($_GET['q'] ?? ''));
+            if (mb_strlen($q) < 2) {
+                json_ok(['items' => []]);
+            }
+            $fullName = sql_full_name('p');
+            $like = '%' . $q . '%';
+            $st = db()->prepare(
+                "SELECT p.id, p.file_number, $fullName AS name FROM patients p
+                 WHERE p.is_deleted = 0 AND ($fullName LIKE ? OR p.file_number LIKE ?)
+                 ORDER BY p.paternal_surname LIMIT 15"
+            );
+            $st->execute([$like, $like]);
+            json_ok(['items' => $st->fetchAll()]);
+        }
+
         case 'results_save': {
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
@@ -284,6 +317,10 @@ function handle_tasks(string $action): void
             if (array_key_exists('needs_invoice', $b)) {
                 $fields['needs_invoice'] = !empty($b['needs_invoice']) ? 1 : 0;
             }
+            if (array_key_exists('observations', $b)) {
+                $obs = trim((string)$b['observations']);
+                $fields['observations'] = $obs !== '' ? mb_substr($obs, 0, 500) : null;
+            }
             if (array_key_exists('studies', $b)) {
                 $items = [];
                 foreach ((array)$b['studies'] as $s) {
@@ -304,13 +341,13 @@ function handle_tasks(string $action): void
                 json_ok(['id' => $id]);
             }
 
-            $fields += ['sample_date' => null, 'due_date' => null, 'needs_invoice' => 0, 'studies' => '[]'];
+            $fields += ['sample_date' => null, 'due_date' => null, 'needs_invoice' => 0, 'studies' => '[]', 'observations' => null];
             db()->prepare(
-                'INSERT INTO result_deliveries (patient_name, sample_date, due_date, studies, needs_invoice, created_by)
-                 VALUES (?, ?, ?, ?, ?, ?)'
+                'INSERT INTO result_deliveries (patient_name, sample_date, due_date, studies, needs_invoice, observations, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)'
             )->execute([
                 $fields['patient_name'], $fields['sample_date'], $fields['due_date'],
-                $fields['studies'], $fields['needs_invoice'], (int)$me['id'],
+                $fields['studies'], $fields['needs_invoice'], $fields['observations'], (int)$me['id'],
             ]);
             $id = (int)db()->lastInsertId();
             log_activity('tareas', 'result_delivery_create', "Registró resultados pendientes de \"{$fields['patient_name']}\"", 'result_delivery', $id);

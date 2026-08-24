@@ -501,6 +501,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 due_date DATE NULL,
                 studies TEXT NULL,
                 needs_invoice TINYINT(1) NOT NULL DEFAULT 0,
+                observations VARCHAR(500) NULL,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_result_delivery_due (due_date),
@@ -899,6 +900,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 due_date TEXT NULL,
                 studies TEXT NULL,
                 needs_invoice INTEGER NOT NULL DEFAULT 0,
+                observations TEXT NULL,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",

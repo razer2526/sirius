@@ -1,7 +1,7 @@
 /** Módulo Tareas: mis tareas, frecuentes, proyectos con subtareas y monitor de equipo. */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate } from '../ui.js';
+import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce } from '../ui.js';
 
 const PRIORITY = {
   baja:    { label: 'Baja',    cls: 'bg-slate-100 text-slate-600' },
@@ -291,6 +291,7 @@ function resultCard(r) {
             <span class="${it.done ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(it.text)}</span>
           </label>`).join('')}
       </div>` : `<p class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">Sin estudios capturados.</p>`}
+      ${r.observations ? `<p class="mt-2 whitespace-pre-line text-xs text-slate-500">${escapeHtml(r.observations)}</p>` : ''}
       ${r.creator_name ? `<p class="mt-2 text-[10px] text-slate-400">${escapeHtml(r.creator_name)}</p>` : ''}
     </div>`;
 }
@@ -332,14 +333,36 @@ function wireResultEvents(view) {
     }));
 }
 
+/** Dropdown de búsqueda genérico bajo un input: cierra al hacer clic fuera del propio
+ *  formulario (no de document), así el listener muere con el modal y no se acumula
+ *  entre aperturas repetidas. Sin coincidencia no pasa nada: el texto tecleado se
+ *  conserva tal cual, el resultado nunca depende de encontrar algo. */
+function wireSearchDropdown(form, input, results, { searchFn, renderRow, onPick }) {
+  input.addEventListener('input', debounce(async () => {
+    const q = input.value.trim();
+    if (q.length < 2) { results.classList.add('hidden'); return; }
+    const items = await searchFn(q);
+    results.innerHTML = items.length
+      ? items.map((it, i) => `<button type="button" data-idx="${i}" class="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-indigo-50">${renderRow(it)}</button>`).join('')
+      : '<p class="px-4 py-3 text-sm text-slate-500">Sin coincidencias. Se guarda tal cual lo escribas.</p>';
+    results.querySelectorAll('button').forEach((b) =>
+      b.addEventListener('click', () => { onPick(items[+b.dataset.idx]); results.classList.add('hidden'); }));
+    results.classList.remove('hidden');
+  }, 250));
+  form.addEventListener('click', (e) => {
+    if (e.target !== input && !results.contains(e.target)) results.classList.add('hidden');
+  });
+}
+
 function openResultModal(item) {
   const form = document.createElement('form');
   const studies = item ? item.studies.map((s) => ({ ...s })) : [];
   form.innerHTML = `
     <div class="space-y-4">
-      <div>
+      <div class="relative">
         <label class="${labelCls}">Nombre del paciente *</label>
-        <input type="text" name="patient_name" required value="${escapeHtml(item?.patient_name || '')}" class="${inputCls}">
+        <input type="text" name="patient_name" required autocomplete="off" value="${escapeHtml(item?.patient_name || '')}" class="${inputCls}">
+        <div id="result-patient-results" class="absolute inset-x-0 top-full z-10 mt-1 hidden overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-200"></div>
       </div>
       <div class="grid grid-cols-2 gap-4">
         <div>
@@ -358,6 +381,10 @@ function openResultModal(item) {
           ${icon('plus', 'h-3.5 w-3.5')} agregar estudio
         </button>
       </div>
+      <div>
+        <label class="${labelCls}">Observaciones</label>
+        <textarea name="observations" rows="2" class="${inputCls}" placeholder="Opcional">${escapeHtml(item?.observations || '')}</textarea>
+      </div>
       <label class="flex items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" name="needs_invoice" value="1" ${item?.needs_invoice ? 'checked' : ''}
                class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
@@ -365,16 +392,33 @@ function openResultModal(item) {
       </label>
     </div>`;
 
+  wireSearchDropdown(form, form.querySelector('[name=patient_name]'), form.querySelector('#result-patient-results'), {
+    searchFn: async (q) => (await apiGet('tasks/search_patients', { q })).items,
+    renderRow: (p) => `<span class="min-w-0 flex-1 truncate text-sm font-medium text-slate-800">${escapeHtml(p.name)}</span><span class="shrink-0 text-xs text-slate-500">${escapeHtml(p.file_number)}</span>`,
+    onPick: (p) => { form.querySelector('[name=patient_name]').value = p.name; },
+  });
+
   const studiesBox = form.querySelector('#result-studies');
   const renderStudies = () => {
     studiesBox.innerHTML = studies.length ? studies.map((s, idx) => `
       <div class="flex items-center gap-2">
         <input type="checkbox" data-s-done="${idx}" ${s.done ? 'checked' : ''} class="h-4 w-4 shrink-0 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-        <input type="text" data-s-text="${idx}" value="${escapeHtml(s.text)}" placeholder="Estudio…" class="${inputCls} flex-1">
+        <div class="relative min-w-0 flex-1">
+          <input type="text" data-s-text="${idx}" autocomplete="off" value="${escapeHtml(s.text)}" placeholder="Estudio…" class="${inputCls}">
+          <div id="result-study-results-${idx}" class="absolute inset-x-0 top-full z-10 mt-1 hidden overflow-hidden rounded-xl bg-white shadow-lg ring-1 ring-slate-200"></div>
+        </div>
         <button type="button" data-s-rm="${idx}" class="shrink-0 text-slate-300 hover:text-red-500">${icon('x', 'h-4 w-4')}</button>
       </div>`).join('') : `<p class="text-xs text-slate-400">Sin estudios agregados.</p>`;
     studiesBox.querySelectorAll('[data-s-done]').forEach((cb) => cb.addEventListener('change', () => { studies[+cb.dataset.sDone].done = cb.checked; }));
-    studiesBox.querySelectorAll('[data-s-text]').forEach((inp) => inp.addEventListener('input', () => { studies[+inp.dataset.sText].text = inp.value; }));
+    studiesBox.querySelectorAll('[data-s-text]').forEach((inp) => {
+      const idx = +inp.dataset.sText;
+      inp.addEventListener('input', () => { studies[idx].text = inp.value; });
+      wireSearchDropdown(form, inp, studiesBox.querySelector(`#result-study-results-${idx}`), {
+        searchFn: async (q) => (await apiGet('tasks/search_studies', { q })).items,
+        renderRow: (s) => `<span class="text-sm font-medium text-slate-800">${escapeHtml(s.name)}</span>`,
+        onPick: (s) => { inp.value = s.name; studies[idx].text = s.name; },
+      });
+    });
     studiesBox.querySelectorAll('[data-s-rm]').forEach((b) => b.addEventListener('click', () => { studies.splice(+b.dataset.sRm, 1); renderStudies(); }));
   };
   renderStudies();
@@ -400,7 +444,7 @@ function openResultModal(item) {
             await apiPost('tasks/results_save', {
               ...(item ? { id: item.id } : {}),
               patient_name: v.patient_name, sample_date: v.sample_date, due_date: v.due_date,
-              needs_invoice: v.needs_invoice, studies,
+              needs_invoice: v.needs_invoice, observations: v.observations, studies,
             });
             toast(item ? 'Registro actualizado' : 'Resultados registrados');
             close();
