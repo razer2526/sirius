@@ -229,6 +229,26 @@ function dash_agenda(array $me, string $date): array
         );
         $st->execute([$meId, date('o-\WW'), date('Y-m-d')]);
         $out['tasks'] = array_merge($tasks, $st->fetchAll());
+
+        // Resultados que deben salir este día, sin contar los ya completados (checklist
+        // marcado por completo): la pestaña Resultados de Tareas es la fuente.
+        $st = $pdo->prepare(
+            'SELECT id, patient_name, sample_date, due_date, studies, needs_invoice
+             FROM result_deliveries WHERE due_date = ?'
+        );
+        $st->execute([$date]);
+        $pending = [];
+        foreach ($st->fetchAll() as $r) {
+            $items = $r['studies'] ? json_decode($r['studies'], true) : [];
+            $allDone = $items && !array_filter($items, fn($it) => empty($it['done']));
+            if ($allDone) {
+                continue;
+            }
+            $r['studies'] = $items;
+            $r['needs_invoice'] = (bool)$r['needs_invoice'];
+            $pending[] = $r;
+        }
+        $out['result_deliveries'] = $pending;
     }
 
     if (user_can('expedientes')) {

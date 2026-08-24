@@ -90,7 +90,8 @@ function agendaCard(title, agenda, variant) {
   const appts = agenda.appointments || [];
   const tasks = agenda.tasks || [];
   const lab = agenda.lab_pending || [];
-  const empty = !appts.length && !tasks.length && !lab.length;
+  const results = agenda.result_deliveries || [];
+  const empty = !appts.length && !tasks.length && !lab.length && !results.length;
   const accent = variant === 'today' ? 'text-indigo-600' : 'text-slate-500';
 
   return `
@@ -115,6 +116,16 @@ function agendaCard(title, agenda, variant) {
             <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml([l.first_name, l.paternal_surname, l.maternal_surname].filter(Boolean).join(' '))}</span>
             <span class="shrink-0 text-[11px] text-slate-400">${escapeHtml(l.file_number)}${l.service_folio ? ' · ' + escapeHtml(l.service_folio) : ''}</span>
           </a>`)) : ''}
+        ${results.length ? agendaGroup('flask', 'Resultados por enviar', results.map((r) => {
+          const st = r.studies || [];
+          const done = st.filter((s) => s.done).length;
+          return `
+          <a href="#/tareas/resultados" class="flex items-center gap-2.5 hover:text-indigo-600">
+            <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(r.patient_name)}</span>
+            ${r.needs_invoice ? `<span class="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600">Factura</span>` : ''}
+            ${st.length ? `<span class="shrink-0 text-[11px] text-slate-400">${done}/${st.length}</span>` : ''}
+          </a>`;
+        })) : ''}
       </div>`}
     </div>`;
 }
