@@ -42,6 +42,18 @@ export async function render(root, context) {
   }
 }
 
+/**
+ * Entrada directa al formulario completo con un paciente ya elegido, para el
+ * wizard: cuando detecta un posible duplicado y el usuario confirma que es el
+ * mismo paciente, sale del modo asistido hacia aquí en vez de seguir
+ * capturando desde cero. El wizard llama esto por import() dinámico, así que
+ * ambos módulos no se cargan salvo que de verdad se necesiten.
+ */
+export async function renderFormFor(root, context, serviceKey, patient) {
+  ctx = context;
+  await renderForm(root, serviceKey, patient);
+}
+
 /* ---- Grid de servicios ---- */
 function renderGrid(root) {
   root.innerHTML = `
@@ -85,7 +97,7 @@ function wizardLinkHtml() {
 }
 
 /* ---- Formulario de admisión ---- */
-async function renderForm(root, serviceKey) {
+async function renderForm(root, serviceKey, preselectPatient = null) {
   const svc = SERVICES[serviceKey];
   const isLab = serviceKey === 'laboratorio';
   const [catalog, { users: assignableUsers }, doctorsRes] = await Promise.all([
@@ -374,6 +386,8 @@ async function renderForm(root, serviceKey) {
     patientSection.querySelectorAll('input, select, textarea').forEach((el) => { el.disabled = false; });
   };
   root.querySelector('#clear-selected').addEventListener('click', clearPatient);
+
+  if (preselectPatient) selectPatient(preselectPatient);
 
   searchInput.addEventListener('input', debounce(async () => {
     const q = searchInput.value.trim();

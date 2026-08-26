@@ -32,7 +32,7 @@ function blankData() {
   return {
     existingPatient: null,      // paciente ya registrado, si se eligió uno
     patient: { first_name: '', paternal_surname: '', maternal_surname: '', birth_date: '', sex: '', mobile: '', email: '' },
-    linkedDoctorId: '',
+    emailUseOtherDomain: false,   // el modo del selector no se deriva del correo: "Otro" sin dominio tecleado aún se vería como si no estuviera elegido
     doctorOther: '',
     studies: [],                // [{ study_id, name, amount }]
     paymentMethod: '',
@@ -46,6 +46,14 @@ function blankData() {
 /* Las duraciones son las mismas del formulario normal; se repiten aquí porque
    el wizard las presenta de otra forma (una tarjeta por síntoma a pantalla completa). */
 const DURATIONS = ['Hoy o ayer', '2 a 6 días', '1 a 2 semanas', '2 a 4 semanas', 'Más de 1 mes', 'Más de 6 meses'];
+
+const EMAIL_DOMAINS = ['gmail.com', 'hotmail.com', 'live.com', 'yahoo.com', 'yahoo.com.mx', 'me.com', 'icloud.com', 'msn.com'];
+
+/** Separa un correo en usuario/dominio para los dos controles del paso de contacto. */
+function splitEmail(email) {
+  const at = email.indexOf('@');
+  return at === -1 ? { local: email, domain: '' } : { local: email.slice(0, at), domain: email.slice(at + 1) };
+}
 
 /** Un campo del catálogo de laboratorio por su clave. */
 function labField(key) {
@@ -122,32 +130,20 @@ function refreshPendingBanner(root) {
 /* ================== Armazón ================== */
 
 const STEPS = [
-  { key: 'paciente',     title: '¿El paciente ya está registrado?' },
   { key: 'nombre',       title: '¿Cómo se llama?' },
-  { key: 'nacimiento',   title: '¿Cuándo nació?' },
-  { key: 'contacto',     title: '¿Cómo lo contactamos?' },
-  { key: 'medico',       title: '¿Quién lo envía?' },
+  { key: 'nacimiento',   title: 'Fecha de nacimiento y sexo biológico' },
+  { key: 'contacto',     title: 'Datos de contacto' },
+  { key: 'medico',       title: 'Médico tratante' },
   { key: 'estudios',     title: '¿Qué estudios se le toman?' },
-  { key: 'pago',         title: '¿Cómo pagó?' },
   { key: 'sintomas',     title: '¿Qué molestias tiene?' },
   { key: 'medicamentos', title: '¿Toma algún medicamento?' },
+  { key: 'pago',         title: 'Monto y método de pago' },
   { key: 'firma',        title: 'Firma del paciente' },
   { key: 'confirmar',    title: 'Revisa antes de guardar' },
 ];
 
-/**
- * Pasos que no aplican. El único caso es el paciente ya registrado, y se decide
- * en el primer paso: así el "Paso X de N" nunca cambia de total a media captura,
- * que para el usuario al que va dirigido esto se lee como que algo falló.
- */
-function isSkipped(key) {
-  return !!data.existingPatient && ['nombre', 'nacimiento', 'contacto'].includes(key);
-}
-
 function move(root, dir) {
-  let next = step + dir;
-  while (next > 0 && next < STEPS.length - 1 && isSkipped(STEPS[next].key)) next += dir;
-  step = Math.max(0, Math.min(STEPS.length - 1, next));
+  step = Math.max(0, Math.min(STEPS.length - 1, step + dir));
   paint(root);
 }
 
@@ -166,21 +162,20 @@ function exitLinkHtml() {
 
 function paint(root) {
   const s = STEPS[step];
-  const shown = STEPS.filter((x) => !isSkipped(x.key));
-  const pos = shown.findIndex((x) => x.key === s.key) + 1;
+  const pos = step + 1;
 
   root.innerHTML = `
     <div class="mx-auto flex min-h-[calc(100vh-8rem)] max-w-xl flex-col">
       <div id="wz-pending-banner">${pendingBannerHtml()}</div>
       <div class="mb-5">
         <div class="mb-2 flex items-center justify-between">
-          <span class="text-sm font-semibold text-slate-500">Paso ${pos} de ${shown.length}</span>
+          <span class="text-sm font-semibold text-slate-500">Paso ${pos} de ${STEPS.length}</span>
           ${step > 0
             ? `<button type="button" id="wz-cancel" class="text-sm font-medium text-slate-400 hover:text-slate-600">Cancelar</button>`
             : exitLinkHtml()}
         </div>
         <div class="h-2 w-full overflow-hidden rounded-full bg-slate-200">
-          <div class="h-full rounded-full bg-indigo-600 transition-all" style="width:${Math.round((pos / shown.length) * 100)}%"></div>
+          <div class="h-full rounded-full bg-indigo-600 transition-all" style="width:${Math.round((pos / STEPS.length) * 100)}%"></div>
         </div>
       </div>
 
@@ -215,9 +210,13 @@ function paint(root) {
       paint(root);
     }
   });
-  root.querySelector('#wz-next').addEventListener('click', () => {
+  root.querySelector('#wz-next').addEventListener('click', async () => {
     const err = validate(s.key);
     if (err) { toast(err, 'error'); return; }
+    if (s.key === 'nacimiento') {
+      const wentToAutofill = await checkPossibleDuplicate(root);
+      if (wentToAutofill) return;
+    }
     if (step === STEPS.length - 1) submit(root);
     else move(root, 1);
   });
@@ -241,25 +240,6 @@ function optionBtn(attrs, label, selected, sub) {
 
 function bodyHtml(key) {
   switch (key) {
-    case 'paciente':
-      return `
-        <div class="space-y-3">
-          ${data.existingPatient ? `
-            <div class="rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-200">
-              <p class="text-lg font-bold text-emerald-900">${escapeHtml(fullName(data.existingPatient))}</p>
-              <p class="text-sm text-emerald-700">${escapeHtml(data.existingPatient.file_number)}</p>
-              ${data.existingPatient.last_visit ? `
-              <p class="mt-2 flex items-center gap-1.5 rounded-lg bg-white/70 px-2.5 py-1.5 text-sm font-medium text-emerald-800">
-                ${icon('repeat', 'h-4 w-4 shrink-0')} ${escapeHtml(recurrenceText(data.existingPatient.last_visit))}
-              </p>` : ''}
-              <button type="button" id="wz-clear-patient" class="mt-2 text-sm font-semibold text-emerald-700 underline">Elegir otro</button>
-            </div>` : `
-            <input type="search" id="wz-search" placeholder="Buscar por nombre o teléfono…" autocomplete="off" class="${bigInput}">
-            <div id="wz-results" class="space-y-2"></div>
-            <p class="pt-2 text-center text-sm text-slate-500">o bien</p>
-            ${optionBtn('id="wz-new-patient"', 'Es paciente nuevo', false, 'Se capturan sus datos a continuación')}`}
-        </div>`;
-
     case 'nombre':
       return `
         <div class="space-y-4">
@@ -289,23 +269,35 @@ function bodyHtml(key) {
           </p>
         </div>`;
 
-    case 'contacto':
+    case 'contacto': {
+      const { local, domain } = splitEmail(data.patient.email);
+      const isOtroDomain = data.emailUseOtherDomain;
       return `
         <div class="space-y-4">
           <div><label class="${bigLabel}">Celular</label>
             <input type="tel" id="f-mobile" value="${escapeHtml(data.patient.mobile)}" class="${bigInput}" inputmode="tel" autocomplete="tel"></div>
-          <div><label class="${bigLabel}">Correo electrónico <span class="font-normal text-slate-400">(opcional)</span></label>
-            <input type="email" id="f-email" value="${escapeHtml(data.patient.email)}" class="${bigInput}" inputmode="email" autocomplete="email">
-            <p class="mt-1.5 text-sm text-slate-500">Aquí le llega su ficha. Revísalo con calma.</p></div>
+          <div>
+            <label class="${bigLabel}">Correo electrónico <span class="font-normal text-slate-400">(opcional)</span></label>
+            <div class="flex items-stretch gap-2">
+              <input type="text" id="f-email-local" value="${escapeHtml(local)}" placeholder="usuario" class="${bigInput} min-w-0 flex-1" inputmode="email" autocomplete="off">
+              <span class="flex items-center text-xl font-bold text-slate-400">@</span>
+              <select id="f-email-domain" class="${bigInput} w-40 shrink-0">
+                ${EMAIL_DOMAINS.map((d) => `<option value="${d}" ${!isOtroDomain && domain === d ? 'selected' : ''}>${d}</option>`).join('')}
+                <option value="__otro" ${isOtroDomain ? 'selected' : ''}>Otro…</option>
+              </select>
+            </div>
+            ${isOtroDomain ? `
+            <input type="text" id="f-email-domain-other" value="${escapeHtml(domain)}" placeholder="dominio.com" class="${bigInput} mt-2">` : ''}
+            <p class="mt-1.5 text-sm text-slate-500">Aquí le llega su ficha. Revísalo con calma.</p>
+          </div>
         </div>`;
+    }
 
     case 'medico':
       return `
-        <div class="space-y-3">
-          <div id="wz-doctors" class="space-y-2"><p class="text-sm text-slate-400">Cargando médicos…</p></div>
-          ${optionBtn('data-doc="otro"', 'Otro médico', data.linkedDoctorId === 'otro')}
-          ${data.linkedDoctorId === 'otro' ? `
-            <input type="text" id="f-doc-other" value="${escapeHtml(data.doctorOther)}" placeholder="Nombre del médico" class="${bigInput}">` : ''}
+        <div>
+          <label class="${bigLabel}">Nombre del médico <span class="font-normal text-slate-400">(opcional)</span></label>
+          <input type="text" id="f-doc" value="${escapeHtml(data.doctorOther)}" placeholder="A quién corresponda" class="${bigInput}">
         </div>`;
 
     case 'estudios':
@@ -319,6 +311,7 @@ function bodyHtml(key) {
     case 'pago':
       return `
         <div class="space-y-3">
+          <div id="wz-pago-lines" class="space-y-2">${pagoLinesHtml()}</div>
           <div class="rounded-xl bg-slate-100 px-4 py-3 text-center">
             <p class="text-sm text-slate-500">Total capturado</p>
             <p class="text-3xl font-bold text-slate-900">$${totalAmount().toFixed(2)}</p>
@@ -374,8 +367,8 @@ function bodyHtml(key) {
         </div>`;
 
     case 'confirmar': {
-      const p = data.existingPatient || data.patient;
-      const name = data.existingPatient ? fullName(p) : `${p.first_name} ${p.paternal_surname} ${p.maternal_surname}`.trim();
+      const p = data.patient;
+      const name = `${p.first_name} ${p.paternal_surname} ${p.maternal_surname}`.trim();
       const syms = Object.entries(data.symptoms).map(([k, v]) => {
         const f = symptomFields().find((x) => x.k === k);
         return `${f ? f.l : k} (${v})`;
@@ -387,7 +380,7 @@ function bodyHtml(key) {
         </div>`;
       return `
         <div class="space-y-4">
-          ${data.patient.email && !data.existingPatient ? `
+          ${data.patient.email ? `
             <div class="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
               <p class="text-sm font-semibold text-amber-900">Su ficha se enviará a este correo:</p>
               <p class="mt-1 break-all text-xl font-bold text-amber-900">${escapeHtml(data.patient.email)}</p>
@@ -398,7 +391,7 @@ function bodyHtml(key) {
             ${row('Estudios', data.studies.map((s) => s.name).join(', '))}
             ${row('Total', '$' + totalAmount().toFixed(2))}
             ${row('Pago', data.paymentMethod)}
-            ${row('Médico', doctorLabel())}
+            ${row('Médico', data.doctorOther.trim() || 'A quién corresponda')}
             ${row('Molestias', [...syms, data.symptomsOther].filter(Boolean).join(', '))}
             ${row('Medicamentos', data.medicamentos)}
             ${row('Firma', data.signature ? 'Capturada' : 'Sin firma')}
@@ -416,14 +409,21 @@ function pickedStudiesHtml() {
     return '<p class="text-center text-sm text-slate-400">Todavía no eliges ninguno.</p>';
   }
   return data.studies.map((s, i) => `
-    <div class="rounded-xl bg-indigo-50 p-3 ring-1 ring-indigo-200">
-      <div class="flex items-start justify-between gap-2">
-        <p class="min-w-0 flex-1 text-base font-semibold text-indigo-900">${escapeHtml(s.name)}</p>
-        <button type="button" data-rm-study="${i}" class="shrink-0 text-indigo-400">${icon('x', 'h-5 w-5')}</button>
-      </div>
-      <label class="mt-2 block text-sm font-semibold text-indigo-800">Monto cobrado</label>
+    <div class="flex items-center justify-between gap-2 rounded-xl bg-indigo-50 p-3 ring-1 ring-indigo-200">
+      <p class="min-w-0 flex-1 text-base font-semibold text-indigo-900">${escapeHtml(s.name)}</p>
+      <button type="button" data-rm-study="${i}" class="shrink-0 text-indigo-400">${icon('x', 'h-5 w-5')}</button>
+    </div>`).join('');
+}
+
+/** Un renglón por estudio elegido, con el monto que ahora se captura en el paso de pago. */
+function pagoLinesHtml() {
+  if (!data.studies.length) return '';
+  return data.studies.map((s, i) => `
+    <div class="rounded-xl bg-white p-3 ring-1 ring-slate-200">
+      <p class="text-base font-semibold text-slate-800">${escapeHtml(s.name)}</p>
+      <label class="mt-2 block text-sm font-semibold text-slate-600">Monto cobrado</label>
       <input type="number" step="0.01" inputmode="decimal" data-amount="${i}" value="${s.amount}"
-             class="mt-1 w-full rounded-lg border-0 px-3 py-3 text-lg font-bold shadow-sm ring-1 ring-indigo-300 outline-none focus:ring-2 focus:ring-indigo-500">
+             class="mt-1 w-full rounded-lg border-0 px-3 py-3 text-lg font-bold shadow-sm ring-1 ring-slate-300 outline-none focus:ring-2 focus:ring-indigo-500">
     </div>`).join('');
 }
 
@@ -431,38 +431,10 @@ function totalAmount() {
   return data.studies.reduce((n, s) => n + (parseFloat(s.amount) || 0), 0);
 }
 
-function doctorLabel() {
-  if (data.linkedDoctorId === 'otro') return data.doctorOther;
-  const d = (window.__wzDoctors || []).find((x) => String(x.id) === String(data.linkedDoctorId));
-  return d ? d.name : '';
-}
-
 /* ================== Comportamiento de cada paso ================== */
 
 function wireBody(root, key) {
   const $ = (sel) => root.querySelector(sel);
-
-  if (key === 'paciente') {
-    $('#wz-clear-patient')?.addEventListener('click', () => { data.existingPatient = null; paint(root); });
-    $('#wz-new-patient')?.addEventListener('click', () => { data.existingPatient = null; move(root, 1); });
-    const input = $('#wz-search');
-    input?.addEventListener('input', debounce(async () => {
-      const q = input.value.trim();
-      const box = $('#wz-results');
-      if (q.length < 2) { box.innerHTML = ''; return; }
-      try {
-        const res = await apiGet('episodes/search_patient', { q });
-        box.innerHTML = res.patients.length
-          ? res.patients.map((p, i) => optionBtn(`data-pick-patient="${i}"`, fullName(p),
-              false, `${p.file_number}${p.birth_date ? ' · ' + fmtDate(p.birth_date) : ''}`)).join('')
-          : '<p class="py-2 text-center text-sm text-slate-400">Sin coincidencias.</p>';
-        box.querySelectorAll('[data-pick-patient]').forEach((b) => b.addEventListener('click', () => {
-          data.existingPatient = res.patients[+b.dataset.pickPatient];
-          paint(root);
-        }));
-      } catch { box.innerHTML = ''; }
-    }, 300));
-  }
 
   if (key === 'nombre') {
     $('#f-first').addEventListener('input', (e) => { data.patient.first_name = e.target.value; });
@@ -480,27 +452,24 @@ function wireBody(root, key) {
 
   if (key === 'contacto') {
     $('#f-mobile').addEventListener('input', (e) => { data.patient.mobile = e.target.value; });
-    $('#f-email').addEventListener('input', (e) => { data.patient.email = e.target.value; });
+    const updateEmail = () => {
+      const local = $('#f-email-local').value.trim();
+      const domain = data.emailUseOtherDomain
+        ? ($('#f-email-domain-other')?.value.trim() || '')
+        : $('#f-email-domain').value;
+      data.patient.email = local ? `${local}@${domain}` : '';
+    };
+    $('#f-email-local').addEventListener('input', updateEmail);
+    $('#f-email-domain').addEventListener('change', () => {
+      data.emailUseOtherDomain = $('#f-email-domain').value === '__otro';
+      updateEmail();
+      paint(root);
+    });
+    $('#f-email-domain-other')?.addEventListener('input', updateEmail);
   }
 
   if (key === 'medico') {
-    const box = $('#wz-doctors');
-    apiGet('episodes/search_doctors').then((res) => {
-      window.__wzDoctors = res.items;
-      box.innerHTML = res.items.length
-        ? res.items.map((d) => optionBtn(`data-doc="${d.id}"`, d.name, String(data.linkedDoctorId) === String(d.id))).join('')
-        : '<p class="text-sm text-slate-400">No hay médicos con convenio dados de alta.</p>';
-      box.querySelectorAll('[data-doc]').forEach((b) => b.addEventListener('click', () => {
-        data.linkedDoctorId = b.dataset.doc;
-        paint(root);
-      }));
-    }).catch(() => { box.innerHTML = '<p class="text-sm text-red-600">No se pudieron cargar los médicos.</p>'; });
-
-    root.querySelectorAll('[data-doc="otro"]').forEach((b) => b.addEventListener('click', () => {
-      data.linkedDoctorId = 'otro';
-      paint(root);
-    }));
-    $('#f-doc-other')?.addEventListener('input', (e) => { data.doctorOther = e.target.value; });
+    $('#f-doc').addEventListener('input', (e) => { data.doctorOther = e.target.value; });
   }
 
   if (key === 'estudios') {
@@ -511,23 +480,28 @@ function wireBody(root, key) {
       if (q.length < 2) { box.innerHTML = ''; return; }
       try {
         const res = await apiGet('episodes/search_studies', { q });
-        box.innerHTML = res.items.map((s, i) => optionBtn(`data-pick-study="${i}"`, s.name, false,
-          s.public_price ? `Precio de lista $${(+s.public_price).toFixed(2)}` : '')).join('')
+        box.innerHTML = res.items.map((s, i) => optionBtn(`data-pick-study="${i}"`, s.name, false)).join('')
           || '<p class="py-2 text-center text-sm text-slate-400">Sin coincidencias.</p>';
         box.querySelectorAll('[data-pick-study]').forEach((b) => b.addEventListener('click', () => {
           const s = res.items[+b.dataset.pickStudy];
           if (!data.studies.some((x) => x.study_id === s.id)) {
-            data.studies.push({ study_id: s.id, name: s.name, amount: s.public_price || '' });
+            data.studies.push({ study_id: s.id, name: s.name, amount: '' });
           }
           input.value = '';
           paint(root);
         }));
       } catch { box.innerHTML = ''; }
     }, 300));
-    wireStudyRows(root);
+    root.querySelectorAll('[data-rm-study]').forEach((b) => b.addEventListener('click', () => {
+      data.studies.splice(+b.dataset.rmStudy, 1);
+      paint(root);
+    }));
   }
 
   if (key === 'pago') {
+    root.querySelectorAll('[data-amount]').forEach((i) => i.addEventListener('input', () => {
+      data.studies[+i.dataset.amount].amount = i.value;
+    }));
     root.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => {
       data.paymentMethod = b.dataset.pay;
       paint(root);
@@ -555,16 +529,6 @@ function wireBody(root, key) {
   if (key === 'firma') {
     setupSignature(root);
   }
-}
-
-function wireStudyRows(root) {
-  root.querySelectorAll('[data-rm-study]').forEach((b) => b.addEventListener('click', () => {
-    data.studies.splice(+b.dataset.rmStudy, 1);
-    paint(root);
-  }));
-  root.querySelectorAll('[data-amount]').forEach((i) => i.addEventListener('input', () => {
-    data.studies[+i.dataset.amount].amount = i.value;
-  }));
 }
 
 /** Lienzo de firma. Es una copia deliberadamente simple de la de forms.js:
@@ -633,8 +597,6 @@ function setupSignature(root) {
 
 function validate(key) {
   switch (key) {
-    case 'paciente':
-      return null;   // se puede continuar como paciente nuevo
     case 'nombre':
       if (!data.patient.first_name.trim()) return 'Falta el nombre.';
       if (!data.patient.paternal_surname.trim()) return 'Falta el apellido paterno.';
@@ -646,21 +608,69 @@ function validate(key) {
     case 'contacto':
       if (data.patient.email && !/^\S+@\S+\.\S+$/.test(data.patient.email)) return 'El correo no parece válido.';
       return null;
-    case 'medico':
-      if (!data.linkedDoctorId) return 'Indica quién envía al paciente.';
-      if (data.linkedDoctorId === 'otro' && !data.doctorOther.trim()) return 'Escribe el nombre del médico.';
-      return null;
     case 'estudios':
-      if (!data.studies.length) return 'Agrega al menos un estudio.';
-      if (data.studies.some((s) => !(parseFloat(s.amount) >= 0))) return 'Falta el monto de algún estudio.';
-      return null;
+      return data.studies.length ? null : 'Agrega al menos un estudio.';
     case 'pago':
+      if (data.studies.some((s) => !(parseFloat(s.amount) >= 0))) return 'Falta el monto de algún estudio.';
       return data.paymentMethod ? null : 'Indica la forma de pago.';
     case 'sintomas':
       return Object.values(data.symptoms).every((v) => v) ? null : 'Falta indicar desde cuándo en alguna molestia.';
     default:
       return null;
   }
+}
+
+/**
+ * Aviso opcional de "quizá ya existe", justo al terminar de capturar nombre y
+ * fecha de nacimiento (mismo criterio que ya usa episodes/create al guardar:
+ * nombre + apellido paterno + fecha de nacimiento exactos). Si el usuario
+ * confirma, se sale del wizard hacia el formulario completo ya autocompletado
+ * con ese paciente — nunca se sigue capturando aquí con un existingPatient
+ * puesto a medio wizard. Devuelve true solo si se salió del wizard.
+ */
+async function checkPossibleDuplicate(root) {
+  const { first_name, paternal_surname, birth_date } = data.patient;
+  if (!first_name.trim() || !paternal_surname.trim() || !birth_date) return false;
+
+  let candidates;
+  try {
+    const res = await apiGet('episodes/search_patient', { q: `${first_name} ${paternal_surname}`.trim() });
+    candidates = res.patients;
+  } catch {
+    return false;   // sin conexión o error: no bloquea la captura
+  }
+  const fold = (s) => s.trim().toLowerCase();
+  const match = candidates.find((p) =>
+    fold(p.first_name) === fold(first_name) &&
+    fold(p.paternal_surname) === fold(paternal_surname) &&
+    p.birth_date === birth_date
+  );
+  if (!match) return false;
+
+  return new Promise((resolve) => {
+    modal({
+      title: 'Es posible que el paciente ya se haya registrado',
+      content: `
+        <div class="rounded-xl bg-amber-50 p-4 ring-1 ring-amber-200">
+          <p class="text-base font-bold text-amber-900">${escapeHtml(fullName(match))}</p>
+          <p class="text-sm text-amber-700">${escapeHtml(match.file_number)}${match.birth_date ? ' · Nac. ' + fmtDate(match.birth_date) : ''}</p>
+          ${match.last_visit ? `<p class="mt-2 text-sm font-medium text-amber-800">${escapeHtml(recurrenceText(match.last_visit))}</p>` : ''}
+        </div>
+        <p class="mt-3 text-sm text-slate-600">¿Deseas autocompletar el registro con sus datos, en vez de seguir capturando desde cero?</p>`,
+      actions: [
+        { label: 'No, es alguien más', onClick: (close) => { close(); resolve(false); } },
+        {
+          label: 'Sí, autocompletar', primary: true,
+          onClick: async (close) => {
+            close();
+            const mod = await import('./admision.js');
+            await mod.renderFormFor(root, ctx, 'laboratorio', match);
+            resolve(true);
+          },
+        },
+      ],
+    });
+  });
 }
 
 async function submit(root, ignoreDuplicate = false) {
@@ -680,8 +690,8 @@ async function submit(root, ignoreDuplicate = false) {
     service: 'laboratorio',
     patient_id: data.existingPatient ? +data.existingPatient.id : 0,
     patient: data.existingPatient ? {} : data.patient,
-    linked_doctor_id: data.linkedDoctorId === 'otro' ? null : data.linkedDoctorId,
-    referring_doctor: data.linkedDoctorId === 'otro' ? data.doctorOther.trim() : '',
+    linked_doctor_id: null,
+    referring_doctor: data.doctorOther.trim() || 'A quién corresponda',
     service_data: serviceData,
     study_lines: data.studies.map((s) => ({ study_id: s.study_id, study_name: s.name, amount_charged: s.amount })),
     ignore_duplicate: ignoreDuplicate,
