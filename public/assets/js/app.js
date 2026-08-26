@@ -60,8 +60,8 @@ function renderTopbar() {
 
 function renderSidebar() {
   const nav = document.getElementById('sidebar-nav');
-  const main = state.modules.filter((m) => !m.group);
-  const admin = state.modules.filter((m) => m.group === 'admin_tools');
+  const main = state.modules.filter((m) => !m.group && !m.hidden);
+  const admin = state.modules.filter((m) => m.group === 'admin_tools' && !m.hidden);
 
   const link = (m) => `
     <a href="#/${m.key}" data-module="${m.key}"

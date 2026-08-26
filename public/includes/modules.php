@@ -107,10 +107,14 @@ return [
         'group' => 'admin_tools',
     ],
     'backup' => [
-        'label' => 'Backup',
-        'icon'  => 'database',
-        'phase' => 2,
-        'group' => 'admin_tools',
+        'label'  => 'Backup',
+        'icon'   => 'database',
+        'phase'  => 2,
+        'group'  => 'admin_tools',
+        // Vive ahora dentro de Bases de datos; sigue siendo un módulo con permiso
+        // propio (nada cambia para quien ya lo tuviera asignado), solo se deja de
+        // listar aparte en el sidebar para no duplicar la entrada.
+        'hidden' => true,
     ],
     'api' => [
         'label' => 'API',
@@ -119,8 +123,15 @@ return [
         'group' => 'admin_tools',
     ],
     'catalogo_estudios' => [
-        'label' => 'Catálogo de Estudios',
-        'icon'  => 'flask',
+        'label'  => 'Catálogo de Estudios',
+        'icon'   => 'flask',
+        'phase'  => 2,
+        'group'  => 'admin_tools',
+        'hidden' => true,   // vive ahora dentro de Bases de datos; ver nota en 'backup'
+    ],
+    'bases_datos' => [
+        'label' => 'Bases de datos',
+        'icon'  => 'database',
         'phase' => 2,
         'group' => 'admin_tools',
     ],
