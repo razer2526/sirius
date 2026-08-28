@@ -53,6 +53,10 @@ if (!current_user()) {
       </button>
       <h2 id="topbar-title" class="min-w-0 truncate text-lg font-semibold text-slate-900">Dashboard</h2>
       <div class="ml-auto flex items-center gap-3">
+        <button id="btn-notifications" type="button" aria-label="Activar notificaciones" title="Activar notificaciones"
+                class="hidden h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </button>
         <div class="hidden text-right sm:block">
           <p id="topbar-user" class="text-sm font-semibold text-slate-900"></p>
           <p id="topbar-role" class="text-xs text-slate-500"></p>

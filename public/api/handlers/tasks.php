@@ -117,6 +117,7 @@ function handle_tasks(string $action): void
             $due = valid_date($b['due_date'] ?? '');
             $status = in_array($b['status'] ?? '', ['activo', 'completado', 'archivado'], true) ? $b['status'] : 'activo';
             $id = (int)($b['id'] ?? 0);
+            $oldAssignees = $id > 0 ? assignee_ids('project_assignees', 'project_id', $id) : [];
             if ($id > 0) {
                 db()->prepare('UPDATE projects SET name = ?, description = ?, due_date = ?, status = ? WHERE id = ?')
                     ->execute([$name, $desc, $due, $status, $id]);
@@ -129,6 +130,8 @@ function handle_tasks(string $action): void
             }
             if (array_key_exists('assigned_to', $b)) {
                 sync_project_assignees($id, (array)$b['assigned_to']);
+                notify_new_assignees($oldAssignees, (array)$b['assigned_to'], (int)$me['id'],
+                    'Nuevo proyecto asignado', "Te agregaron al proyecto \"$name\".", '#/tareas/proyectos');
             }
             json_ok(['id' => $id]);
         }
@@ -156,6 +159,7 @@ function handle_tasks(string $action): void
                 json_error('El título es obligatorio', 422);
             }
             $id = (int)($b['id'] ?? 0);
+            $oldAssignees = $id > 0 ? assignee_ids('task_assignees', 'task_id', $id) : [];
             $assignedTo = (array)($b['assigned_to'] ?? []);
             if (!$canManage) {
                 // Un usuario estandar solo crea/edita tareas personales asignadas a sí mismo
@@ -201,6 +205,8 @@ function handle_tasks(string $action): void
                 log_activity('tareas', 'task_create', "Creó tarea \"$title\"", 'task', $id);
             }
             sync_task_assignees($id, $assignedTo);
+            notify_new_assignees($oldAssignees, $assignedTo, (int)$me['id'],
+                'Nueva tarea asignada', "Te asignaron la tarea \"$title\".", '#/tareas');
             json_ok(['id' => $id]);
         }
 
@@ -481,6 +487,36 @@ function sync_project_assignees(int $projectId, array $userIds): void
         $ins = $pdo->prepare('INSERT INTO project_assignees (project_id, user_id) VALUES (?, ?)');
         foreach ($userIds as $uid) {
             $ins->execute([$projectId, $uid]);
+        }
+    }
+}
+
+/** Solo los ids de asignados de una tarea o proyecto (para comparar antes/después). */
+function assignee_ids(string $table, string $fkCol, int $id): array
+{
+    $st = db()->prepare("SELECT user_id FROM $table WHERE $fkCol = ?");
+    $st->execute([$id]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/** Avisa por push solo a quien se acaba de agregar (no a quien ya estaba, ni a
+ *  quien se edita a sí mismo). Que el push falle no debe tumbar el guardado. */
+function notify_new_assignees(array $oldIds, array $newIds, int $actingUserId, string $title, string $body, string $url): void
+{
+    $newIds = array_values(array_unique(array_filter(array_map('intval', $newIds), fn($n) => $n > 0)));
+    $added = array_diff($newIds, $oldIds);
+    if (!$added) {
+        return;
+    }
+    require_once __DIR__ . '/../../includes/webpush.php';
+    foreach ($added as $uid) {
+        if ($uid === $actingUserId) {
+            continue;
+        }
+        try {
+            webpush_notify($uid, $title, $body, $url);
+        } catch (Throwable $e) {
+            error_log('notify_new_assignees: ' . $e->getMessage());
         }
     }
 }

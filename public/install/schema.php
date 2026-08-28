@@ -527,6 +527,28 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_result_delivery_due (due_date),
                 CONSTRAINT fk_result_delivery_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                endpoint VARCHAR(500) NOT NULL,
+                p256dh VARCHAR(255) NULL,
+                auth VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_push_endpoint (endpoint(255)),
+                INDEX idx_push_user (user_id),
+                CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
+            'notifications' => "CREATE TABLE IF NOT EXISTS notifications (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                title VARCHAR(200) NOT NULL,
+                body VARCHAR(500) NULL,
+                url VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMP NULL,
+                INDEX idx_notification_user (user_id, read_at),
+                CONSTRAINT fk_notification_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -938,6 +960,23 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NULL,
+                auth TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'notifications' => "CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                body TEXT NULL,
+                url TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                read_at TEXT NULL
+            )",
         ];
     }
 
@@ -960,6 +999,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_taskassignee_user ON task_assignees (user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_projectassignee_user ON project_assignees (user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_result_delivery_due ON result_deliveries (due_date)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_notification_user ON notifications (user_id, read_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_item_active ON inventory_items (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_item ON inventory_lots (item_id, received_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_expiry ON inventory_lots (expiry_date)');

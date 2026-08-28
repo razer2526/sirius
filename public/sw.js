@@ -5,7 +5,7 @@
  * - /api/, login.php, print.php: network-only — datos clínicos JAMÁS se cachean.
  * En cada deploy, subir la versión del cache.
  */
-const CACHE = 'sirius-shell-v26';
+const CACHE = 'sirius-shell-v27';
 
 const SHELL = [
   'offline.html',
@@ -100,6 +100,54 @@ self.addEventListener('sync', (e) => {
   if (e.tag === 'sync-wizard-outbox') {
     e.waitUntil(flushWizardOutbox());
   }
+});
+
+/**
+ * Push notifications: el push que llega del servidor no trae contenido (ver
+ * includes/webpush.php) — solo despierta al navegador. Aquí se pide lo pendiente
+ * con la sesión que ya trae el navegador (petición del mismo origen, con cookie),
+ * para no tener que cifrar el payload del push (RFC 8291), que es la parte más
+ * propensa a errores de cualquier implementación casera. Sin sesión activa
+ * (expiró, o el push llega igual sin nadie habiendo abierto la app en un rato),
+ * se muestra un aviso genérico en vez de perder la notificación.
+ */
+self.addEventListener('push', (e) => {
+  e.waitUntil(
+    fetch('api/index.php?r=push/pending', { credentials: 'same-origin' })
+      .then((r) => r.json())
+      .then((json) => {
+        const items = (json.ok && json.data && json.data.items) || [];
+        if (!items.length) return null;
+        return Promise.all(items.map((n) => self.registration.showNotification(n.title, {
+          body: n.body || '',
+          icon: 'assets/img/icons/icon-192.png',
+          badge: 'assets/img/icons/icon-192.png',
+          tag: 'sirius-' + n.id,
+          data: { url: n.url || './' },
+        })));
+      })
+      .catch(() => self.registration.showNotification('Sirius', {
+        body: 'Tienes novedades pendientes.',
+        icon: 'assets/img/icons/icon-192.png',
+        data: { url: './' },
+      }))
+  );
+});
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((wins) => {
+      for (const w of wins) {
+        if ('focus' in w) {
+          w.navigate(url);
+          return w.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
 });
 
 /**
