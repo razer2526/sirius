@@ -73,7 +73,8 @@ function dash_alerts(array $me): array
         // Tareas recurrentes (diaria/semanal) aún no completadas en el periodo actual
         $st = $pdo->prepare(
             "SELECT t.id, t.title, t.recurrence FROM tasks t
-             WHERE t.assigned_to = ? AND t.recurrence IS NOT NULL
+             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
+               AND t.recurrence IS NOT NULL
                AND NOT EXISTS (
                  SELECT 1 FROM task_completions tc
                  WHERE tc.task_id = t.id
@@ -88,8 +89,9 @@ function dash_alerts(array $me): array
         $from = date('Y-m-d', strtotime('+2 days'));
         $to   = date('Y-m-d', strtotime('+' . DASH_DEADLINE_SOON_DAYS . ' days'));
         $st = $pdo->prepare(
-            "SELECT id, title, due_date, priority FROM tasks
-             WHERE assigned_to = ? AND status <> 'completada' AND due_date BETWEEN ? AND ?
+            "SELECT id, title, due_date, priority FROM tasks t
+             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
+               AND status <> 'completada' AND due_date BETWEEN ? AND ?
              ORDER BY due_date"
         );
         $st->execute([$meId, $from, $to]);
@@ -209,8 +211,9 @@ function dash_agenda(array $me, string $date): array
     if (user_can('tareas')) {
         // Por fecha límite: vencidas o para este día exactamente (no completadas)
         $st = $pdo->prepare(
-            "SELECT id, title, due_date, priority FROM tasks
-             WHERE assigned_to = ? AND recurrence IS NULL AND status <> 'completada' AND due_date <= ?
+            "SELECT id, title, due_date, priority FROM tasks t
+             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
+               AND recurrence IS NULL AND status <> 'completada' AND due_date <= ?
              ORDER BY due_date"
         );
         $st->execute([$meId, $date]);
@@ -219,7 +222,8 @@ function dash_agenda(array $me, string $date): array
         // + recurrentes aún no completadas en su periodo actual (se repiten en hoy y mañana)
         $st = $pdo->prepare(
             "SELECT t.id, t.title, t.recurrence FROM tasks t
-             WHERE t.assigned_to = ? AND t.recurrence IS NOT NULL
+             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
+               AND t.recurrence IS NOT NULL
                AND NOT EXISTS (
                  SELECT 1 FROM task_completions tc
                  WHERE tc.task_id = t.id
