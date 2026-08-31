@@ -218,6 +218,23 @@ function wa_send_text(string $waId, string $body, ?int $sentByUserId, int $conve
     return ['ok' => $ok, 'wa_message_id' => $waMessageId, 'response' => $resp];
 }
 
+/**
+ * Envía (o quita, con $emoji = '') una reacción a un mensaje ya enviado o recibido.
+ * A diferencia de wa_send_text/wa_send_media, no crea una fila nueva en wa_messages
+ * — WhatsApp trata la reacción como una propiedad del mensaje original, no como un
+ * mensaje aparte; el llamador actualiza esa fila directamente.
+ */
+function wa_send_reaction(string $waId, string $targetWaMessageId, string $emoji): array
+{
+    [$code, $resp] = wa_api_request('POST', '/messages', [
+        'messaging_product' => 'whatsapp',
+        'to'                => $waId,
+        'type'              => 'reaction',
+        'reaction'          => ['message_id' => $targetWaMessageId, 'emoji' => $emoji],
+    ]);
+    return ['ok' => $code >= 200 && $code < 300, 'response' => $resp];
+}
+
 /* ---------- Adjuntos (fotos, video, audio, documentos) ---------- */
 
 /** Directorio de adjuntos de WhatsApp, protegido por .htaccess — se sirven solo por whatsapp_media.php. */

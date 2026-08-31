@@ -1121,6 +1121,11 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE wa_messages ADD COLUMN media_path {$varchar(80)}",
         "ALTER TABLE wa_messages ADD COLUMN media_filename {$varchar(200)}",
         "ALTER TABLE wa_messages ADD COLUMN media_size " . ($isMysql ? 'BIGINT UNSIGNED NULL' : 'INTEGER NULL'),
+        // Reacciones: se guardan por separado (paciente y agente pueden reaccionar
+        // cada uno al mismo mensaje) en vez de como fila nueva — WhatsApp las trata
+        // como una propiedad del mensaje original, no como un mensaje aparte.
+        "ALTER TABLE wa_messages ADD COLUMN reaction_contact {$varchar(16)}",
+        "ALTER TABLE wa_messages ADD COLUMN reaction_agent {$varchar(16)}",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {

@@ -13,6 +13,23 @@ const STATUS_COLOR = {
   emerald: 'bg-emerald-100 text-emerald-700', red: 'bg-red-100 text-red-700', indigo: 'bg-indigo-100 text-indigo-700',
 };
 const POLL_MS = 15000;
+// Emojis de reacción y de captura rápida: WhatsApp Cloud API no permite consultar la
+// foto de perfil de un contacto (restricción de la plataforma, no de Sirius) — por
+// eso el chat muestra un avatar con iniciales en su lugar.
+const REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const EMOJI_PICKER = [
+  '😀', '😁', '😂', '🤣', '😊', '😉', '😍', '😘', '🙂', '🙃', '😇', '🤔',
+  '😐', '😑', '😴', '😪', '😢', '😭', '😡', '😱', '😳', '🥳', '🤗', '🤝',
+  '👍', '👎', '👏', '🙏', '💪', '🤞', '✌️', '👌', '👋', '🤙', '❤️', '💙',
+  '💚', '💛', '🧡', '💜', '🖤', '🤍', '💯', '🔥', '✨', '🎉', '⚠️', '✅',
+  '❌', '❓', '❗', '⏰', '📅', '📍', '📌', '💊', '🩺', '🏥', '🧪', '📄',
+];
+
+function contactAvatarHtml(c, size = 'h-10 w-10 text-sm') {
+  const name = c.contact_name || c.patient_name || c.wa_id || '?';
+  const initials = name.trim().split(/\s+/).slice(0, 2).map((w) => w[0] || '').join('').toUpperCase() || '?';
+  return `<div class="flex ${size} shrink-0 items-center justify-center rounded-full bg-indigo-100 font-bold text-indigo-700">${escapeHtml(initials)}</div>`;
+}
 
 let ctx;
 let moduleRoot = null;
@@ -125,6 +142,7 @@ function paintList(el) {
     return `
       <button type="button" data-conv="${c.id}"
               class="flex w-full items-start gap-2 rounded-lg px-3 py-2.5 text-left transition ${active ? 'bg-indigo-50 ring-1 ring-indigo-200' : 'hover:bg-slate-50'}">
+        ${contactAvatarHtml(c, 'h-9 w-9 text-xs mt-0.5')}
         <div class="min-w-0 flex-1">
           <div class="flex items-center justify-between gap-2">
             <p class="truncate text-sm font-semibold text-slate-900">${escapeHtml(name)}</p>
@@ -176,9 +194,12 @@ function paintChat(el) {
 
   el.innerHTML = `
     <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-4 py-3">
-      <div class="min-w-0">
-        <p class="truncate text-sm font-semibold text-slate-900">${escapeHtml(c.contact_name || c.wa_id)}</p>
-        <p class="text-xs text-slate-400">${escapeHtml(c.wa_id)}${c.patient_id ? ` · <a href="#/expedientes/${c.patient_id}" class="text-indigo-600 hover:underline">Ver expediente${c.file_number ? ' ' + escapeHtml(c.file_number) : ''}</a>` : ''}</p>
+      <div class="flex min-w-0 items-center gap-3">
+        ${contactAvatarHtml(c)}
+        <div class="min-w-0">
+          <p class="truncate text-sm font-semibold text-slate-900">${escapeHtml(c.contact_name || c.wa_id)}</p>
+          <p class="text-xs text-slate-400">${escapeHtml(c.wa_id)}${c.patient_id ? ` · <a href="#/expedientes/${c.patient_id}" class="text-indigo-600 hover:underline">Ver expediente${c.file_number ? ' ' + escapeHtml(c.file_number) : ''}</a>` : ''}</p>
+        </div>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <select id="wa-status" class="rounded-lg border-0 bg-slate-50 px-2 py-1.5 text-xs ring-1 ring-inset ring-slate-300">${statusOpts}</select>
@@ -223,9 +244,13 @@ function composerHtml() {
   return `
     <div class="relative">
       <div id="wa-qr-panel" class="absolute bottom-full left-0 mb-2 hidden max-h-56 w-full overflow-y-auto rounded-lg bg-white p-1 shadow-lg ring-1 ring-slate-200"></div>
+      <div id="wa-emoji-panel" class="absolute bottom-full left-0 mb-2 hidden grid-cols-8 gap-0.5 rounded-lg bg-white p-2 shadow-lg ring-1 ring-slate-200">
+        ${EMOJI_PICKER.map((e) => `<button type="button" data-emoji="${e}" class="flex h-8 w-8 items-center justify-center rounded text-lg hover:bg-slate-100">${e}</button>`).join('')}
+      </div>
       <div id="wa-attach-preview"></div>
       <div class="flex items-end gap-2">
         <button id="wa-qr-toggle" type="button" title="Respuestas rápidas" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">${icon('flag', 'h-4 w-4')}</button>
+        <button id="wa-emoji-toggle" type="button" title="Emojis" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-lg text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">😊</button>
         <button id="wa-attach-btn" type="button" title="Adjuntar archivo" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">${icon('paperclip', 'h-4 w-4')}</button>
         <input id="wa-file" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" class="hidden">
         <textarea id="wa-body" rows="2" placeholder="Escribe un mensaje…" class="flex-1 rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
@@ -279,7 +304,27 @@ function wireComposer(el) {
     qrPanel.classList.add('hidden');
     textarea.focus();
   }));
-  el.querySelector('#wa-qr-toggle').addEventListener('click', () => qrPanel.classList.toggle('hidden'));
+  el.querySelector('#wa-qr-toggle').addEventListener('click', () => {
+    emojiPanel.classList.add('hidden');
+    qrPanel.classList.toggle('hidden');
+  });
+
+  const emojiPanel = el.querySelector('#wa-emoji-panel');
+  emojiPanel.querySelectorAll('[data-emoji]').forEach((b) => b.addEventListener('click', () => {
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, start) + b.dataset.emoji + textarea.value.slice(end);
+    const cursor = start + b.dataset.emoji.length;
+    textarea.setSelectionRange(cursor, cursor);
+    drafts[activeConv.id] = textarea.value;
+    textarea.focus();
+  }));
+  el.querySelector('#wa-emoji-toggle').addEventListener('click', () => {
+    qrPanel.classList.add('hidden');
+    const willShow = emojiPanel.classList.contains('hidden');
+    emojiPanel.classList.toggle('hidden', !willShow);
+    emojiPanel.classList.toggle('grid', willShow);
+  });
 
   const previewBox = el.querySelector('#wa-attach-preview');
   const fileInput = el.querySelector('#wa-file');
@@ -348,15 +393,57 @@ function paintMessages(el) {
   el.innerHTML = messages.map((m) => {
     const out = m.direction === 'out';
     const auto = out && !m.sent_by;
+    const reactBtn = m.wa_message_id
+      ? `<button type="button" data-react="${m.id}" title="Reaccionar" class="mb-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-slate-400 opacity-60 hover:opacity-100 hover:bg-slate-100">🙂</button>`
+      : '<div class="w-6"></div>';
     return `
-      <div class="flex ${out ? 'justify-end' : 'justify-start'}">
+      <div class="flex items-end gap-1 ${out ? 'justify-end' : 'justify-start'}">
+        ${out ? '' : reactBtn}
         <div class="max-w-[75%] rounded-2xl px-3 py-2 text-sm ${out ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}">
           ${mediaBubbleHtml(m)}
           <p class="mt-1 text-[11px] opacity-70">${fmtDateTime(m.created_at)}${auto ? ' · automático' : (out && m.sent_by_name ? ' · ' + escapeHtml(m.sent_by_name) : '')}${out ? ' · ' + statusLabel(m.status) : ''}</p>
+          ${reactionChipsHtml(m)}
         </div>
+        ${out ? reactBtn : ''}
       </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
+  el.querySelectorAll('[data-react]').forEach((b) => b.addEventListener('click', () => openReactionPicker(Number(b.dataset.react))));
+}
+
+function reactionChipsHtml(m) {
+  const chips = [];
+  if (m.reaction_contact) chips.push(`<span title="Reacción del paciente">${m.reaction_contact}</span>`);
+  if (m.reaction_agent) chips.push(`<span title="Tu reacción">${m.reaction_agent}</span>`);
+  if (!chips.length) return '';
+  return `<div class="mt-1 flex w-fit gap-1 rounded-full bg-white px-1.5 py-0.5 text-sm ring-1 ring-slate-200">${chips.join('')}</div>`;
+}
+
+function openReactionPicker(messageId) {
+  const m = messages.find((x) => x.id === messageId);
+  if (!m || !activeConv) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'flex flex-wrap items-center gap-2';
+  wrap.innerHTML = REACTION_EMOJIS.map((e) => `
+    <button type="button" data-pick="${e}"
+            class="flex h-11 w-11 items-center justify-center rounded-full text-2xl hover:bg-slate-100 ${m.reaction_agent === e ? 'bg-indigo-50 ring-2 ring-indigo-400' : ''}">${e}</button>`).join('');
+
+  const send = async (emoji, close) => {
+    try {
+      await apiPost('whatsapp/react', { conversation_id: activeConv.id, message_id: messageId, emoji });
+      close();
+      await loadMessages(false);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  };
+
+  const actions = [{ label: 'Cerrar' }];
+  if (m.reaction_agent) {
+    actions.unshift({ label: 'Quitar mi reacción', danger: true, onClick: (close) => send('', close) });
+  }
+  const dlg = modal({ title: 'Reaccionar al mensaje', content: wrap, actions });
+  wrap.querySelectorAll('[data-pick]').forEach((b) => b.addEventListener('click', () => send(b.dataset.pick, dlg.close)));
 }
 
 const MEDIA_TYPES = ['image', 'video', 'audio', 'document'];

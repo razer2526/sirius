@@ -12,6 +12,8 @@
 require_once __DIR__ . '/../../includes/whatsapp.php';
 
 const WA_PRIORITIES = ['baja', 'normal', 'alta'];
+// Mismo set que ofrece el propio selector de reacciones de WhatsApp.
+const WA_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 
 function handle_whatsapp(string $action): void
 {
@@ -181,6 +183,33 @@ function handle_whatsapp(string $action): void
                 wa_send_text($conv['wa_id'], $caption, (int)$me['id'], $conv['id']);
             }
             log_activity('whatsapp', 'message_send_media', "Envió un adjunto ($type) a " . $conv['wa_id'], 'wa_conversation', $conv['id']);
+            json_ok();
+        }
+
+        /** Reacciona (o quita la reacción, con emoji = '') a un mensaje propio o del cliente. */
+        case 'react': {
+            $b = request_body();
+            $conv = find_wa_conversation((int)($b['conversation_id'] ?? 0));
+            require_wa_access($conv, $me, $canManage);
+            if (!wa_within_session_window($conv)) {
+                json_error('Han pasado más de 24h desde el último mensaje del cliente; ya no se pueden mandar reacciones.', 422);
+            }
+            $emoji = trim((string)($b['emoji'] ?? ''));
+            if ($emoji !== '' && !in_array($emoji, WA_REACTION_EMOJIS, true)) {
+                json_error('Emoji de reacción no válido', 422);
+            }
+            $st = db()->prepare('SELECT id, wa_message_id FROM wa_messages WHERE id = ? AND conversation_id = ?');
+            $st->execute([(int)($b['message_id'] ?? 0), $conv['id']]);
+            $msg = $st->fetch();
+            if (!$msg || !$msg['wa_message_id']) {
+                json_error('No se puede reaccionar a este mensaje', 422);
+            }
+            $result = wa_send_reaction($conv['wa_id'], $msg['wa_message_id'], $emoji);
+            if (!$result['ok']) {
+                json_error('WhatsApp rechazó la reacción: ' . json_encode($result['response'], JSON_UNESCAPED_UNICODE), 502);
+            }
+            db()->prepare('UPDATE wa_messages SET reaction_agent = ? WHERE id = ?')
+                ->execute([$emoji !== '' ? $emoji : null, $msg['id']]);
             json_ok();
         }
 

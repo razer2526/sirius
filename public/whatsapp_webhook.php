@@ -118,6 +118,14 @@ function wa_webhook_handle_inbound(array $msg, ?array $contact): void
     }
 
     $type = (string)($msg['type'] ?? 'text');
+
+    // Una reacción no es un mensaje nuevo: WhatsApp la trata como una propiedad del
+    // mensaje al que reacciona, así que se actualiza esa fila en vez de insertar una.
+    if ($type === 'reaction') {
+        wa_webhook_handle_reaction($msg, $conversationId);
+        return;
+    }
+
     $body = $type === 'text' ? ($msg['text']['body'] ?? null) : ($msg[$type]['caption'] ?? null);
     $mediaId = $msg[$type]['id'] ?? null;
     $mediaMime = $msg[$type]['mime_type'] ?? null;
@@ -138,6 +146,18 @@ function wa_webhook_handle_inbound(array $msg, ?array $contact): void
     ]);
 
     wa_webhook_maybe_auto_reply($conversationId, $waId, $isNew);
+}
+
+/** El paciente reaccionó a un mensaje que le mandamos (o quitó su reacción, con emoji vacío). */
+function wa_webhook_handle_reaction(array $msg, int $conversationId): void
+{
+    $targetWaMessageId = $msg['reaction']['message_id'] ?? null;
+    if (!$targetWaMessageId) {
+        return;
+    }
+    $emoji = (string)($msg['reaction']['emoji'] ?? '');
+    db()->prepare('UPDATE wa_messages SET reaction_contact = ? WHERE wa_message_id = ? AND conversation_id = ?')
+        ->execute([$emoji !== '' ? $emoji : null, $targetWaMessageId, $conversationId]);
 }
 
 function wa_webhook_handle_status(array $status): void
