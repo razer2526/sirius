@@ -307,6 +307,22 @@ function handle_whatsapp(string $action): void
             $st->execute($params);
             json_ok(['count' => (int)$st->fetch()['c']]);
         }
+
+        /** Conversaciones con no leídos, para la campanita de la barra superior. */
+        case 'unread_list': {
+            $where = 'c.is_archived = 0 AND c.unread_count > 0';
+            $params = [];
+            if (!$canManage) {
+                $where .= ' AND (c.assigned_user_id IS NULL OR c.assigned_user_id = ?)';
+                $params[] = (int)$me['id'];
+            }
+            $st = db()->prepare(
+                "SELECT c.id, c.wa_id, c.contact_name, c.unread_count, c.last_message_at
+                 FROM wa_conversations c WHERE $where ORDER BY c.last_message_at DESC LIMIT 8"
+            );
+            $st->execute($params);
+            json_ok(['conversations' => $st->fetchAll()]);
+        }
     }
 }
 

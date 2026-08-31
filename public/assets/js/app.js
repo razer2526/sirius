@@ -1,7 +1,7 @@
 /** Bootstrap de la SPA: sesión → sidebar → router → asistente → service worker. */
 
 import { apiGet, setCsrf } from './api.js';
-import { icon, toast } from './ui.js';
+import { icon, toast, escapeHtml, fmtRelative } from './ui.js';
 import { initRouter, currentModuleKey } from './router.js';
 import { initAssistant } from './assistant.js';
 
@@ -141,16 +141,66 @@ function registerServiceWorker() {
 }
 
 /**
- * Aviso sonoro de mensajes nuevos de WhatsApp, sin importar en qué módulo esté
- * el usuario (no solo en el Dashboard o en WhatsApp) — a quien atiende el chat
- * le sirve el aviso mientras trabaja en Admisión o Expedientes, no solo cuando
- * ya está viendo la bandeja. Se sondea el total de no leídos (barato, sin traer
- * conversaciones) y solo suena cuando el número sube respecto a la última vez.
+ * Campanita + aviso sonoro de mensajes nuevos de WhatsApp, sin importar en qué
+ * módulo esté el usuario (no solo en el Dashboard o en WhatsApp) — a quien
+ * atiende el chat le sirve el aviso mientras trabaja en Admisión o Expedientes,
+ * no solo cuando ya está viendo la bandeja o el Dashboard. Se sondea el total de
+ * no leídos (barato, sin traer conversaciones) y solo suena/avisa cuando el
+ * número sube respecto a la última vez; la campanita en cambio siempre refleja
+ * el total actual, suba o baje.
  */
 const WA_NOTIFY_POLL_MS = 20000;
 let waUnreadPrev = null;
+let waPanelOpen = false;
 
 function initWhatsappNotifier() {
+  const wrap = document.getElementById('wa-bell-wrap');
+  const btn = document.getElementById('wa-bell-btn');
+  const badge = document.getElementById('wa-bell-badge');
+  const panel = document.getElementById('wa-bell-panel');
+  wrap.classList.remove('hidden');
+
+  const renderBadge = (count) => {
+    badge.textContent = count > 9 ? '9+' : String(count);
+    badge.classList.toggle('hidden', count === 0);
+    badge.classList.toggle('flex', count > 0);
+  };
+
+  const renderPanel = async () => {
+    panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">Cargando…</p>`;
+    let conversations = [];
+    try {
+      ({ conversations } = await apiGet('whatsapp/unread_list'));
+    } catch {
+      panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">No se pudo cargar</p>`;
+      return;
+    }
+    panel.innerHTML = !conversations.length
+      ? `<p class="p-3 text-center text-sm text-slate-400">Sin mensajes sin leer</p>`
+      : conversations.map((c) => `
+        <a href="#/whatsapp" data-bell-close class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50">
+          <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(c.contact_name || c.wa_id)}</span>
+          <span class="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">${c.unread_count}</span>
+          <span class="shrink-0 text-[11px] text-slate-400">${fmtRelative(c.last_message_at)}</span>
+        </a>`).join('');
+    panel.querySelectorAll('[data-bell-close]').forEach((a) => a.addEventListener('click', closePanel));
+  };
+
+  const openPanel = () => {
+    waPanelOpen = true;
+    panel.classList.remove('hidden');
+    renderPanel();
+  };
+  const closePanel = () => {
+    waPanelOpen = false;
+    panel.classList.add('hidden');
+  };
+
+  btn.addEventListener('click', () => (waPanelOpen ? closePanel() : openPanel()));
+  document.addEventListener('click', (e) => {
+    if (waPanelOpen && !wrap.contains(e.target)) closePanel();
+  });
+
   const check = async () => {
     let count;
     try {
@@ -158,9 +208,13 @@ function initWhatsappNotifier() {
     } catch {
       return; // red intermitente o sesión expirada: se reintenta en el próximo sondeo
     }
-    if (waUnreadPrev !== null && count > waUnreadPrev && currentModuleKey() !== 'whatsapp') {
-      playNotificationSound();
-      toast('Tienes mensajes nuevos de WhatsApp', 'info');
+    renderBadge(count);
+    if (waUnreadPrev !== null && count > waUnreadPrev) {
+      if (currentModuleKey() !== 'whatsapp') {
+        playNotificationSound();
+        toast('Tienes mensajes nuevos de WhatsApp', 'info');
+      }
+      if (waPanelOpen) renderPanel();
     }
     waUnreadPrev = count;
   };
