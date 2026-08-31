@@ -36,6 +36,9 @@ let moduleRoot = null;
 let data = null;
 let quickReplies = [];
 let filters = { status_id: '', priority: '', assigned_user_id: '', q: '' };
+// En pantallas angostas (< lg) la lista empieza colapsada a una tira de avatares;
+// esta bandera solo importa ahí — en escritorio "lg:" siempre la fuerza abierta.
+let listPanelOpen = false;
 let activeId = null;
 let activeConv = null;
 let messages = [];
@@ -89,15 +92,29 @@ function cleanFilters() {
 }
 
 function paint() {
+  // "listPanelOpen" solo pinta como overlay por debajo de lg — en escritorio la
+  // lista siempre es estática y a ancho completo, sin importar la bandera.
+  const panelPos = listPanelOpen ? 'absolute inset-y-0 left-0 z-20' : '';
+  const panelWidth = listPanelOpen ? 'w-full max-w-sm' : 'w-16';
   moduleRoot.innerHTML = `
-    <div class="flex h-[calc(100vh-8.5rem)] gap-4">
-      <div class="flex w-full max-w-sm shrink-0 flex-col rounded-xl bg-white shadow-sm ring-1 ring-slate-200">
+    <div class="relative flex h-[calc(100vh-8.5rem)] gap-2 lg:gap-4">
+      <div id="wa-list-backdrop" class="fixed inset-0 z-10 bg-slate-900/50 lg:hidden ${listPanelOpen ? '' : 'hidden'}"></div>
+      <div class="flex ${panelWidth} ${panelPos} shrink-0 flex-col rounded-xl bg-white shadow-sm ring-1 ring-slate-200 lg:static lg:z-auto lg:w-full lg:max-w-sm">
+        <div class="flex items-center gap-2 border-b border-slate-200 p-3 lg:hidden">
+          <button id="wa-list-toggle" type="button" title="${listPanelOpen ? 'Cerrar lista' : 'Ver conversaciones'}"
+                  class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+            ${icon(listPanelOpen ? 'x' : 'list', 'h-5 w-5')}
+          </button>
+          ${listPanelOpen ? '<p class="text-sm font-semibold text-slate-700">Conversaciones</p>' : ''}
+        </div>
         ${filterBarHtml()}
         <div id="wa-list" class="flex-1 space-y-1 overflow-y-auto p-2"></div>
       </div>
       <div id="wa-chat" class="flex flex-1 flex-col rounded-xl bg-white shadow-sm ring-1 ring-slate-200"></div>
     </div>`;
 
+  moduleRoot.querySelector('#wa-list-toggle').addEventListener('click', () => { listPanelOpen = !listPanelOpen; paint(); });
+  moduleRoot.querySelector('#wa-list-backdrop').addEventListener('click', () => { listPanelOpen = false; paint(); });
   wireFilterBar();
   paintList(moduleRoot.querySelector('#wa-list'));
   paintChat(moduleRoot.querySelector('#wa-chat'));
@@ -106,8 +123,11 @@ function paint() {
 function filterBarHtml() {
   const statusOpts = data.statuses.map((s) => `<option value="${s.id}" ${String(filters.status_id) === String(s.id) ? 'selected' : ''}>${escapeHtml(s.label)}</option>`).join('');
   const userOpts = data.users.map((u) => `<option value="${u.id}" ${String(filters.assigned_user_id) === String(u.id) ? 'selected' : ''}>${escapeHtml(u.full_name)}</option>`).join('');
+  // Oculto en el modo tira de avatares (móvil, colapsado): no cabe y ya se puede
+  // llegar a él abriendo la lista completa con el botón de arriba.
+  const visibility = listPanelOpen ? '' : 'hidden';
   return `
-    <div class="space-y-2 border-b border-slate-200 p-3">
+    <div class="${visibility} lg:block space-y-2 border-b border-slate-200 p-3">
       <input id="wa-search" type="search" placeholder="Buscar por nombre o teléfono…" value="${escapeHtml(filters.q)}"
              class="w-full rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
       <div class="flex flex-wrap gap-2">
@@ -133,17 +153,23 @@ function wireFilterBar() {
 
 function paintList(el) {
   if (!data.conversations.length) {
-    el.innerHTML = `<p class="p-4 text-center text-sm text-slate-400">Sin conversaciones.</p>`;
+    el.innerHTML = `<p class="${listPanelOpen ? '' : 'hidden'} p-4 text-center text-sm text-slate-400 lg:block">Sin conversaciones.</p>`;
     return;
   }
+  // Oculto por debajo de lg salvo que la lista esté expandida: en la tira de
+  // avatares colapsada solo se ve el círculo de cada contacto, sin el detalle.
+  const detailCls = listPanelOpen ? '' : 'hidden';
   el.innerHTML = data.conversations.map((c) => {
     const name = c.contact_name || c.patient_name || c.wa_id;
     const active = c.id === activeId;
     return `
-      <button type="button" data-conv="${c.id}"
-              class="flex w-full items-start gap-2 rounded-lg px-3 py-2.5 text-left transition ${active ? 'bg-indigo-50 ring-1 ring-indigo-200' : 'hover:bg-slate-50'}">
-        ${contactAvatarHtml(c, 'h-9 w-9 text-xs mt-0.5')}
-        <div class="min-w-0 flex-1">
+      <button type="button" data-conv="${c.id}" title="${escapeHtml(name)}"
+              class="flex w-full items-start justify-center gap-2 rounded-lg px-1.5 py-2.5 text-left transition lg:justify-start lg:px-3 ${active ? 'bg-indigo-50 ring-1 ring-indigo-200' : 'hover:bg-slate-50'}">
+        <span class="relative shrink-0">
+          ${contactAvatarHtml(c, 'h-9 w-9 text-xs')}
+          ${!listPanelOpen && c.unread_count > 0 ? `<span class="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white lg:hidden">${c.unread_count > 9 ? '9+' : c.unread_count}</span>` : ''}
+        </span>
+        <div class="min-w-0 flex-1 ${detailCls} lg:block">
           <div class="flex items-center justify-between gap-2">
             <p class="truncate text-sm font-semibold text-slate-900">${escapeHtml(name)}</p>
             ${c.unread_count > 0 ? `<span class="flex h-5 min-w-5 items-center justify-center rounded-full bg-indigo-600 px-1 text-[11px] font-bold text-white">${c.unread_count}</span>` : ''}
@@ -161,9 +187,11 @@ function paintList(el) {
 
 async function openConversation(id) {
   activeId = id;
+  listPanelOpen = false; // en móvil, elegir una conversación regresa la lista a la tira de avatares
+  activeConv = null; // evita mostrar un instante la conversación anterior mientras carga la nueva
   const row = data.conversations.find((c) => c.id === id);
   if (row) row.unread_count = 0; // el servidor lo marca leído en whatsapp/get; se refleja aquí sin esperar al próximo refresh
-  paintList(moduleRoot.querySelector('#wa-list'));
+  paint();
   moduleRoot.querySelector('#wa-chat').innerHTML = spinner();
   const res = await apiGet('whatsapp/get', { id });
   activeConv = res.conversation;
