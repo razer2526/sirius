@@ -48,6 +48,7 @@ $routes = [
     'commissions'   => ['commissions.php', 'apps'],
     'lab_templates' => ['lab_templates.php', 'plantillas_estudios'],
     'mail'          => ['mail.php', 'api'],
+    'push'          => ['push.php', null],
 ];
 
 $r = (string)($_GET['r'] ?? '');
