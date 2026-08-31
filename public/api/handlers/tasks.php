@@ -265,6 +265,36 @@ function handle_tasks(string $action): void
             json_ok(['done' => $done]);
         }
 
+        /**
+         * Tareas (no recurrentes) con fecha límite en un rango — overlay de solo
+         * lectura sobre el Calendario; Tareas sigue siendo la única fuente de
+         * verdad, aquí no se edita nada.
+         */
+        case 'due_in_range': {
+            $from = (string)($_GET['from'] ?? '');
+            $to = (string)($_GET['to'] ?? '');
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
+                json_error('Rango de fechas inválido', 422);
+            }
+            $sql = 'SELECT id, title, due_date, priority, status FROM tasks
+                    WHERE recurrence IS NULL AND due_date BETWEEN ? AND ?';
+            $params = [$from, $to];
+            if (!$canManage) {
+                $sql .= ' AND (created_by = ? OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = tasks.id AND ta.user_id = ?))';
+                $params[] = (int)$me['id'];
+                $params[] = (int)$me['id'];
+            }
+            $sql .= ' ORDER BY due_date';
+            $st = db()->prepare($sql);
+            $st->execute($params);
+            $rows = $st->fetchAll();
+            foreach ($rows as &$r) {
+                $r['id'] = (int)$r['id'];
+            }
+            unset($r);
+            json_ok(['tasks' => $rows]);
+        }
+
         case 'delete': {
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
