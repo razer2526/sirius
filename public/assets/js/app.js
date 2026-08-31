@@ -175,14 +175,30 @@ function initWhatsappNotifier() {
       panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">No se pudo cargar</p>`;
       return;
     }
-    panel.innerHTML = !conversations.length
+    const header = `
+      <div class="flex items-center gap-2 border-b border-slate-100 px-3 pb-2">
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">${icon('chat', 'h-3.5 w-3.5')}</span>
+        <div class="min-w-0">
+          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">WhatsApp</p>
+          <p class="text-sm font-semibold text-slate-800">Mensajes sin leer</p>
+        </div>
+      </div>`;
+    const body = !conversations.length
       ? `<p class="p-3 text-center text-sm text-slate-400">Sin mensajes sin leer</p>`
       : conversations.map((c) => `
-        <a href="#/whatsapp" data-bell-close class="flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-left hover:bg-slate-50">
-          <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(c.contact_name || c.wa_id)}</span>
-          <span class="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">${c.unread_count}</span>
-          <span class="shrink-0 text-[11px] text-slate-400">${fmtRelative(c.last_message_at)}</span>
+        <a href="#/whatsapp/${c.id}" data-bell-close class="flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center justify-between gap-2">
+              <p class="truncate text-sm font-semibold text-slate-800">${escapeHtml(c.contact_name || c.wa_id)}</p>
+              <span class="shrink-0 text-[11px] text-slate-400">${fmtRelative(c.last_message_at)}</span>
+            </div>
+            <div class="mt-0.5 flex items-center justify-between gap-2">
+              <p class="min-w-0 flex-1 truncate text-xs text-slate-500">${escapeHtml(c.preview)}</p>
+              <span class="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">${c.unread_count}</span>
+            </div>
+          </div>
         </a>`).join('');
+    panel.innerHTML = header + `<div class="mt-1 max-h-80 overflow-y-auto">${body}</div>`;
     panel.querySelectorAll('[data-bell-close]').forEach((a) => a.addEventListener('click', closePanel));
   };
 

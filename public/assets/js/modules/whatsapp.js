@@ -53,6 +53,12 @@ export async function render(root, context) {
   moduleRoot = root;
   root.innerHTML = spinner();
   await load();
+  // Enlaces desde fuera del módulo (campanita de notificaciones, Dashboard) piden
+  // una conversación concreta, ej. #/whatsapp/123.
+  const requestedId = Number(context.args?.[0]);
+  if (requestedId && data.conversations.some((c) => c.id === requestedId)) {
+    await openConversation(requestedId);
+  }
   const tick = async () => {
     // #module-root es un contenedor persistente que el router solo reescribe (nunca lo
     // reemplaza), así que "moduleRoot.isConnected" seguiría siendo true en cualquier otro

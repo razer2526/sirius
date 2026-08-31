@@ -317,11 +317,19 @@ function handle_whatsapp(string $action): void
                 $params[] = (int)$me['id'];
             }
             $st = db()->prepare(
-                "SELECT c.id, c.wa_id, c.contact_name, c.unread_count, c.last_message_at
+                "SELECT c.id, c.wa_id, c.contact_name, c.unread_count, c.last_message_at,
+                        (SELECT m.body FROM wa_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+                        (SELECT m.msg_type FROM wa_messages m WHERE m.conversation_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_type
                  FROM wa_conversations c WHERE $where ORDER BY c.last_message_at DESC LIMIT 8"
             );
             $st->execute($params);
-            json_ok(['conversations' => $st->fetchAll()]);
+            $rows = $st->fetchAll();
+            foreach ($rows as &$row) {
+                $row['preview'] = wa_message_preview($row['last_type'], $row['last_body']);
+                unset($row['last_body'], $row['last_type']);
+            }
+            unset($row);
+            json_ok(['conversations' => $rows]);
         }
     }
 }
@@ -389,4 +397,19 @@ function format_wa_message(array $m): array
     $m['media_url'] = $m['media_path'] ? 'whatsapp_media.php?message_id=' . $m['id'] : null;
     unset($m['media_path']); // ruta local en disco: nunca sale de la API
     return $m;
+}
+
+/** Texto corto de vista previa para notificaciones (campanita, Dashboard). */
+function wa_message_preview(?string $type, ?string $body): string
+{
+    $labels = ['image' => '📷 Foto', 'video' => '🎥 Video', 'audio' => '🎵 Audio', 'document' => '📄 Documento'];
+    if (isset($labels[$type])) {
+        $caption = trim((string)$body);
+        return $caption !== '' ? $labels[$type] . ': ' . mb_substr($caption, 0, 60) : $labels[$type];
+    }
+    $text = trim((string)$body);
+    if ($text === '') {
+        return $type === 'reaction' ? 'Reaccionó a un mensaje' : '(sin texto)';
+    }
+    return mb_strlen($text) > 80 ? mb_substr($text, 0, 80) . '…' : $text;
 }
