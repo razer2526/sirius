@@ -108,6 +108,14 @@ function handle_board(string $action): void
                 'Creó ' . board_type_label($type) . ' en el pizarrón ' . ($scope === 'public' ? 'público' : 'privado'),
                 'board_item', $id
             );
+            if ($scope === 'public') {
+                require_once __DIR__ . '/../../includes/webpush.php';
+                notify_module_users(
+                    'pizarron', 'Nuevo en el pizarrón',
+                    $me['full_name'] . ' agregó ' . board_type_label($type) . ' al pizarrón público.',
+                    '#/pizarron', (int)$me['id']
+                );
+            }
             json_ok(['id' => $id]);
         }
 

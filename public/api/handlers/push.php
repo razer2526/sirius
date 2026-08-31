@@ -52,6 +52,37 @@ function handle_push(string $action): void
             json_ok();
         }
 
+        /** Últimas notificaciones (leídas y no), para la campanita de la barra superior.
+         *  A diferencia de 'pending' no marca nada como leído — eso lo hace 'mark_read'
+         *  cuando la persona de verdad abre/hace clic en una. */
+        case 'list': {
+            $st = db()->prepare(
+                'SELECT id, title, body, url, created_at, read_at FROM notifications
+                 WHERE user_id = ? ORDER BY read_at IS NULL DESC, created_at DESC LIMIT 15'
+            );
+            $st->execute([(int)$me['id']]);
+            $rows = $st->fetchAll();
+            foreach ($rows as &$r) {
+                $r['id'] = (int)$r['id'];
+            }
+            unset($r);
+            json_ok(['items' => $rows]);
+        }
+
+        case 'unread_count': {
+            $st = db()->prepare('SELECT COUNT(*) c FROM notifications WHERE user_id = ? AND read_at IS NULL');
+            $st->execute([(int)$me['id']]);
+            json_ok(['count' => (int)$st->fetch()['c']]);
+        }
+
+        case 'mark_read': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            db()->prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND user_id = ? AND read_at IS NULL')
+                ->execute([date('Y-m-d H:i:s'), $id, (int)$me['id']]);
+            json_ok();
+        }
+
         /** El service worker llama esto al recibir un push (que llega sin contenido, ver
          *  includes/webpush.php). Devuelve lo pendiente para mostrarlo y lo marca leído. */
         case 'pending': {

@@ -222,6 +222,14 @@ function handle_tasks(string $action): void
             db()->prepare('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?')
                 ->execute([$status, $status === 'completada' ? date('Y-m-d H:i:s') : null, $id]);
             log_activity('tareas', 'task_status', "\"{$task['title']}\" → $status", 'task', $id);
+            // Avisa a quien la creó (si no fue quien la completó) — no a quien la completó.
+            if ($status === 'completada' && (int)$task['created_by'] !== (int)$me['id']) {
+                require_once __DIR__ . '/../../includes/webpush.php';
+                webpush_notify(
+                    (int)$task['created_by'], 'Tarea completada',
+                    "\"{$task['title']}\" fue marcada como completada.", '#/tareas'
+                );
+            }
             json_ok();
         }
 
@@ -246,6 +254,13 @@ function handle_tasks(string $action): void
                     ->execute([$id, $key, (int)$me['id']]);
                 $done = true;
                 log_activity('tareas', 'task_recurring_done', "Completó \"{$task['title']}\" ($key)", 'task', $id);
+                if ((int)$task['created_by'] !== (int)$me['id']) {
+                    require_once __DIR__ . '/../../includes/webpush.php';
+                    webpush_notify(
+                        (int)$task['created_by'], 'Tarea completada',
+                        "\"{$task['title']}\" ($key) fue marcada como completada.", '#/tareas'
+                    );
+                }
             }
             json_ok(['done' => $done]);
         }

@@ -35,11 +35,8 @@ async function boot() {
   initAssistant(state);
   initRouter(state);
   const swReg = await registerServiceWorker();
-  if (swReg) initPushNotifications(swReg);
   keepSessionAlive();
-  if (state.modules.some((m) => m.key === 'whatsapp')) {
-    initWhatsappNotifier();
-  }
+  initNotificationBell(swReg);
 }
 
 /**
@@ -133,8 +130,8 @@ function lockDesktopScroll() {
   }, { passive: true });
 }
 
-/** Devuelve el registro del service worker (o null), para que initPushNotifications()
- *  sepa si hay dónde suscribirse. */
+/** Devuelve el registro del service worker (o null), para que initNotificationBell()
+ *  sepa si hay dónde suscribirse a notificaciones push. */
 async function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return null;
   // En desarrollo (localhost) el cache-first del SW estorba; se activa con ?sw=1.
@@ -151,98 +148,96 @@ async function registerServiceWorker() {
   }
 }
 
-/**
- * Botón de la campana en la barra superior: solo se muestra cuando tiene sentido
- * ofrecerlo (hay soporte de push, no está ya suscrito, y el permiso no quedó
- * denegado antes — en ese caso solo se arregla desde los ajustes del navegador,
- * insistir aquí no sirve).
- */
-async function initPushNotifications(reg) {
-  const btn = document.getElementById('btn-notifications');
-  if (!btn || !('PushManager' in window) || !('Notification' in window)) return;
-
-  const refresh = async () => {
-    const sub = await reg.pushManager.getSubscription();
-    btn.classList.toggle('hidden', !!sub || Notification.permission === 'denied');
-  };
-
-  btn.addEventListener('click', async () => {
-    try {
-      const permission = await Notification.requestPermission();
-      if (permission !== 'granted') {
-        toast('Sin permiso de notificaciones, no se pudieron activar.', 'error');
-        await refresh();
-        return;
-      }
-      const { key } = await apiGet('push/vapid_key');
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(key),
-      });
-      await apiPost('push/subscribe', sub.toJSON());
-      toast('Notificaciones activadas');
-      await refresh();
-    } catch (e) {
-      console.error('push subscribe:', e);
-      toast('No se pudieron activar las notificaciones', 'error');
-    }
-  });
-
-  await refresh();
-}
-
 function urlBase64ToUint8Array(base64) {
   const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
   const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
-/**
- * Campanita + aviso sonoro de mensajes nuevos de WhatsApp, sin importar en qué
- * módulo esté el usuario (no solo en el Dashboard o en WhatsApp) — a quien
- * atiende el chat le sirve el aviso mientras trabaja en Admisión o Expedientes,
- * no solo cuando ya está viendo la bandeja o el Dashboard. Se sondea el total de
- * no leídos (barato, sin traer conversaciones) y solo suena/avisa cuando el
- * número sube respecto a la última vez; la campanita en cambio siempre refleja
- * el total actual, suba o baje.
- */
-const WA_NOTIFY_POLL_MS = 20000;
-let waUnreadPrev = null;
-let waPanelOpen = false;
+const NOTIF_TYPE_META = {
+  '#/tareas':     { icon: 'check-square', cls: 'bg-indigo-50 text-indigo-600' },
+  '#/calendario': { icon: 'calendar',     cls: 'bg-sky-50 text-sky-600' },
+  '#/pizarron':   { icon: 'clipboard',    cls: 'bg-violet-50 text-violet-600' },
+};
 
-function initWhatsappNotifier() {
-  const wrap = document.getElementById('wa-bell-wrap');
-  const btn = document.getElementById('wa-bell-btn');
-  const badge = document.getElementById('wa-bell-badge');
-  const panel = document.getElementById('wa-bell-panel');
+/**
+ * Campanita unificada de la barra superior: mensajes de WhatsApp sin leer +
+ * notificaciones generales (tarea completada, cita asignada/cancelada, nuevo en
+ * el pizarrón público — ver includes/webpush.php), sin importar en qué módulo
+ * esté el usuario. Se sondea el total de no leídos (barato, sin traer el detalle)
+ * y solo suena/avisa cuando el número sube respecto a la última vez; la campanita
+ * en cambio siempre refleja el total actual, suba o baje. También ofrece activar
+ * las notificaciones push del navegador desde el propio panel, en vez de un botón
+ * aparte en la barra superior.
+ */
+const NOTIF_POLL_MS = 20000;
+let waUnreadPrev = null;
+let notifUnreadPrev = null;
+let notifPanelOpen = false;
+
+function initNotificationBell(swReg) {
+  const wrap = document.getElementById('notif-bell-wrap');
+  const btn = document.getElementById('notif-bell-btn');
+  const badge = document.getElementById('notif-bell-badge');
+  const panel = document.getElementById('notif-bell-panel');
+  const hasWhatsapp = state.modules.some((m) => m.key === 'whatsapp');
   wrap.classList.remove('hidden');
 
-  const renderBadge = (count) => {
-    badge.textContent = count > 9 ? '9+' : String(count);
-    badge.classList.toggle('hidden', count === 0);
-    badge.classList.toggle('flex', count > 0);
+  const renderBadge = (total) => {
+    badge.textContent = total > 9 ? '9+' : String(total);
+    badge.classList.toggle('hidden', total === 0);
+    badge.classList.toggle('flex', total > 0);
   };
 
-  const renderPanel = async () => {
-    panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">Cargando…</p>`;
-    let conversations = [];
+  /** Aviso para activar push, solo cuando de verdad tiene sentido ofrecerlo (hay
+   *  soporte, no está ya suscrito, y el permiso no quedó denegado antes — en ese
+   *  caso solo se arregla desde los ajustes del navegador, insistir aquí no sirve). */
+  const pushBannerHtml = async () => {
+    if (!swReg || !('PushManager' in window) || !('Notification' in window)) return '';
+    const sub = await swReg.pushManager.getSubscription();
+    if (sub || Notification.permission === 'denied') return '';
+    return `
+      <button id="notif-enable-push" type="button"
+              class="mb-1 flex w-full items-center gap-2.5 rounded-lg bg-indigo-50 px-3 py-2.5 text-left hover:bg-indigo-100">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white">${icon('send', 'h-4 w-4')}</span>
+        <span class="min-w-0 flex-1">
+          <span class="block text-sm font-semibold text-indigo-900">Activar notificaciones</span>
+          <span class="block text-xs text-indigo-600">Avisa aunque Sirius esté cerrado</span>
+        </span>
+      </button>`;
+  };
+
+  const enablePush = async () => {
     try {
-      ({ conversations } = await apiGet('whatsapp/unread_list'));
-    } catch {
-      panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">No se pudo cargar</p>`;
-      return;
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast('Sin permiso de notificaciones, no se pudieron activar.', 'error');
+        return;
+      }
+      const { key } = await apiGet('push/vapid_key');
+      const sub = await swReg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+      await apiPost('push/subscribe', sub.toJSON());
+      toast('Notificaciones activadas');
+      await renderPanel();
+    } catch (e) {
+      console.error('push subscribe:', e);
+      toast('No se pudieron activar las notificaciones', 'error');
     }
-    const header = `
-      <div class="flex items-center gap-2 border-b border-slate-100 px-3 pb-2">
+  };
+
+  const waSectionHtml = (conversations) => !conversations.length ? '' : `
+      <div class="flex items-center gap-2 border-b border-slate-100 px-3 pb-2 pt-1">
         <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600">${icon('chat', 'h-3.5 w-3.5')}</span>
         <div class="min-w-0">
           <p class="text-xs font-bold uppercase tracking-wide text-slate-400">WhatsApp</p>
           <p class="text-sm font-semibold text-slate-800">Mensajes sin leer</p>
         </div>
-      </div>`;
-    const body = !conversations.length
-      ? `<p class="p-3 text-center text-sm text-slate-400">Sin mensajes sin leer</p>`
-      : conversations.map((c) => `
+      </div>
+      <div class="mb-1">
+        ${conversations.map((c) => `
         <a href="#/whatsapp/${c.id}" data-bell-close class="flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50">
           <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
@@ -254,45 +249,96 @@ function initWhatsappNotifier() {
               <span class="shrink-0 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">${c.unread_count}</span>
             </div>
           </div>
-        </a>`).join('');
-    panel.innerHTML = header + `<div class="mt-1 max-h-80 overflow-y-auto">${body}</div>`;
+        </a>`).join('')}
+      </div>`;
+
+  const notifRowHtml = (n) => {
+    const key = Object.keys(NOTIF_TYPE_META).find((k) => (n.url || '').startsWith(k));
+    const meta = NOTIF_TYPE_META[key] || { icon: 'file-text', cls: 'bg-slate-100 text-slate-500' };
+    const unread = !n.read_at;
+    return `
+      <a href="${n.url || '#/dashboard'}" data-notif-id="${n.id}" data-bell-close
+         class="flex items-start gap-2.5 rounded-lg px-3 py-2.5 text-left hover:bg-slate-50 ${unread ? '' : 'opacity-60'}">
+        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${meta.cls}">${icon(meta.icon, 'h-4 w-4')}</span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center justify-between gap-2">
+            <p class="truncate text-sm font-semibold text-slate-800">${escapeHtml(n.title)}</p>
+            ${unread ? '<span class="h-2 w-2 shrink-0 rounded-full bg-indigo-600"></span>' : ''}
+          </div>
+          ${n.body ? `<p class="mt-0.5 truncate text-xs text-slate-500">${escapeHtml(n.body)}</p>` : ''}
+          <p class="mt-0.5 text-[11px] text-slate-400">${fmtRelative(n.created_at)}</p>
+        </div>
+      </a>`;
+  };
+
+  const renderPanel = async () => {
+    panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">Cargando…</p>`;
+    let conversations = [];
+    let notifs = [];
+    try {
+      const calls = [apiGet('push/list')];
+      if (hasWhatsapp) calls.push(apiGet('whatsapp/unread_list'));
+      const results = await Promise.all(calls);
+      notifs = results[0].items;
+      if (hasWhatsapp) conversations = results[1].conversations;
+    } catch {
+      panel.innerHTML = `<p class="p-3 text-center text-sm text-slate-400">No se pudo cargar</p>`;
+      return;
+    }
+    const banner = await pushBannerHtml();
+    const empty = !conversations.length && !notifs.length;
+    panel.innerHTML = banner
+      + (empty ? `<p class="p-3 text-center text-sm text-slate-400">Sin notificaciones</p>` : '')
+      + `<div class="max-h-80 overflow-y-auto">${waSectionHtml(conversations)}${notifs.map(notifRowHtml).join('')}</div>`;
+
+    panel.querySelector('#notif-enable-push')?.addEventListener('click', enablePush);
+    panel.querySelectorAll('[data-notif-id]').forEach((a) => {
+      a.addEventListener('click', () => apiPost('push/mark_read', { id: Number(a.dataset.notifId) }).catch(() => {}));
+    });
     panel.querySelectorAll('[data-bell-close]').forEach((a) => a.addEventListener('click', closePanel));
   };
 
   const openPanel = () => {
-    waPanelOpen = true;
+    notifPanelOpen = true;
     panel.classList.remove('hidden');
     renderPanel();
   };
   const closePanel = () => {
-    waPanelOpen = false;
+    notifPanelOpen = false;
     panel.classList.add('hidden');
   };
 
-  btn.addEventListener('click', () => (waPanelOpen ? closePanel() : openPanel()));
+  btn.addEventListener('click', () => (notifPanelOpen ? closePanel() : openPanel()));
   document.addEventListener('click', (e) => {
-    if (waPanelOpen && !wrap.contains(e.target)) closePanel();
+    if (notifPanelOpen && !wrap.contains(e.target)) closePanel();
   });
 
   const check = async () => {
-    let count;
+    let waCount = 0;
+    let notifCount = 0;
     try {
-      ({ count } = await apiGet('whatsapp/unread_count'));
+      const calls = [apiGet('push/unread_count')];
+      if (hasWhatsapp) calls.push(apiGet('whatsapp/unread_count'));
+      const results = await Promise.all(calls);
+      notifCount = results[0].count;
+      if (hasWhatsapp) waCount = results[1].count;
     } catch {
       return; // red intermitente o sesión expirada: se reintenta en el próximo sondeo
     }
-    renderBadge(count);
-    if (waUnreadPrev !== null && count > waUnreadPrev) {
-      if (currentModuleKey() !== 'whatsapp') {
-        playNotificationSound();
-        toast('Tienes mensajes nuevos de WhatsApp', 'info');
-      }
-      if (waPanelOpen) renderPanel();
+    renderBadge(waCount + notifCount);
+
+    const waGrew = waUnreadPrev !== null && waCount > waUnreadPrev;
+    const notifGrew = notifUnreadPrev !== null && notifCount > notifUnreadPrev;
+    if ((waGrew && currentModuleKey() !== 'whatsapp') || notifGrew) {
+      playNotificationSound();
+      toast(notifGrew ? 'Tienes notificaciones nuevas' : 'Tienes mensajes nuevos de WhatsApp', 'info');
     }
-    waUnreadPrev = count;
+    if (notifPanelOpen && (waGrew || notifGrew)) renderPanel();
+    waUnreadPrev = waCount;
+    notifUnreadPrev = notifCount;
   };
   check();
-  setInterval(check, WA_NOTIFY_POLL_MS);
+  setInterval(check, NOTIF_POLL_MS);
 }
 
 /**
