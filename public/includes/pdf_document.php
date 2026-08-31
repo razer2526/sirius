@@ -1769,19 +1769,19 @@ function render_ficha_pdf(
     ));
     render_pdf_service_sections($pdf, $sections, $serviceData, true);
 
-    /* ---- Cierre: firma y pie corporativo, medidos juntos ---- */
-    $signature = (string)($serviceData['firma'] ?? '');
-    $closing = ($signature !== '' ? 46.0 : 0.0)
-        + (float)$lh['footer_height'] + (float)$lh['footer_bottom'] + 6;
-    if ($pdf->GetY() + $closing > $pdf->contentLimit()) {
-        $pdf->AddPage();
-    }
+    /* ---- Cierre: firma y aviso de privacidad ----
+     * markLastPage() ya deja armado el salto automático a la altura correcta (no
+     * choca con el pie corporativo), así que firma y aviso fluyen con normalidad en
+     * vez de forzar una hoja nueva por estimación: eso era lo que dejaba una hoja
+     * casi vacía con la firma sola cuando el cálculo se quedaba corto. */
     $pdf->markLastPage();
-
+    $signature = (string)($serviceData['firma'] ?? '');
     if ($signature !== '') {
         $pdf->Ln(4);
         $pdf->dataUrlImage($signature, 'Firma del paciente', null, true);
     }
+    $pdf->Ln(4);
+    render_privacy_notice($pdf, $clinicName);
 
     if ($path) {
         $pdf->Output('F', $path);
