@@ -64,8 +64,11 @@ function renderTopbar() {
 
 function renderSidebar() {
   const nav = document.getElementById('sidebar-nav');
-  const main = state.modules.filter((m) => !m.group);
-  const admin = state.modules.filter((m) => m.group === 'admin_tools');
+  // "hidden": el módulo sigue siendo accesible por URL directa y cuenta para permisos,
+  // solo no aparece como entrada propia del sidebar (ej. WhatsApp: Configuración, que
+  // se alcanza desde una tarjeta dentro de Admin Tools > API).
+  const main = state.modules.filter((m) => !m.group && !m.hidden);
+  const admin = state.modules.filter((m) => m.group === 'admin_tools' && !m.hidden);
 
   const link = (m) => `
     <a href="#/${m.key}" data-module="${m.key}"

@@ -145,9 +145,12 @@ return [
         'group' => 'admin_tools',
     ],
     'whatsapp_config' => [
-        'label' => 'WhatsApp: Configuración',
-        'icon'  => 'settings',
-        'phase' => 2,
-        'group' => 'admin_tools',
+        'label'  => 'WhatsApp: Configuración',
+        'icon'   => 'settings',
+        'phase'  => 2,
+        'group'  => 'admin_tools',
+        // Se alcanza desde una tarjeta en Admin Tools > API, no como entrada propia
+        // del sidebar — mismos "servicios externos" que ya agrupa esa pantalla.
+        'hidden' => true,
     ],
 ];
