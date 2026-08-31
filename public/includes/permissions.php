@@ -91,11 +91,12 @@ function user_modules(): array
             $flags[$f] = user_flag($key, $f);
         }
         $out[] = [
-            'key'   => $key,
-            'label' => $def['label'],
-            'icon'  => $def['icon'],
-            'group' => $def['group'] ?? null,
-            'flags' => $flags,
+            'key'    => $key,
+            'label'  => $def['label'],
+            'icon'   => $def['icon'],
+            'group'  => $def['group'] ?? null,
+            'flags'  => $flags,
+            'hidden' => !empty($def['hidden']),
         ];
     }
     return $out;
