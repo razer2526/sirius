@@ -29,6 +29,30 @@ function handle_patients(string $action): void
                 $params = array_merge($params, [$like, $like, $like, $like]);
             }
 
+            // Filtros de área y fecha: por episodio, así que un paciente con varias
+            // admisiones aparece si al menos una cae dentro de lo filtrado.
+            $service = trim((string)($_GET['service'] ?? ''));
+            $dateFrom = valid_iso_date($_GET['date_from'] ?? '');
+            $dateTo = valid_iso_date($_GET['date_to'] ?? '');
+            if ($service !== '' || $dateFrom || $dateTo) {
+                $epWhere = 'ep2.patient_id = p.id';
+                $epParams = [];
+                if ($service !== '') {
+                    $epWhere .= ' AND ep2.service = ?';
+                    $epParams[] = $service;
+                }
+                if ($dateFrom) {
+                    $epWhere .= ' AND ep2.admission_date >= ?';
+                    $epParams[] = $dateFrom . ' 00:00:00';
+                }
+                if ($dateTo) {
+                    $epWhere .= ' AND ep2.admission_date <= ?';
+                    $epParams[] = $dateTo . ' 23:59:59';
+                }
+                $where .= " AND EXISTS (SELECT 1 FROM episodes ep2 WHERE $epWhere)";
+                $params = array_merge($params, $epParams);
+            }
+
             $total = db()->prepare("SELECT COUNT(*) c FROM patients p WHERE $where");
             $total->execute($params);
             $total = (int)$total->fetch()['c'];
@@ -246,4 +270,15 @@ function require_admin_role(): void
     if (!is_admin_role(current_user())) {
         json_error('Esta acción requiere rol de administrador', 403);
     }
+}
+
+/** Fecha YYYY-MM-DD válida, o null. Para el filtro de fechas de la lista de expedientes. */
+function valid_iso_date($v): ?string
+{
+    $v = trim((string)$v);
+    if ($v === '') {
+        return null;
+    }
+    $d = DateTime::createFromFormat('Y-m-d', $v);
+    return ($d && $d->format('Y-m-d') === $v) ? $v : null;
 }

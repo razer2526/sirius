@@ -92,14 +92,37 @@ function renderList(root) {
         <input id="patient-q" type="text" placeholder="Buscar por nombre, folio o teléfono…" autocomplete="off"
                class="w-full rounded-xl border-0 bg-white py-3 pl-11 pr-4 text-sm shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
       </div>
+      <div class="grid grid-cols-1 gap-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 sm:grid-cols-4">
+        <div class="sm:col-span-2">
+          <label class="${labelCls}">Área</label>
+          <select id="f-service" class="${inputCls}">
+            <option value="">Todas</option>
+            ${Object.entries(SERVICES).map(([key, s]) => `<option value="${escapeHtml(key)}">${escapeHtml(s.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div>
+          <label class="${labelCls}">Desde</label>
+          <input id="f-date-from" type="date" class="${inputCls}">
+        </div>
+        <div>
+          <label class="${labelCls}">Hasta</label>
+          <input id="f-date-to" type="date" class="${inputCls}">
+        </div>
+      </div>
       <div id="patients-box">${spinner()}</div>
     </div>`;
 
   const input = root.querySelector('#patient-q');
+  const serviceSel = root.querySelector('#f-service');
+  const dateFrom = root.querySelector('#f-date-from');
+  const dateTo = root.querySelector('#f-date-to');
   let page = 1;
   const load = async () => {
     const box = root.querySelector('#patients-box');
-    const data = await apiGet('patients/list', { q: input.value.trim(), page });
+    const data = await apiGet('patients/list', {
+      q: input.value.trim(), page,
+      service: serviceSel.value, date_from: dateFrom.value, date_to: dateTo.value,
+    });
     box.innerHTML = data.patients.length ? `
       <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
         ${data.patients.map((p) => cardHtml(p)).join('')}
@@ -119,6 +142,9 @@ function renderList(root) {
     box.querySelector('#pg-next')?.addEventListener('click', () => { page++; load(); });
   };
   input.addEventListener('input', debounce(() => { page = 1; load(); }, 300));
+  serviceSel.addEventListener('change', () => { page = 1; load(); });
+  dateFrom.addEventListener('change', () => { page = 1; load(); });
+  dateTo.addEventListener('change', () => { page = 1; load(); });
   load();
 }
 
