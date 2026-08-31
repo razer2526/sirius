@@ -96,6 +96,36 @@ function handle_catalog(string $action): void
             json_ok();
         }
 
+        /** Elimina varios estudios seleccionados a la vez. */
+        case 'delete_bulk': {
+            $b = request_body();
+            $ids = array_values(array_unique(array_filter(array_map('intval', (array)($b['ids'] ?? [])), fn($n) => $n > 0)));
+            if (!$ids) {
+                json_error('No se seleccionó ningún estudio', 422);
+            }
+            $marks = implode(',', array_fill(0, count($ids), '?'));
+            $pdo = db();
+            $st = $pdo->prepare("DELETE FROM quote_studies WHERE id IN ($marks)");
+            $st->execute($ids);
+            $deleted = $st->rowCount();
+            log_activity('catalogo_estudios', 'study_delete_bulk', "Eliminó $deleted estudio(s) del catálogo");
+            json_ok(['deleted' => $deleted]);
+        }
+
+        /** Vacía el catálogo completo. Requiere escribir la palabra de confirmación, igual
+         *  que "Reemplazar todo el catálogo" al importar. */
+        case 'delete_all': {
+            $b = request_body();
+            if (trim((string)($b['confirm'] ?? '')) !== 'ELIMINAR') {
+                json_error('Confirmación no válida', 422);
+            }
+            $pdo = db();
+            $total = (int)$pdo->query('SELECT COUNT(*) c FROM quote_studies')->fetch()['c'];
+            $pdo->exec('DELETE FROM quote_studies');
+            log_activity('catalogo_estudios', 'study_delete_all', "Vació el catálogo de estudios ($total eliminado(s))");
+            json_ok(['deleted' => $total]);
+        }
+
         /** Todo el catálogo, para exportar (el navegador arma el JSON/CSV). */
         case 'export_all': {
             $items = db()->query('SELECT id, name, category, commission_group, public_price, is_active FROM quote_studies ORDER BY name')->fetchAll();

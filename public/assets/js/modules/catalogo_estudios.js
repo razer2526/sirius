@@ -12,6 +12,7 @@ import {
 
 let filters = { q: '', category: '', page: 1 };
 let listState = { items: [], total: 0, per_page: 50, categories: [] };
+let selected = new Set();
 
 export async function render(root, ctx) {
   const [view] = ctx.args;
@@ -38,6 +39,9 @@ async function renderList(root) {
           <a href="#/catalogo_estudios/importar" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
             ${icon('upload', 'h-4 w-4')} Importar
           </a>
+          <button id="btn-delete-all" type="button" class="flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-50">
+            ${icon('trash', 'h-4 w-4')} Eliminar todo
+          </button>
           <button id="btn-new" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
             ${icon('plus', 'h-4 w-4')} Nuevo estudio
           </button>
@@ -75,8 +79,50 @@ async function renderList(root) {
   root.querySelector('#btn-new').addEventListener('click', () => openStudyModal(null, load));
   root.querySelector('#btn-export-json').addEventListener('click', () => exportCatalog('json'));
   root.querySelector('#btn-export-csv').addEventListener('click', () => exportCatalog('csv'));
+  root.querySelector('#btn-delete-all').addEventListener('click', () => confirmDeleteAll(load));
 
+  selected.clear();
   await load();
+}
+
+/** Vacía el catálogo completo. Misma mecánica que "Reemplazar todo el catálogo" al
+ *  importar: escribir la palabra de confirmación, porque no hay forma de deshacerlo. */
+function confirmDeleteAll(load) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <p class="text-sm text-slate-600">
+      Se <b class="text-red-700">eliminarán todos</b> los estudios del catálogo, sin importar los
+      filtros activos. Esta acción no se puede deshacer.
+    </p>
+    <label class="${labelCls} mt-4">Escribe ELIMINAR para confirmar</label>
+    <input type="text" id="confirm-word" autocomplete="off" class="${inputCls}" placeholder="ELIMINAR">`;
+
+  modal({
+    title: 'Eliminar todo el catálogo',
+    content: wrap,
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Eliminar todo',
+        danger: true,
+        onClick: async (close, btn) => {
+          const word = wrap.querySelector('#confirm-word').value.trim().toUpperCase();
+          if (word !== 'ELIMINAR') { toast('Escribe ELIMINAR para confirmar', 'error'); return; }
+          btn.disabled = true;
+          try {
+            const { deleted } = await apiPost('catalog/delete_all', { confirm: 'ELIMINAR' });
+            toast(`${deleted} estudio(s) eliminado(s)`);
+            close();
+            selected.clear();
+            load();
+          } catch (e) {
+            btn.disabled = false;
+            toast(e.message, 'error');
+          }
+        },
+      },
+    ],
+  });
 }
 
 function commissionGroupLabel(group) {
@@ -105,12 +151,29 @@ function paintList(box, load) {
     return;
   }
 
+  const selectedHere = items.filter((it) => selected.has(it.id)).length;
+  const allHereSelected = selectedHere === items.length;
+
   box.innerHTML = `
+    ${selected.size ? `
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl bg-indigo-50 px-4 py-2.5 ring-1 ring-indigo-200">
+      <span class="text-sm font-semibold text-indigo-700">${selected.size} estudio(s) seleccionado(s)</span>
+      <div class="flex gap-2">
+        <button id="btn-clear-selection" type="button" class="text-sm font-semibold text-indigo-600 hover:text-indigo-500">Quitar selección</button>
+        <button id="btn-delete-selected" type="button" class="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-red-500">
+          ${icon('trash', 'h-4 w-4')} Eliminar seleccionados
+        </button>
+      </div>
+    </div>` : ''}
     <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
       <div class="overflow-x-auto">
         <table class="w-full text-left text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <tr>
+              <th class="w-10 px-4 py-3">
+                <input type="checkbox" id="sel-all" ${allHereSelected ? 'checked' : ''}
+                       class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+              </th>
               <th class="px-4 py-3">Estudio</th>
               <th class="hidden px-4 py-3 sm:table-cell">Categoría</th>
               <th class="hidden px-4 py-3 lg:table-cell">Comisión</th>
@@ -121,7 +184,11 @@ function paintList(box, load) {
           </thead>
           <tbody class="divide-y divide-slate-100">
             ${items.map((it) => `
-              <tr>
+              <tr class="${selected.has(it.id) ? 'bg-indigo-50/50' : ''}">
+                <td class="px-4 py-3">
+                  <input type="checkbox" data-sel="${it.id}" ${selected.has(it.id) ? 'checked' : ''}
+                         class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                </td>
                 <td class="px-4 py-3 font-medium text-slate-800">${escapeHtml(it.name)}</td>
                 <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(it.category || '—')}</td>
                 <td class="hidden px-4 py-3 text-slate-500 lg:table-cell">${escapeHtml(commissionGroupLabel(it.commission_group))}</td>
@@ -153,6 +220,35 @@ function paintList(box, load) {
   box.querySelector('#pg-prev')?.addEventListener('click', () => { filters.page--; load(false); });
   box.querySelector('#pg-next')?.addEventListener('click', () => { filters.page++; load(false); });
 
+  box.querySelector('#sel-all')?.addEventListener('change', (e) => {
+    if (e.target.checked) items.forEach((it) => selected.add(it.id));
+    else items.forEach((it) => selected.delete(it.id));
+    paintList(box, load);
+  });
+  box.querySelectorAll('[data-sel]').forEach((cb) =>
+    cb.addEventListener('change', () => {
+      const id = +cb.dataset.sel;
+      cb.checked ? selected.add(id) : selected.delete(id);
+      paintList(box, load);
+    }));
+  box.querySelector('#btn-clear-selection')?.addEventListener('click', () => { selected.clear(); paintList(box, load); });
+  box.querySelector('#btn-delete-selected')?.addEventListener('click', async () => {
+    const ok = await confirmDialog(
+      'Eliminar estudios seleccionados',
+      `Se eliminarán ${selected.size} estudio(s) del catálogo. Las cotizaciones ya guardadas no se ven afectadas. ¿Continuar?`,
+      { danger: true, confirmLabel: 'Eliminar' }
+    );
+    if (!ok) return;
+    try {
+      const { deleted } = await apiPost('catalog/delete_bulk', { ids: [...selected] });
+      toast(`${deleted} estudio(s) eliminado(s)`);
+      selected.clear();
+      load(false);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
+
   box.querySelectorAll('[data-edit]').forEach((b) =>
     b.addEventListener('click', () => openStudyModal(items.find((x) => x.id === +b.dataset.edit), load)));
   box.querySelectorAll('[data-del]').forEach((b) =>
@@ -163,6 +259,7 @@ function paintList(box, load) {
       try {
         await apiPost('catalog/delete', { id: it.id });
         toast('Estudio eliminado');
+        selected.delete(it.id);
         load(false);
       } catch (e) { toast(e.message, 'error'); }
     }));

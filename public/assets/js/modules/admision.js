@@ -273,7 +273,9 @@ async function renderForm(root, serviceKey) {
     studyResults.querySelectorAll('button').forEach((b) =>
       b.addEventListener('click', () => {
         const s = items[+b.dataset.idx];
-        studyLines.push({ study_id: s.id, name: s.name, amount: s.public_price });
+        // Sin monto automático: el precio del catálogo es solo referencia (se ve en la
+        // lista de resultados); el monto realmente cobrado se captura a mano cada vez.
+        studyLines.push({ study_id: s.id, name: s.name, amount: 0 });
         paintStudyLines();
         studyResults.classList.add('hidden');
         studyInput.value = '';
