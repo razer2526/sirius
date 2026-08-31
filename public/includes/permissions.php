@@ -45,6 +45,13 @@ function user_can(string $moduleKey): bool
     if (!$user) {
         return false;
     }
+    return user_can_for($user, $moduleKey);
+}
+
+/** Igual que user_can(), pero para un usuario explícito en vez del de la sesión —
+ *  necesario fuera de una petición con sesión, como el cron del resumen diario. */
+function user_can_for(array $user, string $moduleKey): bool
+{
     if (is_admin_role($user)) {
         return isset(modules_registry()[$moduleKey]);
     }
@@ -66,6 +73,12 @@ function user_flag(string $moduleKey, string $flag): bool
     if (!$user) {
         return false;
     }
+    return user_flag_for($user, $moduleKey, $flag);
+}
+
+/** Igual que user_flag(), pero para un usuario explícito — ver user_can_for(). */
+function user_flag_for(array $user, string $moduleKey, string $flag): bool
+{
     $isMode = in_array($flag, modules_registry()[$moduleKey]['mode_flags'] ?? [], true);
     if (is_admin_role($user) && !$isMode) {
         return true;

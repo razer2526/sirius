@@ -17,11 +17,10 @@ function handle_tasks(string $action): void
     switch ($action) {
         case 'list': {
             $pdo = db();
+            $meId = (int)$me['id'];
             if ($canManage) {
                 $tasks = $pdo->query(
-                    'SELECT t.*, u.full_name AS assigned_name, c.full_name AS creator_name
-                     FROM tasks t
-                     LEFT JOIN users u ON u.id = t.assigned_to
+                    'SELECT t.*, c.full_name AS creator_name FROM tasks t
                      LEFT JOIN users c ON c.id = t.created_by
                      ORDER BY t.created_at DESC'
                 )->fetchAll();
@@ -30,18 +29,27 @@ function handle_tasks(string $action): void
                     "SELECT id, full_name FROM users WHERE is_active = 1 ORDER BY full_name"
                 )->fetchAll();
             } else {
+                // Visible: asignada a mí (por task_assignees), creada por mí, o subtarea de
+                // una tarea que cumpla lo anterior.
                 $st = $pdo->prepare(
-                    'SELECT t.*, u.full_name AS assigned_name, c.full_name AS creator_name
-                     FROM tasks t
-                     LEFT JOIN users u ON u.id = t.assigned_to
+                    'SELECT t.*, c.full_name AS creator_name FROM tasks t
                      LEFT JOIN users c ON c.id = t.created_by
-                     WHERE t.assigned_to = ? OR t.created_by = ?
-                        OR t.parent_id IN (SELECT id FROM tasks WHERE assigned_to = ? OR created_by = ?)
+                     WHERE t.created_by = ?
+                        OR EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
+                        OR t.parent_id IN (
+                            SELECT id FROM tasks pt WHERE pt.created_by = ?
+                               OR EXISTS (SELECT 1 FROM task_assignees ta2 WHERE ta2.task_id = pt.id AND ta2.user_id = ?)
+                        )
                      ORDER BY t.created_at DESC'
                 );
-                $st->execute([$me['id'], $me['id'], $me['id'], $me['id']]);
+                $st->execute([$meId, $meId, $meId, $meId]);
                 $tasks = $st->fetchAll();
+                // Proyectos visibles: los que traen alguna tarea visible, o los asignados
+                // directamente a mí (un proyecto puede no tener tareas todavía).
                 $projectIds = array_values(array_unique(array_filter(array_column($tasks, 'project_id'))));
+                $st = $pdo->prepare('SELECT project_id FROM project_assignees WHERE user_id = ?');
+                $st->execute([$meId]);
+                $projectIds = array_values(array_unique(array_merge($projectIds, array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN)))));
                 $projects = [];
                 if ($projectIds) {
                     $marks = implode(',', array_fill(0, count($projectIds), '?'));
@@ -63,21 +71,34 @@ function handle_tasks(string $action): void
                     $doneNow[$row['task_id']] = true;
                 }
             }
+
+            $taskIds = array_column($tasks, 'id');
+            $assigneesByTask = fetch_assignees('task_assignees', 'task_id', $taskIds);
+            $projectIdsForAssignees = array_column($projects, 'id');
+            $assigneesByProject = fetch_assignees('project_assignees', 'project_id', $projectIdsForAssignees);
+
             foreach ($tasks as &$t) {
                 $t['id'] = (int)$t['id'];
                 $t['project_id'] = $t['project_id'] !== null ? (int)$t['project_id'] : null;
                 $t['parent_id'] = $t['parent_id'] !== null ? (int)$t['parent_id'] : null;
-                $t['assigned_to'] = $t['assigned_to'] !== null ? (int)$t['assigned_to'] : null;
                 $t['created_by'] = $t['created_by'] !== null ? (int)$t['created_by'] : null;
                 $t['done_now'] = !empty($t['recurrence']) ? isset($doneNow[$t['id']]) : null;
+                $assignees = $assigneesByTask[$t['id']] ?? [];
+                $t['assigned_to'] = array_column($assignees, 'id');
+                $t['assigned_names'] = array_column($assignees, 'name');
             }
+            unset($t);
             foreach ($projects as &$p) {
                 $p['id'] = (int)$p['id'];
+                $assignees = $assigneesByProject[$p['id']] ?? [];
+                $p['assigned_to'] = array_column($assignees, 'id');
+                $p['assigned_names'] = array_column($assignees, 'name');
             }
+            unset($p);
 
             json_ok([
                 'can_manage' => $canManage,
-                'me'         => (int)$me['id'],
+                'me'         => $meId,
                 'tasks'      => $tasks,
                 'projects'   => $projects,
                 'users'      => $users,
@@ -96,6 +117,7 @@ function handle_tasks(string $action): void
             $due = valid_date($b['due_date'] ?? '');
             $status = in_array($b['status'] ?? '', ['activo', 'completado', 'archivado'], true) ? $b['status'] : 'activo';
             $id = (int)($b['id'] ?? 0);
+            $oldAssignees = $id > 0 ? assignee_ids('project_assignees', 'project_id', $id) : [];
             if ($id > 0) {
                 db()->prepare('UPDATE projects SET name = ?, description = ?, due_date = ?, status = ? WHERE id = ?')
                     ->execute([$name, $desc, $due, $status, $id]);
@@ -105,6 +127,11 @@ function handle_tasks(string $action): void
                     ->execute([$name, $desc, $due, $status, (int)$me['id']]);
                 $id = (int)db()->lastInsertId();
                 log_activity('tareas', 'project_create', "Creó proyecto \"$name\"", 'project', $id);
+            }
+            if (array_key_exists('assigned_to', $b)) {
+                sync_project_assignees($id, (array)$b['assigned_to']);
+                notify_new_assignees($oldAssignees, (array)$b['assigned_to'], (int)$me['id'],
+                    'Nuevo proyecto asignado', "Te agregaron al proyecto \"$name\".", '#/tareas/proyectos');
             }
             json_ok(['id' => $id]);
         }
@@ -132,10 +159,11 @@ function handle_tasks(string $action): void
                 json_error('El título es obligatorio', 422);
             }
             $id = (int)($b['id'] ?? 0);
-            $assignedTo = isset($b['assigned_to']) && $b['assigned_to'] !== '' ? (int)$b['assigned_to'] : null;
+            $oldAssignees = $id > 0 ? assignee_ids('task_assignees', 'task_id', $id) : [];
+            $assignedTo = (array)($b['assigned_to'] ?? []);
             if (!$canManage) {
                 // Un usuario estandar solo crea/edita tareas personales asignadas a sí mismo
-                $assignedTo = (int)$me['id'];
+                $assignedTo = [(int)$me['id']];
             }
             $priority = in_array($b['priority'] ?? '', TASK_PRIORITIES, true) ? $b['priority'] : 'media';
             $recurrence = in_array($b['recurrence'] ?? '', TASK_RECURRENCES, true) ? $b['recurrence'] : null;
@@ -165,17 +193,20 @@ function handle_tasks(string $action): void
                     json_error('Solo puedes editar tus propias tareas', 403);
                 }
                 db()->prepare(
-                    'UPDATE tasks SET title = ?, description = ?, assigned_to = ?, priority = ?, due_date = ?, recurrence = ?, project_id = ?, parent_id = ? WHERE id = ?'
-                )->execute([$title, $desc, $assignedTo, $priority, $due, $recurrence, $projectId, $parentId, $id]);
+                    'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ?, recurrence = ?, project_id = ?, parent_id = ? WHERE id = ?'
+                )->execute([$title, $desc, $priority, $due, $recurrence, $projectId, $parentId, $id]);
                 log_activity('tareas', 'task_update', "Editó tarea \"$title\"", 'task', $id);
             } else {
                 db()->prepare(
-                    'INSERT INTO tasks (project_id, parent_id, title, description, assigned_to, priority, due_date, recurrence, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                )->execute([$projectId, $parentId, $title, $desc, $assignedTo, $priority, $due, $recurrence, (int)$me['id']]);
+                    'INSERT INTO tasks (project_id, parent_id, title, description, priority, due_date, recurrence, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$projectId, $parentId, $title, $desc, $priority, $due, $recurrence, (int)$me['id']]);
                 $id = (int)db()->lastInsertId();
                 log_activity('tareas', 'task_create', "Creó tarea \"$title\"", 'task', $id);
             }
+            sync_task_assignees($id, $assignedTo);
+            notify_new_assignees($oldAssignees, $assignedTo, (int)$me['id'],
+                'Nueva tarea asignada', "Te asignaron la tarea \"$title\".", '#/tareas');
             json_ok(['id' => $id]);
         }
 
@@ -397,12 +428,96 @@ function require_task_manager(bool $canManage): void
     }
 }
 
-/** El asignado, el creador o un gestor pueden operar la tarea. */
+/** Alguno de los asignados, el creador o un gestor pueden operar la tarea. */
 function require_task_access(array $task, array $me, bool $canManage): void
 {
     $meId = (int)$me['id'];
-    if (!$canManage && (int)$task['assigned_to'] !== $meId && (int)$task['created_by'] !== $meId) {
+    if ($canManage || (int)$task['created_by'] === $meId) {
+        return;
+    }
+    $st = db()->prepare('SELECT 1 FROM task_assignees WHERE task_id = ? AND user_id = ? LIMIT 1');
+    $st->execute([(int)$task['id'], $meId]);
+    if (!$st->fetch()) {
         json_error('No tienes acceso a esta tarea', 403);
+    }
+}
+
+/** Asignados de varias tareas o proyectos a la vez, agrupados por id del dueño.
+ *  $table/$fkCol son literales fijos que decide el código, nunca el request. */
+function fetch_assignees(string $table, string $fkCol, array $ids): array
+{
+    if (!$ids) {
+        return [];
+    }
+    $marks = implode(',', array_fill(0, count($ids), '?'));
+    $st = db()->prepare(
+        "SELECT a.$fkCol AS owner_id, u.id, u.full_name AS name
+         FROM $table a JOIN users u ON u.id = a.user_id
+         WHERE a.$fkCol IN ($marks) ORDER BY u.full_name"
+    );
+    $st->execute($ids);
+    $out = [];
+    foreach ($st->fetchAll() as $row) {
+        $out[(int)$row['owner_id']][] = ['id' => (int)$row['id'], 'name' => $row['name']];
+    }
+    return $out;
+}
+
+/** Reemplaza por completo la lista de asignados de una tarea. */
+function sync_task_assignees(int $taskId, array $userIds): void
+{
+    $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($n) => $n > 0)));
+    $pdo = db();
+    $pdo->prepare('DELETE FROM task_assignees WHERE task_id = ?')->execute([$taskId]);
+    if ($userIds) {
+        $ins = $pdo->prepare('INSERT INTO task_assignees (task_id, user_id) VALUES (?, ?)');
+        foreach ($userIds as $uid) {
+            $ins->execute([$taskId, $uid]);
+        }
+    }
+}
+
+/** Reemplaza por completo la lista de asignados de un proyecto. */
+function sync_project_assignees(int $projectId, array $userIds): void
+{
+    $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), fn($n) => $n > 0)));
+    $pdo = db();
+    $pdo->prepare('DELETE FROM project_assignees WHERE project_id = ?')->execute([$projectId]);
+    if ($userIds) {
+        $ins = $pdo->prepare('INSERT INTO project_assignees (project_id, user_id) VALUES (?, ?)');
+        foreach ($userIds as $uid) {
+            $ins->execute([$projectId, $uid]);
+        }
+    }
+}
+
+/** Solo los ids de asignados de una tarea o proyecto (para comparar antes/después). */
+function assignee_ids(string $table, string $fkCol, int $id): array
+{
+    $st = db()->prepare("SELECT user_id FROM $table WHERE $fkCol = ?");
+    $st->execute([$id]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/** Avisa por push solo a quien se acaba de agregar (no a quien ya estaba, ni a
+ *  quien se edita a sí mismo). Que el push falle no debe tumbar el guardado. */
+function notify_new_assignees(array $oldIds, array $newIds, int $actingUserId, string $title, string $body, string $url): void
+{
+    $newIds = array_values(array_unique(array_filter(array_map('intval', $newIds), fn($n) => $n > 0)));
+    $added = array_diff($newIds, $oldIds);
+    if (!$added) {
+        return;
+    }
+    require_once __DIR__ . '/../../includes/webpush.php';
+    foreach ($added as $uid) {
+        if ($uid === $actingUserId) {
+            continue;
+        }
+        try {
+            webpush_notify($uid, $title, $body, $url);
+        } catch (Throwable $e) {
+            error_log('notify_new_assignees: ' . $e->getMessage());
+        }
     }
 }
 

@@ -212,6 +212,24 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 CONSTRAINT fk_completion_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
                 CONSTRAINT fk_completion_user FOREIGN KEY (completed_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'task_assignees' => "CREATE TABLE IF NOT EXISTS task_assignees (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                task_id INT UNSIGNED NOT NULL,
+                user_id INT UNSIGNED NOT NULL,
+                UNIQUE KEY uq_task_assignee (task_id, user_id),
+                INDEX idx_taskassignee_user (user_id),
+                CONSTRAINT fk_taskassignee_task FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+                CONSTRAINT fk_taskassignee_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
+            'project_assignees' => "CREATE TABLE IF NOT EXISTS project_assignees (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                project_id INT UNSIGNED NOT NULL,
+                user_id INT UNSIGNED NOT NULL,
+                UNIQUE KEY uq_project_assignee (project_id, user_id),
+                INDEX idx_projectassignee_user (user_id),
+                CONSTRAINT fk_projectassignee_project FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+                CONSTRAINT fk_projectassignee_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
             'documents' => "CREATE TABLE IF NOT EXISTS documents (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 doc_type VARCHAR(40) NOT NULL,
@@ -578,6 +596,28 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )$suffix",
+            'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                endpoint VARCHAR(500) NOT NULL,
+                p256dh VARCHAR(255) NULL,
+                auth VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_push_endpoint (endpoint(255)),
+                INDEX idx_push_user (user_id),
+                CONSTRAINT fk_push_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
+            'notifications' => "CREATE TABLE IF NOT EXISTS notifications (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                title VARCHAR(200) NOT NULL,
+                body VARCHAR(500) NULL,
+                url VARCHAR(255) NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                read_at TIMESTAMP NULL,
+                INDEX idx_notification_user (user_id, read_at),
+                CONSTRAINT fk_notification_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -742,6 +782,18 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 completed_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 completed_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 UNIQUE (task_id, period_key)
+            )",
+            'task_assignees' => "CREATE TABLE IF NOT EXISTS task_assignees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE (task_id, user_id)
+            )",
+            'project_assignees' => "CREATE TABLE IF NOT EXISTS project_assignees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE (project_id, user_id)
             )",
             'documents' => "CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1035,6 +1087,23 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NULL,
+                auth TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'notifications' => "CREATE TABLE IF NOT EXISTS notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                title TEXT NOT NULL,
+                body TEXT NULL,
+                url TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                read_at TEXT NULL
+            )",
         ];
     }
 
@@ -1054,7 +1123,11 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_task_assignee ON tasks (assigned_to, status)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_task_project ON tasks (project_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_task_parent ON tasks (parent_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_taskassignee_user ON task_assignees (user_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_projectassignee_user ON project_assignees (user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_result_delivery_due ON result_deliveries (due_date)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_notification_user ON notifications (user_id, read_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_item_active ON inventory_items (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_item ON inventory_lots (item_id, received_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_lot_expiry ON inventory_lots (expiry_date)');
@@ -1152,6 +1225,21 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_delivery ON episodes (expected_delivery_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_episode_linked_doctor ON episodes (linked_doctor_id)');
         $pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_episode_client_uuid ON episodes (client_uuid)');
+    }
+
+    // Migración a asignación múltiple: cada tarea con un assigned_to de la época de
+    // un solo responsable pasa a tener esa misma fila en task_assignees. IGNORE hace
+    // esto seguro de repetir (setup.php se vuelve a visitar en cada actualización):
+    // no duplica si la fila ya existe, y no pisa asignaciones nuevas que ya se hayan
+    // agregado por la interfaz.
+    try {
+        $ignore = $isMysql ? 'IGNORE' : 'OR IGNORE';
+        $pdo->exec(
+            "INSERT $ignore INTO task_assignees (task_id, user_id)
+             SELECT id, assigned_to FROM tasks WHERE assigned_to IS NOT NULL"
+        );
+    } catch (Throwable $e) {
+        // tabla aún no existe en una instalación muy vieja sin sirius_schema_tables() corrido antes; no debería pasar
     }
 
     return ["Migraciones aplicadas: $applied"];

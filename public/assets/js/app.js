@@ -1,6 +1,6 @@
 /** Bootstrap de la SPA: sesión → sidebar → router → asistente → service worker. */
 
-import { apiGet, setCsrf } from './api.js';
+import { apiGet, apiPost, setCsrf } from './api.js';
 import { icon, toast, escapeHtml, fmtRelative } from './ui.js';
 import { initRouter, currentModuleKey } from './router.js';
 import { initAssistant } from './assistant.js';
@@ -34,7 +34,8 @@ async function boot() {
   lockDesktopScroll();
   initAssistant(state);
   initRouter(state);
-  registerServiceWorker();
+  const swReg = await registerServiceWorker();
+  if (swReg) initPushNotifications(swReg);
   keepSessionAlive();
   if (state.modules.some((m) => m.key === 'whatsapp')) {
     initWhatsappNotifier();
@@ -129,15 +130,68 @@ function lockDesktopScroll() {
   }, { passive: true });
 }
 
-function registerServiceWorker() {
-  if (!('serviceWorker' in navigator)) return;
+/** Devuelve el registro del service worker (o null), para que initPushNotifications()
+ *  sepa si hay dónde suscribirse. */
+async function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return null;
   // En desarrollo (localhost) el cache-first del SW estorba; se activa con ?sw=1.
   const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname);
   if (isLocal && !new URLSearchParams(location.search).has('sw')) {
     navigator.serviceWorker.getRegistrations().then((regs) => regs.forEach((r) => r.unregister()));
-    return;
+    return null;
   }
-  navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW:', e.message));
+  try {
+    return await navigator.serviceWorker.register('sw.js');
+  } catch (e) {
+    console.warn('SW:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Botón de la campana en la barra superior: solo se muestra cuando tiene sentido
+ * ofrecerlo (hay soporte de push, no está ya suscrito, y el permiso no quedó
+ * denegado antes — en ese caso solo se arregla desde los ajustes del navegador,
+ * insistir aquí no sirve).
+ */
+async function initPushNotifications(reg) {
+  const btn = document.getElementById('btn-notifications');
+  if (!btn || !('PushManager' in window) || !('Notification' in window)) return;
+
+  const refresh = async () => {
+    const sub = await reg.pushManager.getSubscription();
+    btn.classList.toggle('hidden', !!sub || Notification.permission === 'denied');
+  };
+
+  btn.addEventListener('click', async () => {
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        toast('Sin permiso de notificaciones, no se pudieron activar.', 'error');
+        await refresh();
+        return;
+      }
+      const { key } = await apiGet('push/vapid_key');
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(key),
+      });
+      await apiPost('push/subscribe', sub.toJSON());
+      toast('Notificaciones activadas');
+      await refresh();
+    } catch (e) {
+      console.error('push subscribe:', e);
+      toast('No se pudieron activar las notificaciones', 'error');
+    }
+  });
+
+  await refresh();
+}
+
+function urlBase64ToUint8Array(base64) {
+  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
 }
 
 /**

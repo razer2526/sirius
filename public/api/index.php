@@ -50,6 +50,7 @@ $routes = [
     'mail'          => ['mail.php', 'api'],
     'whatsapp'        => ['whatsapp.php', 'whatsapp'],
     'whatsapp_config' => ['whatsapp_config.php', 'whatsapp_config'],
+    'push'          => ['push.php', null],
 ];
 
 $r = (string)($_GET['r'] ?? '');

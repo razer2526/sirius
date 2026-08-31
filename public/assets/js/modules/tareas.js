@@ -1,4 +1,5 @@
-/** Módulo Tareas: mis tareas, frecuentes, proyectos con subtareas y monitor de equipo. */
+/** Módulo Tareas: mis tareas (únicas y frecuentes, en una sola lista ordenada),
+ *  proyectos con subtareas, monitor de equipo y seguimiento de resultados. */
 
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce } from '../ui.js';
@@ -21,6 +22,8 @@ let data = null;
 let tab = 'mis';
 let projectFilter = null;
 let resultsData = null;
+// '' en 'user' significa "yo mismo"; solo un gestor puede cambiarlo a otra persona.
+let misFilters = { status: '', project: '', user: '' };
 
 export async function render(root, context) {
   ctx = context;
@@ -39,7 +42,6 @@ async function load(root) {
 function paint(root) {
   const tabs = [
     ['mis', 'Mis tareas', 'check-square'],
-    ['frecuentes', 'Frecuentes', 'repeat'],
     ['proyectos', 'Proyectos', 'briefcase'],
     ['resultados', 'Resultados', 'flask'],
   ];
@@ -80,7 +82,6 @@ function paint(root) {
 
   const view = root.querySelector('#tasks-view');
   if (tab === 'mis') paintMis(view);
-  else if (tab === 'frecuentes') paintFrecuentes(view);
   else if (tab === 'proyectos') paintProyectos(view);
   else if (tab === 'resultados') paintResultados(view);
   else paintEquipo(view);
@@ -88,7 +89,8 @@ function paint(root) {
 
 /* ---------- helpers de datos ---------- */
 const children = (t) => data.tasks.filter((x) => x.parent_id === t.id);
-const isMine = (t) => t.assigned_to === data.me || t.created_by === data.me;
+const tasksForUser = (userId) => data.tasks.filter((t) => !t.parent_id && (t.assigned_to.includes(userId) || t.created_by === userId));
+const assigneeNames = (t) => (t.assigned_names || []).join(', ');
 const today = () => new Date().toISOString().slice(0, 10);
 const isOverdue = (t) => t.due_date && t.due_date < today() && t.status !== 'completada';
 
@@ -103,45 +105,119 @@ function sortTasks(list) {
   });
 }
 
+/** Para "Mis tareas": primero fecha límite, urgencia como desempate (a diferencia de
+ *  sortTasks(), que usa prioridad primero — ese orden sigue rigiendo Proyectos y Equipo). */
+function sortByDueThenPriority(list) {
+  return [...list].sort((a, b) => {
+    const doneA = a.status === 'completada' ? 1 : 0;
+    const doneB = b.status === 'completada' ? 1 : 0;
+    if (doneA !== doneB) return doneA - doneB;
+    const dueA = a.due_date || '9999';
+    const dueB = b.due_date || '9999';
+    if (dueA !== dueB) return dueA < dueB ? -1 : 1;
+    return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+  });
+}
+
+/** Mismo criterio de "al día" que las tarjetas de tareas frecuentes de antes. */
+function sortRecurring(list) {
+  return [...list].sort((a, b) => {
+    const doneA = a.done_now ? 1 : 0;
+    const doneB = b.done_now ? 1 : 0;
+    if (doneA !== doneB) return doneA - doneB;
+    return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+  });
+}
+
 /* ---------- vistas ---------- */
+/**
+ * "Mis tareas" unifica lo que antes eran dos pestañas (Mis tareas + Frecuentes) en
+ * una sola lista ordenada: diarias primero, luego semanales, luego el resto por
+ * fecha límite y urgencia. Un gestor puede además "ver como" a otra persona del
+ * equipo con el filtro de usuario, en vez de tener que ir a la pestaña Equipo.
+ */
 function paintMis(view) {
-  const list = sortTasks(data.tasks.filter((t) => !t.parent_id && !t.recurrence && isMine(t)));
-  view.innerHTML = list.length
-    ? `<div class="space-y-2.5">${list.map((t) => taskCard(t)).join('')}</div>`
-    : emptyState('Sin tareas pendientes', 'Crea una tarea o espera a que te asignen una.');
+  const targetUser = data.can_manage && misFilters.user ? +misFilters.user : data.me;
+  let list = tasksForUser(targetUser);
+  if (misFilters.status) list = list.filter((t) => t.status === misFilters.status);
+  if (misFilters.project) list = list.filter((t) => t.project_id === +misFilters.project);
+
+  const daily = sortRecurring(list.filter((t) => t.recurrence === 'diaria'));
+  const weekly = sortRecurring(list.filter((t) => t.recurrence === 'semanal'));
+  const rest = sortByDueThenPriority(list.filter((t) => !t.recurrence));
+
+  const group = (title, items, render) => !items.length ? '' : `
+    <div>
+      <h4 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">${title}</h4>
+      ${render(items)}
+    </div>`;
+  const recurringCard = (items) => `
+    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      ${items.map((t) => recurringRowHtml(t)).join('')}
+    </div>`;
+
+  const sections = [
+    group('Diarias', daily, recurringCard),
+    group('Semanales', weekly, recurringCard),
+    group((daily.length || weekly.length) ? 'Otras tareas' : '', rest, (items) => `<div class="space-y-2.5">${items.map((t) => taskCard(t)).join('')}</div>`),
+  ].filter(Boolean);
+
+  view.innerHTML = `
+    <div class="space-y-4">
+      ${filterBarHtml()}
+      ${sections.length ? `<div class="space-y-5">${sections.join('')}</div>` : emptyState('Sin tareas pendientes', 'Crea una tarea o espera a que te asignen una.')}
+    </div>`;
+
+  wireFilterBar(view);
   wireTaskEvents(view);
 }
 
-function paintFrecuentes(view) {
-  const list = data.tasks.filter((t) => t.recurrence && (data.can_manage ? true : isMine(t)));
-  const grupos = [['diaria', 'Diarias'], ['semanal', 'Semanales']]
-    .map(([key, label]) => {
-      const items = list.filter((t) => t.recurrence === key);
-      if (!items.length) return '';
-      return `
-        <div>
-          <h4 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">${label}</h4>
-          <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            ${items.map((t) => `
-              <div class="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
-                <button type="button" data-recurring="${t.id}"
-                        class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${t.done_now ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
-                  <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                </button>
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-medium ${t.done_now ? 'text-slate-400 line-through' : 'text-slate-800'}">${escapeHtml(t.title)}</p>
-                  ${data.can_manage && t.assigned_name ? `<p class="text-xs text-slate-400">${escapeHtml(t.assigned_name)}</p>` : ''}
-                </div>
-                <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
-                ${canEdit(t) ? `
-                <button type="button" data-edit="${t.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
-                <button type="button" data-del="${t.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
-              </div>`).join('')}
-          </div>
-        </div>`;
-    }).join('');
-  view.innerHTML = grupos || emptyState('Sin tareas frecuentes', 'Crea una tarea y márcala como diaria o semanal.');
-  wireTaskEvents(view);
+function filterBarHtml() {
+  const statusOpts = Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${misFilters.status === k ? 'selected' : ''}>${v.label}</option>`).join('');
+  const projectOpts = data.projects.map((p) => `<option value="${p.id}" ${String(misFilters.project) === String(p.id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
+  const userOpts = data.users.map((u) => `<option value="${u.id}" ${String(misFilters.user) === String(u.id) ? 'selected' : ''}>${escapeHtml(u.full_name)}</option>`).join('');
+  return `
+    <div class="flex flex-wrap items-center gap-2 rounded-xl bg-white p-2.5 shadow-sm ring-1 ring-slate-200">
+      <select id="f-status" class="rounded-lg border-0 bg-slate-50 px-2.5 py-1.5 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+        <option value="">Todos los estados</option>${statusOpts}
+      </select>
+      <select id="f-project" class="rounded-lg border-0 bg-slate-50 px-2.5 py-1.5 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+        <option value="">Todos los proyectos</option>${projectOpts}
+      </select>
+      ${data.can_manage ? `
+      <select id="f-user" class="rounded-lg border-0 bg-slate-50 px-2.5 py-1.5 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+        <option value="">Yo mismo</option>${userOpts}
+      </select>` : ''}
+    </div>`;
+}
+
+function wireFilterBar(view) {
+  view.querySelector('#f-status').value = misFilters.status;
+  view.querySelector('#f-status').addEventListener('change', (e) => { misFilters.status = e.target.value; paintMis(view); });
+  view.querySelector('#f-project').value = misFilters.project;
+  view.querySelector('#f-project').addEventListener('change', (e) => { misFilters.project = e.target.value; paintMis(view); });
+  view.querySelector('#f-user')?.addEventListener('change', (e) => { misFilters.user = e.target.value; paintMis(view); });
+}
+
+/** Renglón de una tarea frecuente: la interacción es "marcar hecho hoy/esta semana",
+ *  distinta del ciclo de estado pendiente → en progreso → completada de una tarea
+ *  normal, así que no reutiliza taskCard(). */
+function recurringRowHtml(t) {
+  return `
+    <div class="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
+      <button type="button" data-recurring="${t.id}"
+              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${t.done_now ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
+        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-medium ${t.done_now ? 'text-slate-400 line-through' : 'text-slate-800'}">${escapeHtml(t.title)}</p>
+        ${data.can_manage && assigneeNames(t) ? `<p class="text-xs text-slate-400">${escapeHtml(assigneeNames(t))}</p>` : ''}
+      </div>
+      <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
+      ${canEdit(t) ? `
+      <button type="button" data-edit="${t.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
+      <button type="button" data-del="${t.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
+    </div>`;
 }
 
 function paintProyectos(view) {
@@ -218,7 +294,8 @@ function paintProyectos(view) {
 function paintEquipo(view) {
   const grupos = [...data.users.map((u) => ({ id: u.id, name: u.full_name })), { id: null, name: 'Sin asignar' }];
   const html = grupos.map((g) => {
-    const list = sortTasks(data.tasks.filter((t) => !t.parent_id && !t.recurrence && t.assigned_to === g.id));
+    const list = sortTasks(data.tasks.filter((t) => !t.parent_id && !t.recurrence
+      && (g.id === null ? t.assigned_to.length === 0 : t.assigned_to.includes(g.id))));
     if (!list.length) return '';
     const done = list.filter((t) => t.status === 'completada').length;
     return `
@@ -502,7 +579,7 @@ function taskCard(t) {
             <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
             ${t.due_date ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${isOverdue(t) ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}">${isOverdue(t) ? '⚠ ' : ''}${fmtDate(t.due_date)}</span>` : ''}
             ${proj ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>` : ''}
-            ${data.can_manage && t.assigned_name ? `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200">${escapeHtml(t.assigned_name)}</span>` : ''}
+            ${data.can_manage && assigneeNames(t) ? `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200">${escapeHtml(assigneeNames(t))}</span>` : ''}
           </div>
         </div>
         <div class="flex shrink-0 gap-1">
@@ -580,6 +657,26 @@ function wireTaskEvents(view) {
 }
 
 /* ---------- modales ---------- */
+/** Lista de checkboxes para asignar varias personas a la vez (tarea o proyecto). */
+function assigneeCheckboxesHtml(selectedIds) {
+  if (!data.users.length) {
+    return '<p class="text-sm text-slate-400">Sin usuarios disponibles.</p>';
+  }
+  return `
+    <div class="max-h-36 space-y-1.5 overflow-y-auto rounded-lg bg-slate-50 p-2.5 ring-1 ring-inset ring-slate-300">
+      ${data.users.map((u) => `
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-assignee="${u.id}" ${selectedIds.includes(u.id) ? 'checked' : ''}
+                 class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+          ${escapeHtml(u.full_name)}
+        </label>`).join('')}
+    </div>`;
+}
+
+function checkedAssignees(form) {
+  return [...form.querySelectorAll('[data-assignee]:checked')].map((el) => +el.dataset.assignee);
+}
+
 function openTaskModal(task, presets) {
   const isSub = !!(task?.parent_id || presets.parent_id);
   const parentId = task?.parent_id || presets.parent_id || '';
@@ -589,11 +686,9 @@ function openTaskModal(task, presets) {
       ${field({ key: 'title', label: isSub ? 'Subtarea' : 'Título', type: 'text', required: true, span: 'sm:col-span-2' }, task?.title || '')}
       ${field({ key: 'description', label: 'Descripción', type: 'textarea', rows: 2, span: 'sm:col-span-2' }, task?.description || '')}
       ${data.can_manage ? `
-      <div><label class="${labelCls}">Asignar a</label>
-        <select name="assigned_to" class="${inputCls}">
-          <option value="">— Sin asignar —</option>
-          ${data.users.map((u) => `<option value="${u.id}" ${task?.assigned_to === u.id ? 'selected' : ''}>${escapeHtml(u.full_name)}</option>`).join('')}
-        </select></div>` : ''}
+      <div class="sm:col-span-2"><label class="${labelCls}">Asignar a</label>
+        ${assigneeCheckboxesHtml(task?.assigned_to || [])}
+      </div>` : ''}
       ${field({ key: 'priority', label: 'Prioridad', type: 'select', options: [['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta'], ['urgente', 'Urgente']] }, task?.priority || 'media')}
       ${field({ key: 'due_date', label: 'Fecha límite', type: 'date' }, task?.due_date || '')}
       ${!isSub ? `
@@ -621,7 +716,7 @@ function openTaskModal(task, presets) {
             await apiPost('tasks/save', {
               ...(task ? { id: task.id } : {}),
               title: v.title, description: v.description,
-              assigned_to: v.assigned_to ?? '', priority: v.priority,
+              assigned_to: checkedAssignees(form), priority: v.priority,
               due_date: v.due_date, recurrence: v.recurrence ?? '',
               project_id: v.project_id ?? '', parent_id: parentId,
             });
@@ -644,6 +739,9 @@ function openProjectModal(project) {
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       ${field({ key: 'name', label: 'Nombre del proyecto', type: 'text', required: true, span: 'sm:col-span-2' }, project?.name || '')}
       ${field({ key: 'description', label: 'Descripción', type: 'textarea', rows: 2, span: 'sm:col-span-2' }, project?.description || '')}
+      <div class="sm:col-span-2"><label class="${labelCls}">Asignar a</label>
+        ${assigneeCheckboxesHtml(project?.assigned_to || [])}
+      </div>
       ${field({ key: 'due_date', label: 'Fecha límite', type: 'date' }, project?.due_date || '')}
       ${field({ key: 'status', label: 'Estado', type: 'select', options: [['activo', 'Activo'], ['completado', 'Completado'], ['archivado', 'Archivado']] }, project?.status || 'activo')}
     </div>`;
@@ -661,7 +759,11 @@ function openProjectModal(project) {
           btn.disabled = true;
           const v = formValues(form);
           try {
-            await apiPost('tasks/project_save', { ...(project ? { id: project.id } : {}), ...v });
+            await apiPost('tasks/project_save', {
+              ...(project ? { id: project.id } : {}),
+              name: v.name, description: v.description, due_date: v.due_date, status: v.status,
+              assigned_to: checkedAssignees(form),
+            });
             toast(project ? 'Proyecto actualizado' : 'Proyecto creado');
             close();
             load(document.getElementById('module-root'));
