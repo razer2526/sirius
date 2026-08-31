@@ -294,6 +294,19 @@ function handle_whatsapp(string $action): void
             $st = db()->query('SELECT id, skey, label, color, sort_order, is_default FROM wa_statuses WHERE is_active = 1 ORDER BY sort_order');
             json_ok(['statuses' => $st->fetchAll()]);
         }
+
+        /** Total de no leídos visibles para el usuario — barato, para el sondeo global del sonido de notificación. */
+        case 'unread_count': {
+            $where = 'is_archived = 0 AND unread_count > 0';
+            $params = [];
+            if (!$canManage) {
+                $where .= ' AND (assigned_user_id IS NULL OR assigned_user_id = ?)';
+                $params[] = (int)$me['id'];
+            }
+            $st = db()->prepare("SELECT COALESCE(SUM(unread_count), 0) c FROM wa_conversations WHERE $where");
+            $st->execute($params);
+            json_ok(['count' => (int)$st->fetch()['c']]);
+        }
     }
 }
 

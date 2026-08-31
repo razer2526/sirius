@@ -1,8 +1,8 @@
 /** Bootstrap de la SPA: sesión → sidebar → router → asistente → service worker. */
 
 import { apiGet, setCsrf } from './api.js';
-import { icon } from './ui.js';
-import { initRouter } from './router.js';
+import { icon, toast } from './ui.js';
+import { initRouter, currentModuleKey } from './router.js';
 import { initAssistant } from './assistant.js';
 
 const state = {
@@ -36,6 +36,9 @@ async function boot() {
   initRouter(state);
   registerServiceWorker();
   keepSessionAlive();
+  if (state.modules.some((m) => m.key === 'whatsapp')) {
+    initWhatsappNotifier();
+  }
 }
 
 /**
@@ -135,6 +138,62 @@ function registerServiceWorker() {
     return;
   }
   navigator.serviceWorker.register('sw.js').catch((e) => console.warn('SW:', e.message));
+}
+
+/**
+ * Aviso sonoro de mensajes nuevos de WhatsApp, sin importar en qué módulo esté
+ * el usuario (no solo en el Dashboard o en WhatsApp) — a quien atiende el chat
+ * le sirve el aviso mientras trabaja en Admisión o Expedientes, no solo cuando
+ * ya está viendo la bandeja. Se sondea el total de no leídos (barato, sin traer
+ * conversaciones) y solo suena cuando el número sube respecto a la última vez.
+ */
+const WA_NOTIFY_POLL_MS = 20000;
+let waUnreadPrev = null;
+
+function initWhatsappNotifier() {
+  const check = async () => {
+    let count;
+    try {
+      ({ count } = await apiGet('whatsapp/unread_count'));
+    } catch {
+      return; // red intermitente o sesión expirada: se reintenta en el próximo sondeo
+    }
+    if (waUnreadPrev !== null && count > waUnreadPrev && currentModuleKey() !== 'whatsapp') {
+      playNotificationSound();
+      toast('Tienes mensajes nuevos de WhatsApp', 'info');
+    }
+    waUnreadPrev = count;
+  };
+  check();
+  setInterval(check, WA_NOTIFY_POLL_MS);
+}
+
+/**
+ * Dos tonos cortos generados con Web Audio — sin archivo de audio que empacar
+ * ni descargar. Los navegadores bloquean el audio hasta el primer gesto del
+ * usuario en la página; para cuando esto suena ya hubo uno (inició sesión), así
+ * que no hace falta gestionar ese desbloqueo aparte.
+ */
+function playNotificationSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const now = ctx.currentTime;
+    [880, 1174.66].forEach((freq, i) => {
+      const start = now + i * 0.12;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.2, start + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, start + 0.25);
+      osc.connect(gain).connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.3);
+    });
+  } catch {
+    // Web Audio no disponible o bloqueado por el navegador: se omite en silencio.
+  }
 }
 
 boot();
