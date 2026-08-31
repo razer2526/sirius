@@ -124,6 +124,10 @@ function dash_alerts(array $me): array
         $out['birthdays'] = dash_upcoming_birthdays($me);
     }
 
+    if (user_can('whatsapp')) {
+        $out['whatsapp'] = dash_whatsapp_unread($me);
+    }
+
     // Estudios membretados en borrador: sin esto, encontrarlos significa leer el
     // estado renglón por renglón en cada categoría del Membretador.
     if (user_can('apps') && (is_admin_role($me) || user_flag('apps', 'review'))) {
@@ -142,6 +146,34 @@ function dash_alerts(array $me): array
     }
 
     return $out;
+}
+
+/**
+ * Conversaciones de WhatsApp con mensajes sin leer. Visibilidad igual al propio
+ * módulo (handle_whatsapp en whatsapp.php): quien administra ve todo, el resto
+ * solo lo general/asignado a sí mismo. Se reimplementa aquí en vez de reusar ese
+ * handler porque cada handler de la API se carga por separado.
+ */
+function dash_whatsapp_unread(array $me): array
+{
+    $pdo = db();
+    $canManage = is_admin_role($me) || user_flag('whatsapp', 'manage');
+    $where = 'c.is_archived = 0 AND c.unread_count > 0';
+    $params = [];
+    if (!$canManage) {
+        $where .= ' AND (c.assigned_user_id IS NULL OR c.assigned_user_id = ?)';
+        $params[] = (int)$me['id'];
+    }
+    $st = $pdo->prepare(
+        "SELECT c.id, c.wa_id, c.contact_name, c.unread_count, c.last_message_at
+         FROM wa_conversations c WHERE $where ORDER BY c.last_message_at DESC"
+    );
+    $st->execute($params);
+    $rows = $st->fetchAll();
+    return [
+        'total'         => (int)array_sum(array_column($rows, 'unread_count')),
+        'conversations' => array_slice($rows, 0, 8),
+    ];
 }
 
 /**

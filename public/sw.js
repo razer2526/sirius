@@ -37,6 +37,8 @@ const SHELL = [
   'assets/js/modules/pizarron.js',
   'assets/js/modules/archivos.js',
   'assets/js/modules/calendario.js',
+  'assets/js/modules/whatsapp.js',
+  'assets/js/modules/whatsapp_config.js',
   'assets/js/modules/apps.js',
   'assets/js/modules/membretes.js',
   'assets/js/modules/log.js',
@@ -72,6 +74,7 @@ self.addEventListener('fetch', (e) => {
       || path.endsWith('comision.php')
       || path.endsWith('documento_expediente.php') || path.endsWith('membrete_prueba.php')
       || path.endsWith('respaldo.php') || path.endsWith('archivo.php')
+      || path.endsWith('whatsapp_webhook.php') || path.endsWith('whatsapp_media.php')
       || path.includes('/install/') || path.includes('/uploads/')) {
     return;
   }

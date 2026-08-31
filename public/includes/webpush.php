@@ -219,3 +219,31 @@ function webpush_notify(int $userId, string $title, string $body, ?string $url =
         }
     }
 }
+
+/**
+ * Como webpush_notify() pero para avisos sin un solo destinatario natural (ej.
+ * "nueva nota en el pizarrón público"): notifica a todos los usuarios con acceso
+ * al módulo (mismo criterio que user_can() — administradores, o con fila explícita
+ * en user_permissions), menos a quien disparó la acción.
+ */
+function notify_module_users(string $moduleKey, string $title, string $body, ?string $url, ?int $excludeUserId = null): void
+{
+    $st = db()->prepare(
+        "SELECT id FROM users WHERE is_active = 1 AND (
+            role IN ('administrador','developper')
+            OR id IN (SELECT user_id FROM user_permissions WHERE module_key = ?)
+        )"
+    );
+    $st->execute([$moduleKey]);
+    foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $uid) {
+        $uid = (int)$uid;
+        if ($uid === $excludeUserId) {
+            continue;
+        }
+        try {
+            webpush_notify($uid, $title, $body, $url);
+        } catch (Throwable $e) {
+            error_log('notify_module_users: ' . $e->getMessage());
+        }
+    }
+}

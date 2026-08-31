@@ -88,9 +88,11 @@ function handle_appointments(string $action): void
             $attendees = valid_attendees($b['attendees'] ?? []);
 
             $id = (int)($b['id'] ?? 0);
+            $prevAssignedUserId = null;
             if ($id > 0) {
                 $appt = find_appointment($id);
                 require_appt_access($appt, $me, $canManage);
+                $prevAssignedUserId = $appt['assigned_user_id'] !== null ? (int)$appt['assigned_user_id'] : null;
                 db()->prepare(
                     'UPDATE appointments SET title = ?, service = ?, patient_id = ?, location = ?, start_at = ?, end_at = ?,
                      assigned_user_id = ?, attendees = ?, notes = ? WHERE id = ?'
@@ -110,6 +112,14 @@ function handle_appointments(string $action): void
                 $id = (int)db()->lastInsertId();
                 log_activity('calendario', 'appointment_create', "Creó cita \"$title\"", 'appointment', $id);
             }
+            // Solo a quien se acaba de asignar (no si ya lo estaba, ni si se autoasigna).
+            if ($assignedUserId !== null && $assignedUserId !== $prevAssignedUserId && $assignedUserId !== (int)$me['id']) {
+                require_once __DIR__ . '/../../includes/webpush.php';
+                webpush_notify(
+                    $assignedUserId, 'Nueva cita asignada',
+                    "\"$title\" · " . date('d/m H:i', strtotime($start)), '#/calendario'
+                );
+            }
             appointments_sync_to_google($id);
             json_ok(['id' => $id]);
         }
@@ -120,6 +130,13 @@ function handle_appointments(string $action): void
             require_appt_access($appt, $me, $canManage);
             db()->prepare("UPDATE appointments SET status = 'cancelada' WHERE id = ?")->execute([$appt['id']]);
             log_activity('calendario', 'appointment_cancel', "Canceló cita \"{$appt['title']}\"", 'appointment', (int)$appt['id']);
+            if ($appt['assigned_user_id'] !== null && (int)$appt['assigned_user_id'] !== (int)$me['id']) {
+                require_once __DIR__ . '/../../includes/webpush.php';
+                webpush_notify(
+                    (int)$appt['assigned_user_id'], 'Cita cancelada',
+                    "\"{$appt['title']}\" fue cancelada.", '#/calendario'
+                );
+            }
             appointments_cancel_on_google($appt);
             json_ok();
         }

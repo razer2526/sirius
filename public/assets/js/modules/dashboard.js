@@ -31,7 +31,7 @@ export async function render(root, ctx) {
         </div>
       </div>
 
-      ${kpiStrip(stats.kpis)}
+      ${kpiStrip(stats.kpis, stats.alerts.whatsapp)}
 
       <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
         ${agendaCard('¿Qué tenemos para hoy?', stats.today, 'today')}
@@ -51,14 +51,17 @@ export async function render(root, ctx) {
 }
 
 /* ================= KPIs ================= */
-function kpiStrip(kpis) {
+function kpiStrip(kpis, waUnread) {
   const items = [
     ['Pacientes registrados', kpis.patients_total, 'users', 'text-indigo-600 bg-indigo-50'],
     ['Admisiones hoy', kpis.admissions_today, 'user-plus', 'text-emerald-600 bg-emerald-50'],
     ['Consultas hoy', kpis.consults_today, 'activity', 'text-orange-600 bg-orange-50'],
   ];
+  if (waUnread) {
+    items.push(['WhatsApp sin leer', waUnread.total, 'chat', 'text-teal-600 bg-teal-50']);
+  }
   return `
-    <div class="grid grid-cols-3 gap-3">
+    <div class="grid grid-cols-2 gap-3 ${items.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
       ${items.map(([label, value, iconName, cls]) => `
         <div class="flex items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:gap-3 sm:p-3.5">
           <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${cls}">${icon(iconName, 'h-4.5 w-4.5')}</span>
@@ -133,6 +136,13 @@ function priorityBadge(priority) {
 /* ================= Alertas (sin fecha concreta) ================= */
 function alertsSection(alerts) {
   const blocks = [];
+
+  if (alerts.whatsapp?.conversations?.length) {
+    blocks.push(alertBlock('chat', 'WhatsApp sin leer', 'text-teal-600 bg-teal-50', '#/whatsapp',
+      alerts.whatsapp.conversations.map((c) => rowText(
+        c.contact_name || c.wa_id, `${c.unread_count} sin leer`, 'text-teal-600'
+      ))));
+  }
 
   if (alerts.inventory) {
     const inv = alerts.inventory;

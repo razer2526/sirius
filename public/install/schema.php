@@ -527,6 +527,75 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_result_delivery_due (due_date),
                 CONSTRAINT fk_result_delivery_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'wa_statuses' => "CREATE TABLE IF NOT EXISTS wa_statuses (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                skey VARCHAR(40) NOT NULL UNIQUE,
+                label VARCHAR(60) NOT NULL,
+                color VARCHAR(20) NOT NULL DEFAULT 'slate',
+                sort_order INT UNSIGNED NOT NULL DEFAULT 0,
+                is_default TINYINT(1) NOT NULL DEFAULT 0,
+                is_active TINYINT(1) NOT NULL DEFAULT 1
+            )$suffix",
+            'wa_conversations' => "CREATE TABLE IF NOT EXISTS wa_conversations (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                wa_id VARCHAR(20) NOT NULL UNIQUE,
+                contact_name VARCHAR(150) NULL,
+                patient_id INT UNSIGNED NULL,
+                appointment_id INT UNSIGNED NULL,
+                status_id INT UNSIGNED NULL,
+                priority ENUM('baja','normal','alta') NOT NULL DEFAULT 'normal',
+                assigned_user_id INT UNSIGNED NULL,
+                last_inbound_at DATETIME NULL,
+                last_message_at DATETIME NULL,
+                unread_count INT UNSIGNED NOT NULL DEFAULT 0,
+                is_archived TINYINT(1) NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_waconv_status (status_id),
+                INDEX idx_waconv_assigned (assigned_user_id),
+                INDEX idx_waconv_patient (patient_id),
+                CONSTRAINT fk_waconv_patient FOREIGN KEY (patient_id) REFERENCES patients(id) ON DELETE SET NULL,
+                CONSTRAINT fk_waconv_appointment FOREIGN KEY (appointment_id) REFERENCES appointments(id) ON DELETE SET NULL,
+                CONSTRAINT fk_waconv_status FOREIGN KEY (status_id) REFERENCES wa_statuses(id) ON DELETE SET NULL,
+                CONSTRAINT fk_waconv_assigned FOREIGN KEY (assigned_user_id) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'wa_messages' => "CREATE TABLE IF NOT EXISTS wa_messages (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                conversation_id INT UNSIGNED NOT NULL,
+                direction ENUM('in','out') NOT NULL,
+                wa_message_id VARCHAR(100) NULL UNIQUE,
+                msg_type VARCHAR(20) NOT NULL DEFAULT 'text',
+                body TEXT NULL,
+                media_id VARCHAR(150) NULL,
+                media_mime VARCHAR(100) NULL,
+                template_name VARCHAR(100) NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'received',
+                error TEXT NULL,
+                sent_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_wamsg_conversation (conversation_id, created_at),
+                CONSTRAINT fk_wamsg_conversation FOREIGN KEY (conversation_id) REFERENCES wa_conversations(id) ON DELETE CASCADE,
+                CONSTRAINT fk_wamsg_sender FOREIGN KEY (sent_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'wa_quick_replies' => "CREATE TABLE IF NOT EXISTS wa_quick_replies (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                title VARCHAR(150) NOT NULL,
+                body TEXT NOT NULL,
+                is_active TINYINT(1) NOT NULL DEFAULT 1,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_waqr_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'wa_auto_messages' => "CREATE TABLE IF NOT EXISTS wa_auto_messages (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                type VARCHAR(30) NOT NULL UNIQUE,
+                is_active TINYINT(1) NOT NULL DEFAULT 0,
+                body TEXT NULL,
+                schedule TEXT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )$suffix",
             'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 user_id INT UNSIGNED NOT NULL,
@@ -960,6 +1029,64 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'wa_statuses' => "CREATE TABLE IF NOT EXISTS wa_statuses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                skey TEXT NOT NULL UNIQUE,
+                label TEXT NOT NULL,
+                color TEXT NOT NULL DEFAULT 'slate',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                is_default INTEGER NOT NULL DEFAULT 0,
+                is_active INTEGER NOT NULL DEFAULT 1
+            )",
+            'wa_conversations' => "CREATE TABLE IF NOT EXISTS wa_conversations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                wa_id TEXT NOT NULL UNIQUE,
+                contact_name TEXT NULL,
+                patient_id INTEGER NULL REFERENCES patients(id) ON DELETE SET NULL,
+                appointment_id INTEGER NULL REFERENCES appointments(id) ON DELETE SET NULL,
+                status_id INTEGER NULL REFERENCES wa_statuses(id) ON DELETE SET NULL,
+                priority TEXT NOT NULL DEFAULT 'normal',
+                assigned_user_id INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                last_inbound_at TEXT NULL,
+                last_message_at TEXT NULL,
+                unread_count INTEGER NOT NULL DEFAULT 0,
+                is_archived INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'wa_messages' => "CREATE TABLE IF NOT EXISTS wa_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                conversation_id INTEGER NOT NULL REFERENCES wa_conversations(id) ON DELETE CASCADE,
+                direction TEXT NOT NULL,
+                wa_message_id TEXT NULL UNIQUE,
+                msg_type TEXT NOT NULL DEFAULT 'text',
+                body TEXT NULL,
+                media_id TEXT NULL,
+                media_mime TEXT NULL,
+                template_name TEXT NULL,
+                status TEXT NOT NULL DEFAULT 'received',
+                error TEXT NULL,
+                sent_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'wa_quick_replies' => "CREATE TABLE IF NOT EXISTS wa_quick_replies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                body TEXT NOT NULL,
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'wa_auto_messages' => "CREATE TABLE IF NOT EXISTS wa_auto_messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                type TEXT NOT NULL UNIQUE,
+                is_active INTEGER NOT NULL DEFAULT 0,
+                body TEXT NULL,
+                schedule TEXT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
             'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -1024,6 +1151,10 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cstatement_party ON commission_statements (party_type, party_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_waconv_status ON wa_conversations (status_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_waconv_assigned ON wa_conversations (assigned_user_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_waconv_patient ON wa_conversations (patient_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_wamsg_conversation ON wa_messages (conversation_id, created_at)');
         $log[] = 'Índices SQLite: OK';
     }
 
@@ -1060,6 +1191,14 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE episodes ADD COLUMN client_uuid {$varchar(64)}",
         "ALTER TABLE patient_documents ADD COLUMN category {$varchar(60)}",
         "ALTER TABLE patient_documents ADD COLUMN document_date " . ($isMysql ? 'DATE NULL' : 'TEXT NULL'),
+        "ALTER TABLE wa_messages ADD COLUMN media_path {$varchar(80)}",
+        "ALTER TABLE wa_messages ADD COLUMN media_filename {$varchar(200)}",
+        "ALTER TABLE wa_messages ADD COLUMN media_size " . ($isMysql ? 'BIGINT UNSIGNED NULL' : 'INTEGER NULL'),
+        // Reacciones: se guardan por separado (paciente y agente pueden reaccionar
+        // cada uno al mismo mensaje) en vez de como fila nueva — WhatsApp las trata
+        // como una propiedad del mensaje original, no como un mensaje aparte.
+        "ALTER TABLE wa_messages ADD COLUMN reaction_contact {$varchar(16)}",
+        "ALTER TABLE wa_messages ADD COLUMN reaction_agent {$varchar(16)}",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
@@ -1145,12 +1284,46 @@ function sirius_seed_admin(PDO $pdo, string $username, string $password, string 
     return ['created' => true, 'log' => ["Usuario administrador \"$username\" creado"]];
 }
 
+/** Siembra el catálogo de estatus y los mensajes automáticos de WhatsApp si no existen ya. */
+function sirius_seed_whatsapp(PDO $pdo): array
+{
+    $statuses = [
+        ['pendiente_responder', 'Pendiente de responder', 'amber', 1, 1],
+        ['cita_realizada', 'Cita realizada', 'blue', 2, 0],
+        ['resultados_enviados', 'Resultados enviados', 'emerald', 3, 0],
+    ];
+    $checkStatus = $pdo->prepare('SELECT id FROM wa_statuses WHERE skey = ?');
+    $insStatus = $pdo->prepare('INSERT INTO wa_statuses (skey, label, color, sort_order, is_default) VALUES (?, ?, ?, ?, ?)');
+    foreach ($statuses as [$skey, $label, $color, $order, $isDefault]) {
+        $checkStatus->execute([$skey]);
+        if (!$checkStatus->fetch()) {
+            $insStatus->execute([$skey, $label, $color, $order, $isDefault]);
+        }
+    }
+
+    $autoDefaults = [
+        'welcome' => 'Gracias por escribirnos. En breve un miembro de nuestro equipo te atenderá.',
+        'away'    => 'Gracias por tu mensaje. Estamos fuera de horario de atención; te responderemos en cuanto abramos.',
+    ];
+    $checkAuto = $pdo->prepare('SELECT id FROM wa_auto_messages WHERE type = ?');
+    $insAuto = $pdo->prepare('INSERT INTO wa_auto_messages (type, is_active, body) VALUES (?, 0, ?)');
+    foreach ($autoDefaults as $type => $body) {
+        $checkAuto->execute([$type]);
+        if (!$checkAuto->fetch()) {
+            $insAuto->execute([$type, $body]);
+        }
+    }
+
+    return ['WhatsApp: catálogo de estatus y mensajes automáticos sembrados'];
+}
+
 /** Crea tablas + migraciones + settings por defecto. No toca usuarios. */
 function sirius_install_schema(PDO $pdo, bool $isMysql, string $clinicName = 'Laboratorio y Clínica Bosques Polanco'): array
 {
     return array_merge(
         sirius_schema_tables($pdo, $isMysql),
         sirius_schema_migrations($pdo, $isMysql),
-        sirius_seed_settings($pdo, $clinicName)
+        sirius_seed_settings($pdo, $clinicName),
+        sirius_seed_whatsapp($pdo)
     );
 }

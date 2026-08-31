@@ -31,6 +31,7 @@ function renderGrid(root) {
         ${card('#/api/ia', 'Asistente de IA', 'Gemini, ChatGPT o Claude: proveedor, modelo, instrucciones y llave', 'sparkles', 'bg-violet-100 text-violet-700')}
         ${card('#/api/calendario', 'Calendario', 'Vinculación con Google Calendar', 'calendar', 'bg-sky-100 text-sky-700')}
         ${card('#/api/correo', 'Correo', 'Envío de fichas de identificación a los pacientes', 'send', 'bg-emerald-100 text-emerald-700')}
+        ${card('#/whatsapp_config', 'WhatsApp', 'Credenciales de la Cloud API, mensajes automáticos y respuestas rápidas', 'chat', 'bg-teal-100 text-teal-700')}
       </div>
       <div id="api-state" class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 text-sm text-slate-500">${spinner()}</div>
     </div>`;

@@ -56,9 +56,14 @@ async function renderMonth(root, ctx, year, month) {
   const lastDay = new Date(year, month, 0).getDate();
   const to = `${year}-${pad2(month)}-${pad2(lastDay)}`;
 
-  const [{ appointments, can_manage }, { users: assignableUsers }] = await Promise.all([
+  // Las tareas con fecha límite se muestran aquí de solo lectura (Tareas sigue
+  // siendo la única fuente de verdad); se omiten en silencio si el usuario no
+  // tiene acceso a ese módulo, en vez de tronar todo el Calendario.
+  const hasTareas = ctx.modules.some((m) => m.key === 'tareas');
+  const [{ appointments, can_manage }, { users: assignableUsers }, dueTasks] = await Promise.all([
     apiGet('appointments/list', { from, to }),
     apiGet('episodes/assignable_users'),
+    hasTareas ? apiGet('tasks/due_in_range', { from, to }).then((r) => r.tasks) : Promise.resolve([]),
   ]);
 
   const byDay = {};
@@ -67,6 +72,12 @@ async function renderMonth(root, ctx, year, month) {
     (byDay[day] ||= []).push(a);
   }
   for (const day in byDay) byDay[day].sort((a, b) => a.start_at.localeCompare(b.start_at));
+
+  const tasksByDay = {};
+  for (const t of dueTasks) {
+    const day = t.due_date.slice(8, 10);
+    (tasksByDay[day] ||= []).push(t);
+  }
 
   const firstWeekday = new Date(year, month - 1, 1).getDay();
   const cells = [];
@@ -82,13 +93,21 @@ async function renderMonth(root, ctx, year, month) {
   const dayCellHtml = (d) => {
     if (!d) return `<div class="min-h-[100px] rounded-lg bg-slate-50/60 sm:min-h-[110px]"></div>`;
     const dateStr = `${year}-${pad2(month)}-${pad2(d)}`;
-    const items = byDay[pad2(d)] || [];
-    const chips = items.slice(0, 4).map((a) => `
+    const appts = byDay[pad2(d)] || [];
+    const dayTasks = tasksByDay[pad2(d)] || [];
+    const apptChipsHtml = appts.map((a) => `
       <button type="button" data-open-appt="${a.id}" class="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] leading-tight hover:bg-indigo-50">
         <span class="h-1.5 w-1.5 shrink-0 rounded-full ${SERVICE_DOT[a.service] || SERVICE_DOT.otro}"></span>
         <span class="truncate font-medium text-slate-700">${a.start_at.slice(11, 16)} ${escapeHtml(a.title)}</span>
-      </button>`).join('');
-    const overflow = items.length > 4 ? `<p class="px-1.5 text-[11px] text-slate-400">+${items.length - 4} más</p>` : '';
+      </button>`);
+    const taskChipsHtml = dayTasks.map((t) => `
+      <a href="#/tareas" data-task-chip class="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-[11px] leading-tight hover:bg-slate-100">
+        ${icon('check-square', `h-3 w-3 shrink-0 ${t.status === 'completada' ? 'text-emerald-500' : 'text-slate-400'}`)}
+        <span class="truncate ${t.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-600'}">${escapeHtml(t.title)}</span>
+      </a>`);
+    const allChips = [...apptChipsHtml, ...taskChipsHtml];
+    const chips = allChips.slice(0, 4).join('');
+    const overflow = allChips.length > 4 ? `<p class="px-1.5 text-[11px] text-slate-400">+${allChips.length - 4} más</p>` : '';
     return `
       <div data-day-cell="${dateStr}" class="group flex min-h-[100px] flex-col gap-0.5 rounded-lg p-1 ring-1 ring-slate-100 hover:ring-indigo-200 sm:min-h-[110px]">
         <div class="flex items-center justify-between px-0.5">
@@ -148,7 +167,7 @@ async function renderMonth(root, ctx, year, month) {
   });
   root.querySelectorAll('[data-day-cell]').forEach((cellEl) => {
     cellEl.addEventListener('click', (e) => {
-      if (e.target.closest('[data-open-appt]') || e.target.closest('[data-new-appt]')) return;
+      if (e.target.closest('[data-open-appt]') || e.target.closest('[data-new-appt]') || e.target.closest('[data-task-chip]')) return;
       openApptModal({ assignableUsers, canManage: can_manage, meId, reload, prefillDate: cellEl.dataset.dayCell });
     });
   });
