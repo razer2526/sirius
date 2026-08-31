@@ -48,6 +48,8 @@ $routes = [
     'commissions'   => ['commissions.php', 'apps'],
     'lab_templates' => ['lab_templates.php', 'plantillas_estudios'],
     'mail'          => ['mail.php', 'api'],
+    'whatsapp'        => ['whatsapp.php', 'whatsapp'],
+    'whatsapp_config' => ['whatsapp_config.php', 'whatsapp_config'],
 ];
 
 $r = (string)($_GET['r'] ?? '');

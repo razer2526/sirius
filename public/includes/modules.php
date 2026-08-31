@@ -76,6 +76,14 @@ return [
             'manage' => 'Gestionar y cancelar citas de cualquier usuario',
         ],
     ],
+    'whatsapp' => [
+        'label' => 'WhatsApp',
+        'icon'  => 'chat',
+        'phase' => 2,
+        'flags' => [
+            'manage' => 'Ver y reasignar todas las conversaciones',
+        ],
+    ],
     'apps' => [
         'label' => 'Apps',
         'icon'  => 'grid',
@@ -133,6 +141,12 @@ return [
     'plantillas_estudios' => [
         'label' => 'Plantillas de Estudios',
         'icon'  => 'clipboard',
+        'phase' => 2,
+        'group' => 'admin_tools',
+    ],
+    'whatsapp_config' => [
+        'label' => 'WhatsApp: Configuración',
+        'icon'  => 'settings',
         'phase' => 2,
         'group' => 'admin_tools',
     ],
