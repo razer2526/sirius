@@ -26,6 +26,7 @@ let pollTimer = null;
 // El refresco periódico repinta el panel de chat entero (incluido el textarea);
 // sin esto, un borrador sin enviar se perdería solo por dejarlo un rato sin mandar.
 let drafts = {};
+let pendingFiles = {}; // conversation id -> File elegido para adjuntar, sin enviar todavía
 
 export async function render(root, context) {
   ctx = context;
@@ -222,12 +223,37 @@ function composerHtml() {
   return `
     <div class="relative">
       <div id="wa-qr-panel" class="absolute bottom-full left-0 mb-2 hidden max-h-56 w-full overflow-y-auto rounded-lg bg-white p-1 shadow-lg ring-1 ring-slate-200"></div>
+      <div id="wa-attach-preview"></div>
       <div class="flex items-end gap-2">
         <button id="wa-qr-toggle" type="button" title="Respuestas rápidas" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">${icon('flag', 'h-4 w-4')}</button>
+        <button id="wa-attach-btn" type="button" title="Adjuntar archivo" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">${icon('paperclip', 'h-4 w-4')}</button>
+        <input id="wa-file" type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" class="hidden">
         <textarea id="wa-body" rows="2" placeholder="Escribe un mensaje…" class="flex-1 rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"></textarea>
         <button id="wa-send" type="button" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-500">${icon('send', 'h-4 w-4')}</button>
       </div>
     </div>`;
+}
+
+function attachPreviewHtml(file) {
+  const isImage = file.type.startsWith('image/');
+  const thumb = isImage
+    ? `<img src="${URL.createObjectURL(file)}" class="h-10 w-10 rounded object-cover">`
+    : `<span class="flex h-10 w-10 items-center justify-center rounded bg-slate-200 text-slate-500">${icon('file-text', 'h-5 w-5')}</span>`;
+  return `
+    <div class="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs ring-1 ring-inset ring-slate-200">
+      ${thumb}
+      <div class="min-w-0 flex-1">
+        <p class="truncate font-medium text-slate-700">${escapeHtml(file.name)}</p>
+        <p class="text-slate-400">${fmtBytes(file.size)}</p>
+      </div>
+      <button id="wa-attach-remove" type="button" class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-400 hover:bg-slate-200 hover:text-slate-600">${icon('x', 'h-3.5 w-3.5')}</button>
+    </div>`;
+}
+
+function fmtBytes(n) {
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
+  return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function windowClosedHtml() {
@@ -255,13 +281,50 @@ function wireComposer(el) {
   }));
   el.querySelector('#wa-qr-toggle').addEventListener('click', () => qrPanel.classList.toggle('hidden'));
 
+  const previewBox = el.querySelector('#wa-attach-preview');
+  const fileInput = el.querySelector('#wa-file');
+  const renderPreview = () => {
+    const f = pendingFiles[activeConv.id];
+    previewBox.innerHTML = f ? attachPreviewHtml(f) : '';
+    previewBox.querySelector('#wa-attach-remove')?.addEventListener('click', () => {
+      delete pendingFiles[activeConv.id];
+      fileInput.value = '';
+      renderPreview();
+    });
+  };
+  renderPreview();
+  el.querySelector('#wa-attach-btn').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) {
+      pendingFiles[activeConv.id] = fileInput.files[0];
+      renderPreview();
+    }
+  });
+
   const send = async () => {
     const body = textarea.value.trim();
-    if (!body || !activeConv) return;
+    const file = pendingFiles[activeConv.id];
+    if (!body && !file) return;
     const btn = el.querySelector('#wa-send');
     btn.disabled = true;
     try {
-      await apiPost('whatsapp/send', { conversation_id: activeConv.id, body });
+      if (file) {
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('conversation_id', activeConv.id);
+        fd.append('caption', body);
+        const res = await fetch('api/index.php?r=whatsapp/send_media', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
+          body: fd,
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error);
+        delete pendingFiles[activeConv.id];
+        fileInput.value = '';
+      } else {
+        await apiPost('whatsapp/send', { conversation_id: activeConv.id, body });
+      }
       delete drafts[activeConv.id];
       await loadMessages(false);
       await refresh();
@@ -288,13 +351,51 @@ function paintMessages(el) {
     return `
       <div class="flex ${out ? 'justify-end' : 'justify-start'}">
         <div class="max-w-[75%] rounded-2xl px-3 py-2 text-sm ${out ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800'}">
-          ${m.msg_type !== 'text' ? `<p class="mb-1 text-[11px] uppercase tracking-wide opacity-70">${escapeHtml(m.msg_type)}</p>` : ''}
-          <p class="whitespace-pre-wrap">${escapeHtml(m.body || '(sin texto)')}</p>
+          ${mediaBubbleHtml(m)}
           <p class="mt-1 text-[11px] opacity-70">${fmtDateTime(m.created_at)}${auto ? ' · automático' : (out && m.sent_by_name ? ' · ' + escapeHtml(m.sent_by_name) : '')}${out ? ' · ' + statusLabel(m.status) : ''}</p>
         </div>
       </div>`;
   }).join('');
   el.scrollTop = el.scrollHeight;
+}
+
+const MEDIA_TYPES = ['image', 'video', 'audio', 'document'];
+
+function mediaBubbleHtml(m) {
+  const caption = m.body
+    ? `<p class="${MEDIA_TYPES.includes(m.msg_type) ? 'mt-1' : ''} whitespace-pre-wrap">${escapeHtml(m.body)}</p>`
+    : (MEDIA_TYPES.includes(m.msg_type) ? '' : `<p class="whitespace-pre-wrap">(sin texto)</p>`);
+
+  if (!MEDIA_TYPES.includes(m.msg_type)) {
+    // Tipos que Sirius no compone en pantalla (sticker, ubicación, botones…):
+    // se guardan igual en la bandeja, solo no hay una vista especial para ellos.
+    if (m.msg_type !== 'text') {
+      return `<p class="mb-1 text-[11px] uppercase tracking-wide opacity-70">${escapeHtml(m.msg_type)}</p>${caption}`;
+    }
+    return caption;
+  }
+
+  if (!m.media_url) {
+    return `<p class="text-xs italic opacity-70">No se pudo descargar el adjunto (${escapeHtml(m.msg_type)}).</p>${caption}`;
+  }
+
+  let media;
+  if (m.msg_type === 'image') {
+    media = `<a href="${m.media_url}" target="_blank" rel="noopener"><img src="${m.media_url}" class="max-h-64 max-w-full rounded-lg object-cover"></a>`;
+  } else if (m.msg_type === 'video') {
+    media = `<video controls class="max-h-64 max-w-full rounded-lg" src="${m.media_url}"></video>`;
+  } else if (m.msg_type === 'audio') {
+    media = `<audio controls class="max-w-full" src="${m.media_url}"></audio>`;
+  } else {
+    media = `
+      <a href="${m.media_url}&download=1" target="_blank" rel="noopener"
+         class="flex items-center gap-2 rounded-lg bg-black/5 px-3 py-2 hover:bg-black/10">
+        ${icon('file-text', 'h-5 w-5 shrink-0')}
+        <span class="min-w-0 flex-1 truncate text-sm font-medium">${escapeHtml(m.media_filename || 'Documento')}</span>
+        ${m.media_size ? `<span class="shrink-0 text-xs opacity-70">${fmtBytes(m.media_size)}</span>` : ''}
+      </a>`;
+  }
+  return media + caption;
 }
 
 function statusLabel(s) {

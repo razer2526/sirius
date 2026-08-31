@@ -74,7 +74,7 @@ self.addEventListener('fetch', (e) => {
       || path.endsWith('comision.php')
       || path.endsWith('documento_expediente.php') || path.endsWith('membrete_prueba.php')
       || path.endsWith('respaldo.php') || path.endsWith('archivo.php')
-      || path.endsWith('whatsapp_webhook.php')
+      || path.endsWith('whatsapp_webhook.php') || path.endsWith('whatsapp_media.php')
       || path.includes('/install/') || path.includes('/uploads/')) {
     return;
   }

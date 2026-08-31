@@ -88,23 +88,14 @@ function wa_is_connected(): bool
 }
 
 /**
- * Petición HTTP a la Graph API de Meta. $path es relativo al phone_number_id
- * configurado (ej. '/messages'); pasar $path = '' apunta al propio recurso del
- * número (útil para probar la conexión). Devuelve [código, cuerpo decodificado].
+ * Petición HTTP de bajo nivel, compartida por todas las llamadas a Meta (mensajes,
+ * subida/descarga de media). $body puede ser un string (JSON o multipart ya armado)
+ * o un CURLFile-aware array (para multipart, curl lo arma solo). Devuelve
+ * [código, cuerpo crudo] — el llamador decide si lo decodifica como JSON o lo
+ * guarda como binario (descarga de media).
  */
-function wa_api_request(string $method, string $path, ?array $body = null, int $timeout = 30): array
+function wa_http(string $method, string $url, array $headers, $body, int $timeout = 30): array
 {
-    $cfg = wa_config();
-    if (!wa_is_connected()) {
-        throw new RuntimeException('WhatsApp no está configurado: falta el token o el ID del número.');
-    }
-    $url = WA_GRAPH_ENDPOINT . '/' . $cfg['api_version'] . '/' . $cfg['phone_number_id'] . $path;
-    $headers = ['Authorization: Bearer ' . $cfg['access_token']];
-    $payload = $body === null ? null : json_encode($body, JSON_UNESCAPED_UNICODE);
-    if ($payload !== null) {
-        $headers[] = 'Content-Type: application/json';
-    }
-
     if (function_exists('curl_init')) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -117,8 +108,8 @@ function wa_api_request(string $method, string $path, ?array $body = null, int $
         if ($ca !== '' && is_file($ca)) {
             curl_setopt($ch, CURLOPT_CAINFO, $ca);
         }
-        if ($payload !== null) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+        if ($body !== null) {
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
         }
         $raw = curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -135,26 +126,62 @@ function wa_api_request(string $method, string $path, ?array $body = null, int $
             }
             throw new RuntimeException('No se pudo conectar con WhatsApp: ' . $err);
         }
-    } else {
-        // Respaldo si cURL no está compilado en el servidor
-        $ctx = stream_context_create(['http' => [
-            'method'        => $method,
-            'header'        => implode("\r\n", $headers),
-            'content'       => $payload,
-            'timeout'       => $timeout,
-            'ignore_errors' => true,
-        ]]);
-        $raw = @file_get_contents($url, false, $ctx);
-        $code = 0;
-        foreach ($http_response_header ?? [] as $h) {
-            if (preg_match('#^HTTP/\S+\s+(\d+)#', $h, $m)) {
-                $code = (int)$m[1];
-            }
-        }
-        if ($raw === false) {
-            throw new RuntimeException('No se pudo conectar con WhatsApp.');
+        return [$code, $raw];
+    }
+
+    // Respaldo si cURL no está compilado en el servidor. No soporta multipart
+    // (CURLFile), así que la subida de media solo funciona con cURL disponible —
+    // en HostGator y prácticamente cualquier hosting PHP moderno lo está.
+    if (is_array($body)) {
+        throw new RuntimeException('Subir archivos a WhatsApp requiere la extensión cURL de PHP.');
+    }
+    $ctx = stream_context_create(['http' => [
+        'method'        => $method,
+        'header'        => implode("\r\n", $headers),
+        'content'       => $body,
+        'timeout'       => $timeout,
+        'ignore_errors' => true,
+    ]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    $code = 0;
+    foreach ($http_response_header ?? [] as $h) {
+        if (preg_match('#^HTTP/\S+\s+(\d+)#', $h, $m)) {
+            $code = (int)$m[1];
         }
     }
+    if ($raw === false) {
+        throw new RuntimeException('No se pudo conectar con WhatsApp.');
+    }
+    return [$code, $raw];
+}
+
+function wa_graph_url(string $path): string
+{
+    return WA_GRAPH_ENDPOINT . '/' . wa_config()['api_version'] . $path;
+}
+
+function wa_auth_header(): string
+{
+    return 'Authorization: Bearer ' . wa_config()['access_token'];
+}
+
+/**
+ * Petición JSON a la Graph API de Meta. $path es relativo al phone_number_id
+ * configurado (ej. '/messages'); pasar $path = '' apunta al propio recurso del
+ * número (útil para probar la conexión). Devuelve [código, cuerpo decodificado].
+ */
+function wa_api_request(string $method, string $path, ?array $body = null, int $timeout = 30): array
+{
+    if (!wa_is_connected()) {
+        throw new RuntimeException('WhatsApp no está configurado: falta el token o el ID del número.');
+    }
+    $url = wa_graph_url('/' . wa_config()['phone_number_id'] . $path);
+    $headers = [wa_auth_header()];
+    $payload = $body === null ? null : json_encode($body, JSON_UNESCAPED_UNICODE);
+    if ($payload !== null) {
+        $headers[] = 'Content-Type: application/json';
+    }
+    [$code, $raw] = wa_http($method, $url, $headers, $payload, $timeout);
     return [$code, json_decode($raw, true) ?: []];
 }
 
@@ -182,6 +209,161 @@ function wa_send_text(string $waId, string $body, ?int $sentByUserId, int $conve
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $st->execute([$conversationId, 'out', $waMessageId, 'text', $body, $ok ? 'sent' : 'failed', $error, $sentByUserId, $now]);
+
+    if ($ok) {
+        db()->prepare('UPDATE wa_conversations SET last_message_at = ? WHERE id = ?')
+            ->execute([$now, $conversationId]);
+    }
+
+    return ['ok' => $ok, 'wa_message_id' => $waMessageId, 'response' => $resp];
+}
+
+/* ---------- Adjuntos (fotos, video, audio, documentos) ---------- */
+
+/** Directorio de adjuntos de WhatsApp, protegido por .htaccess — se sirven solo por whatsapp_media.php. */
+function wa_media_dir(): string
+{
+    $dir = __DIR__ . '/../../uploads/whatsapp/';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
+/** Categoría de mensaje de WhatsApp según el MIME (Meta valida el detalle a su vez). */
+function wa_media_type_for_mime(string $mime): string
+{
+    if (str_starts_with($mime, 'image/')) {
+        return 'image';
+    }
+    if (str_starts_with($mime, 'video/')) {
+        return 'video';
+    }
+    if (str_starts_with($mime, 'audio/')) {
+        return 'audio';
+    }
+    return 'document';
+}
+
+/** Límites reales de WhatsApp Cloud API por tipo de adjunto. */
+function wa_media_max_bytes(string $type): int
+{
+    return match ($type) {
+        'image' => 5 * 1024 * 1024,
+        'video', 'audio' => 16 * 1024 * 1024,
+        default => 100 * 1024 * 1024,
+    };
+}
+
+/** Sube un archivo local a Meta y devuelve su media_id, para referenciarlo al enviar el mensaje. */
+function wa_upload_media(string $localPath, string $mime): string
+{
+    if (!wa_is_connected()) {
+        throw new RuntimeException('WhatsApp no está configurado: falta el token o el ID del número.');
+    }
+    $url = wa_graph_url('/' . wa_config()['phone_number_id'] . '/media');
+    $body = [
+        'messaging_product' => 'whatsapp',
+        'type'              => $mime,
+        'file'              => new CURLFile($localPath, $mime),
+    ];
+    [$code, $raw] = wa_http('POST', $url, [wa_auth_header()], $body, 60);
+    $resp = json_decode($raw, true) ?: [];
+    if ($code < 200 || $code >= 300 || empty($resp['id'])) {
+        throw new RuntimeException('Meta rechazó el archivo: ' . json_encode($resp, JSON_UNESCAPED_UNICODE));
+    }
+    return $resp['id'];
+}
+
+/** Resuelve la URL temporal (expira en minutos) de un media_id de Meta. */
+function wa_fetch_media_meta(string $mediaId): array
+{
+    [$code, $raw] = wa_http('GET', wa_graph_url('/' . $mediaId), [wa_auth_header()], null, 30);
+    $resp = json_decode($raw, true) ?: [];
+    if ($code < 200 || $code >= 300 || empty($resp['url'])) {
+        throw new RuntimeException('No se pudo obtener la URL del archivo en Meta.');
+    }
+    return $resp;
+}
+
+/**
+ * Descarga un adjunto entrante y lo guarda en local. Las URLs de Meta expiran a
+ * los pocos minutos, así que esto debe correr en cuanto llega el webhook, no
+ * cuando alguien abra la conversación — de ahí que viva aparte de wa_send_media
+ * y se llame directo desde whatsapp_webhook.php. Nunca lanza: si falla, el mensaje
+ * igual se guarda (con media_id pero sin archivo local) y la bandeja lo muestra
+ * como "no se pudo descargar" en vez de tronar la recepción del webhook.
+ */
+function wa_download_media(string $mediaId, ?string $suggestedFilename = null): ?array
+{
+    try {
+        $meta = wa_fetch_media_meta($mediaId);
+        [$code, $bytes] = wa_http('GET', $meta['url'], [wa_auth_header()], null, 60);
+        if ($code < 200 || $code >= 300 || $bytes === '' || $bytes === false) {
+            throw new RuntimeException('No se pudo descargar el archivo de Meta.');
+        }
+        $storedName = bin2hex(random_bytes(20));
+        if (file_put_contents(wa_media_dir() . $storedName, $bytes) === false) {
+            throw new RuntimeException('No se pudo guardar el archivo en el servidor.');
+        }
+        @chmod(wa_media_dir() . $storedName, 0644);
+        return [
+            'stored_name' => $storedName,
+            'mime'        => $meta['mime_type'] ?? 'application/octet-stream',
+            'size'        => (int)($meta['file_size'] ?? strlen($bytes)),
+            'filename'    => $suggestedFilename,
+        ];
+    } catch (Throwable $e) {
+        error_log('wa_download_media #' . $mediaId . ': ' . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Envía un mensaje de adjunto ya subido a Meta (ver wa_upload_media) y archiva el
+ * mensaje saliente con el archivo local, para mostrarlo en el chat sin depender de
+ * la URL de Meta (que expira a los pocos minutos).
+ */
+function wa_send_media(
+    string $waId,
+    string $type,
+    string $metaMediaId,
+    ?string $caption,
+    ?int $sentByUserId,
+    int $conversationId,
+    string $storedName,
+    string $mime,
+    int $size,
+    ?string $filename
+): array {
+    $media = ['id' => $metaMediaId];
+    // Audio y sticker no admiten caption en la API de Meta.
+    if ($caption !== null && $caption !== '' && in_array($type, ['image', 'video', 'document'], true)) {
+        $media['caption'] = $caption;
+    }
+    if ($type === 'document' && $filename) {
+        $media['filename'] = $filename;
+    }
+    [$code, $resp] = wa_api_request('POST', '/messages', [
+        'messaging_product' => 'whatsapp',
+        'to'                => $waId,
+        'type'              => $type,
+        $type               => $media,
+    ]);
+
+    $ok = $code >= 200 && $code < 300;
+    $waMessageId = $resp['messages'][0]['id'] ?? null;
+    $error = $ok ? null : json_encode($resp, JSON_UNESCAPED_UNICODE);
+    $now = date('Y-m-d H:i:s');
+
+    db()->prepare(
+        'INSERT INTO wa_messages
+            (conversation_id, direction, wa_message_id, msg_type, body, media_id, media_mime, media_path, media_filename, media_size, status, error, sent_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )->execute([
+        $conversationId, 'out', $waMessageId, $type, ($caption !== '' ? $caption : null),
+        $metaMediaId, $mime, $storedName, $filename, $size, $ok ? 'sent' : 'failed', $error, $sentByUserId, $now,
+    ]);
 
     if ($ok) {
         db()->prepare('UPDATE wa_conversations SET last_message_at = ? WHERE id = ?')

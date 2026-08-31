@@ -119,6 +119,71 @@ function handle_whatsapp(string $action): void
             json_ok();
         }
 
+        /**
+         * Adjunta y envía un archivo (foto, video, audio o documento). Multipart,
+         * no JSON — se sube primero a disco (registro propio, sin depender de que
+         * Meta lo conserve) y luego a Meta para obtener el media_id con el que se
+         * arma el mensaje.
+         */
+        case 'send_media': {
+            $conv = find_wa_conversation((int)($_POST['conversation_id'] ?? 0));
+            require_wa_access($conv, $me, $canManage);
+            if (!wa_within_session_window($conv)) {
+                json_error(
+                    'Han pasado más de 24h desde el último mensaje del cliente. Solo se pueden enviar plantillas '
+                    . 'aprobadas por Meta desde Meta Business Manager; espera a que el cliente vuelva a escribir.',
+                    422
+                );
+            }
+            if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                if (!empty($_FILES['file']) && in_array($_FILES['file']['error'], [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true)) {
+                    json_error('El archivo es demasiado grande para este servidor', 422);
+                }
+                json_error('No se recibió el archivo', 422);
+            }
+            $file = $_FILES['file'];
+            if (!is_uploaded_file($file['tmp_name'])) {
+                json_error('Subida no válida', 422);
+            }
+            $mime = @mime_content_type($file['tmp_name']) ?: 'application/octet-stream';
+            $type = wa_media_type_for_mime($mime);
+            $maxBytes = wa_media_max_bytes($type);
+            if ($file['size'] > $maxBytes) {
+                json_error('El archivo supera el límite de ' . (int)($maxBytes / 1024 / 1024) . ' MB para ' . $type, 422);
+            }
+
+            $storedName = bin2hex(random_bytes(20));
+            $localPath = wa_media_dir() . $storedName;
+            if (!move_uploaded_file($file['tmp_name'], $localPath)) {
+                json_error('No se pudo guardar el archivo', 500);
+            }
+            @chmod($localPath, 0644);
+            $filename = $type === 'document' ? (mb_substr(trim((string)($file['name'] ?? '')), 0, 200) ?: 'documento') : null;
+            $caption = trim((string)($_POST['caption'] ?? ''));
+
+            try {
+                $metaMediaId = wa_upload_media($localPath, $mime);
+            } catch (Throwable $e) {
+                @unlink($localPath);
+                json_error($e->getMessage(), 502);
+            }
+
+            $result = wa_send_media(
+                $conv['wa_id'], $type, $metaMediaId, $caption, (int)$me['id'], $conv['id'],
+                $storedName, $mime, (int)$file['size'], $filename
+            );
+            if (!$result['ok']) {
+                json_error('WhatsApp rechazó el archivo: ' . json_encode($result['response'], JSON_UNESCAPED_UNICODE), 502);
+            }
+            // Audio no admite caption en la API de Meta: si el agente escribió algo,
+            // se manda aparte como texto normal en vez de perderlo en silencio.
+            if ($type === 'audio' && $caption !== '') {
+                wa_send_text($conv['wa_id'], $caption, (int)$me['id'], $conv['id']);
+            }
+            log_activity('whatsapp', 'message_send_media', "Envió un adjunto ($type) a " . $conv['wa_id'], 'wa_conversation', $conv['id']);
+            json_ok();
+        }
+
         case 'assign': {
             $b = request_body();
             $conv = find_wa_conversation((int)($b['id'] ?? 0));
@@ -262,5 +327,8 @@ function format_wa_message(array $m): array
     $m['id'] = (int)$m['id'];
     $m['conversation_id'] = (int)$m['conversation_id'];
     $m['sent_by'] = $m['sent_by'] !== null ? (int)$m['sent_by'] : null;
+    $m['media_size'] = $m['media_size'] !== null ? (int)$m['media_size'] : null;
+    $m['media_url'] = $m['media_path'] ? 'whatsapp_media.php?message_id=' . $m['id'] : null;
+    unset($m['media_path']); // ruta local en disco: nunca sale de la API
     return $m;
 }

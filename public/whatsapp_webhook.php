@@ -122,10 +122,20 @@ function wa_webhook_handle_inbound(array $msg, ?array $contact): void
     $mediaId = $msg[$type]['id'] ?? null;
     $mediaMime = $msg[$type]['mime_type'] ?? null;
 
+    // Las URLs de media de Meta expiran a los pocos minutos: hay que bajar el
+    // archivo ahora, no cuando alguien del equipo abra la conversación.
+    $media = ($mediaId && wa_is_connected())
+        ? wa_download_media($mediaId, $msg[$type]['filename'] ?? null)
+        : null;
+
     $pdo->prepare(
-        'INSERT INTO wa_messages (conversation_id, direction, wa_message_id, msg_type, body, media_id, media_mime, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-    )->execute([$conversationId, 'in', $msg['id'] ?? null, $type, $body, $mediaId, $mediaMime, 'received', $now]);
+        'INSERT INTO wa_messages
+            (conversation_id, direction, wa_message_id, msg_type, body, media_id, media_mime, media_path, media_filename, media_size, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    )->execute([
+        $conversationId, 'in', $msg['id'] ?? null, $type, $body, $mediaId, $mediaMime,
+        $media['stored_name'] ?? null, $media['filename'] ?? null, $media['size'] ?? null, 'received', $now,
+    ]);
 
     wa_webhook_maybe_auto_reply($conversationId, $waId, $isNew);
 }

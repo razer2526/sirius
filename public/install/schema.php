@@ -1118,6 +1118,9 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE episodes ADD COLUMN client_uuid {$varchar(64)}",
         "ALTER TABLE patient_documents ADD COLUMN category {$varchar(60)}",
         "ALTER TABLE patient_documents ADD COLUMN document_date " . ($isMysql ? 'DATE NULL' : 'TEXT NULL'),
+        "ALTER TABLE wa_messages ADD COLUMN media_path {$varchar(80)}",
+        "ALTER TABLE wa_messages ADD COLUMN media_filename {$varchar(200)}",
+        "ALTER TABLE wa_messages ADD COLUMN media_size " . ($isMysql ? 'BIGINT UNSIGNED NULL' : 'INTEGER NULL'),
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
