@@ -36,12 +36,6 @@ if (!current_user()) {
       <span class="sidebar-label text-lg font-bold tracking-tight text-white">Sirius</span>
     </div>
     <nav id="sidebar-nav" class="flex-1 overflow-y-auto px-3 py-4"></nav>
-    <div class="shrink-0 border-t border-slate-800 p-3">
-      <a href="logout.php" class="flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium hover:bg-slate-800 hover:text-white">
-        <svg viewBox="0 0 24 24" class="h-5 w-5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
-        <span class="sidebar-label">Cerrar sesión</span>
-      </a>
-    </div>
   </aside>
 
   <!-- Área principal -->
@@ -61,11 +55,26 @@ if (!current_user()) {
           </button>
           <div id="notif-bell-panel" class="absolute right-0 top-full z-50 mt-2 hidden w-80 rounded-xl bg-white p-2 shadow-lg ring-1 ring-slate-200"></div>
         </div>
-        <div class="hidden text-right sm:block">
-          <p id="topbar-user" class="text-sm font-semibold text-slate-900"></p>
-          <p id="topbar-role" class="text-xs text-slate-500"></p>
+        <div id="user-menu-wrap" class="relative">
+          <button id="user-menu-btn" type="button" class="flex items-center gap-3 rounded-lg py-1 pl-2 pr-1 hover:bg-slate-100">
+            <div class="hidden text-right sm:block">
+              <p id="topbar-user" class="text-sm font-semibold text-slate-900"></p>
+              <p id="topbar-role" class="text-xs text-slate-500"></p>
+            </div>
+            <div id="topbar-avatar" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700"></div>
+          </button>
+          <div id="user-menu-panel" class="absolute right-0 top-full z-50 mt-2 hidden w-64 rounded-xl bg-white p-2 shadow-lg ring-1 ring-slate-200">
+            <button id="btn-install-app" type="button" class="hidden w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <svg viewBox="0 0 24 24" class="h-4.5 w-4.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Instalar aplicación
+            </button>
+            <div id="user-menu-divider" class="my-1 hidden border-t border-slate-100"></div>
+            <a href="logout.php" class="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50">
+              <svg viewBox="0 0 24 24" class="h-4.5 w-4.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+              Cerrar sesión
+            </a>
+          </div>
         </div>
-        <div id="topbar-avatar" class="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700"></div>
       </div>
     </header>
 
