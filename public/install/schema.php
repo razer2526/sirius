@@ -52,6 +52,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 name VARCHAR(150) NOT NULL,
                 phone VARCHAR(20) NULL,
                 email VARCHAR(120) NULL,
+                linking_code VARCHAR(30) NULL,
                 concierge_id INT UNSIGNED NULL,
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_by INT UNSIGNED NULL,
@@ -657,6 +658,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 name TEXT NOT NULL,
                 phone TEXT NULL,
                 email TEXT NULL,
+                linking_code TEXT NULL,
                 concierge_id INTEGER NULL REFERENCES vinculacion_concierge(id) ON DELETE SET NULL,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -1199,6 +1201,7 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // como una propiedad del mensaje original, no como un mensaje aparte.
         "ALTER TABLE wa_messages ADD COLUMN reaction_contact {$varchar(16)}",
         "ALTER TABLE wa_messages ADD COLUMN reaction_agent {$varchar(16)}",
+        "ALTER TABLE vinculacion_doctors ADD COLUMN linking_code {$varchar(30)}",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {

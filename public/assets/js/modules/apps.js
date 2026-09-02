@@ -1793,11 +1793,11 @@ function defaultPeriodEnd() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
+let commissionFormMode = 'auto';
+
+/** Envoltorio: elige entre armar el estado de cuenta por periodo (hoy) o pegando la lista de un médico (imagen + IA). */
 async function renderCommissionForm(root) {
   const { doctors, concierge } = await apiGet('commissions/parties');
-  let lines = [];
-  let saving = false;
 
   root.innerHTML = `
     <div class="mx-auto max-w-4xl space-y-5">
@@ -1806,9 +1806,36 @@ async function renderCommissionForm(root) {
       </a>
       <div>
         <h3 class="text-lg font-bold text-slate-900">Nuevo estado de cuenta de comisiones</h3>
-        <p class="text-sm text-slate-500">Elige a quién y el periodo; revisa las líneas antes de generar el PDF.</p>
+        <p class="text-sm text-slate-500">Por periodo jala lo ya capturado en Sirius; pegando la lista, la IA la ordena y la cruza contra Sirius por ti.</p>
       </div>
+      <div class="inline-flex rounded-lg bg-slate-100 p-1 text-sm font-semibold">
+        <button type="button" id="mode-auto" class="rounded-md px-3 py-1.5">Por periodo</button>
+        <button type="button" id="mode-image" class="rounded-md px-3 py-1.5">Pegar lista (imagen)</button>
+      </div>
+      <div id="mode-box"></div>
+    </div>`;
 
+  const box = root.querySelector('#mode-box');
+  const modeAutoBtn = root.querySelector('#mode-auto');
+  const modeImageBtn = root.querySelector('#mode-image');
+  const paint = () => {
+    modeAutoBtn.className = `rounded-md px-3 py-1.5 ${commissionFormMode === 'auto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`;
+    modeImageBtn.className = `rounded-md px-3 py-1.5 ${commissionFormMode === 'image' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`;
+    if (commissionFormMode === 'image') renderCommissionFormImage(box, doctors);
+    else renderCommissionFormAuto(box, doctors, concierge);
+  };
+  modeAutoBtn.addEventListener('click', () => { commissionFormMode = 'auto'; paint(); });
+  modeImageBtn.addEventListener('click', () => { commissionFormMode = 'image'; paint(); });
+  paint();
+}
+
+/** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
+function renderCommissionFormAuto(root, doctors, concierge) {
+  let lines = [];
+  let saving = false;
+
+  root.innerHTML = `
+    <div class="space-y-5">
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -1959,4 +1986,201 @@ async function renderCommissionForm(root) {
       genBtn.disabled = false;
     }
   });
+}
+
+/** Pega una captura con la lista informal de un médico → la IA la extrae y la cruza contra Sirius → revisa → genera el PDF. */
+function renderCommissionFormImage(root, doctors) {
+  let image = null;   // {mime, data}
+  let rows = null;    // resultado de commissions/extract
+  let extracting = false;
+  let saving = false;
+
+  root.innerHTML = `
+    <div class="space-y-5">
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div>
+          <label class="${labelCls}">Médico</label>
+          <select id="ci-doctor" class="${inputCls}">
+            <option value="">— Elige un médico —</option>
+            ${doctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="mt-4">
+          <label class="${labelCls}">Captura de la lista</label>
+          <div id="ci-drop" tabindex="0"
+               class="flex cursor-text flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400 outline-none focus:border-indigo-400 focus:text-indigo-500">
+            ${icon('image', 'h-6 w-6')}
+            <span id="ci-drop-text">Haz clic aquí y pega la imagen (Ctrl+V)</span>
+            <img id="ci-preview" class="hidden max-h-48 rounded-lg ring-1 ring-slate-200">
+          </div>
+        </div>
+        <div class="mt-4">
+          <button id="ci-extract" type="button" disabled
+                  class="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+            ${icon('sparkles', 'h-4 w-4')} <span id="ci-extract-label">Extraer con IA</span>
+          </button>
+        </div>
+      </section>
+
+      <div id="ci-rows-box"></div>
+
+      <div class="flex justify-end">
+        <button id="ci-generate" type="button" disabled
+                class="flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">
+          ${icon('check-square', 'h-4 w-4')} Generar estado de cuenta
+        </button>
+      </div>
+    </div>`;
+
+  const doctorSel = root.querySelector('#ci-doctor');
+  const drop = root.querySelector('#ci-drop');
+  const dropText = root.querySelector('#ci-drop-text');
+  const preview = root.querySelector('#ci-preview');
+  const extractBtn = root.querySelector('#ci-extract');
+  const extractLabel = root.querySelector('#ci-extract-label');
+  const rowsBox = root.querySelector('#ci-rows-box');
+  const genBtn = root.querySelector('#ci-generate');
+
+  const updateExtractEnabled = () => { extractBtn.disabled = extracting || !image || !doctorSel.value; };
+  doctorSel.addEventListener('change', updateExtractEnabled);
+
+  drop.addEventListener('click', () => drop.focus());
+  drop.addEventListener('paste', (e) => {
+    const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+    if (!item) { toast('Pega una imagen (Ctrl+V) con la captura de la lista', 'error'); return; }
+    const blob = item.getAsFile();
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const match = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
+      if (!match) { toast('No se pudo leer la imagen pegada', 'error'); return; }
+      image = { mime: match[1], data: match[2] };
+      preview.src = dataUrl;
+      preview.classList.remove('hidden');
+      dropText.textContent = 'Imagen lista — pega otra para reemplazarla';
+      updateExtractEnabled();
+    };
+    reader.readAsDataURL(blob);
+  });
+
+  const paintRows = () => {
+    if (!rows || !rows.length) {
+      rowsBox.innerHTML = rows
+        ? '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">La imagen no arrojó ningún paciente.</div>'
+        : '';
+      genBtn.disabled = true;
+      return;
+    }
+    genBtn.disabled = !rows.some((r) => r.commission_included);
+    const total = rows.reduce((sum, r) => sum + (r.commission_included ? r.commission_amount : 0), 0);
+    rowsBox.innerHTML = `
+      <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-3 py-2 w-10"></th>
+                <th class="px-3 py-2">Paciente / Estudios</th>
+                <th class="px-3 py-2">Coincidencia</th>
+                <th class="px-3 py-2 text-right">Monto</th>
+                <th class="px-3 py-2 text-center">%</th>
+                <th class="px-3 py-2 text-right">Comisión</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${rows.map((r, i) => `
+                <tr class="${r.commission_included ? '' : 'opacity-40'}">
+                  <td class="px-3 py-2"><input type="checkbox" data-row-toggle="${i}" ${r.commission_included ? 'checked' : ''} ${r.matched ? '' : 'disabled'} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
+                  <td class="px-3 py-2">
+                    <span class="block font-medium text-slate-800">${escapeHtml(r.patient_name_matched || r.patient_name_raw)}</span>
+                    <span class="block text-xs text-slate-500">${escapeHtml((r.studies_matched && r.studies_matched.length ? r.studies_matched : r.studies_raw).join(', '))} · ${escapeHtml(r.date_label || '')}${r.service_type === 'urgencia' ? ' · Urgencia' : ''}</span>
+                  </td>
+                  <td class="px-3 py-2">
+                    ${r.matched
+                      ? '<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Coincide</span>'
+                      : r.candidates && r.candidates.length
+                        ? `<select data-candidate="${i}" class="rounded-lg border-0 bg-amber-50 py-1 pl-2 pr-6 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 focus:ring-2 focus:ring-amber-400">
+                             <option value="">¿Es alguno de estos?</option>
+                             ${r.candidates.map((c, ci) => `<option value="${ci}">${escapeHtml(c.name)}</option>`).join('')}
+                           </select>`
+                        : '<span class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">Sin coincidencia</span>'}
+                  </td>
+                  <td class="px-3 py-2 text-right text-slate-700">$${Number(r.amount_charged).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center text-slate-500">${Number(r.commission_pct).toFixed(1)}%</td>
+                  <td class="px-3 py-2 text-right font-semibold text-slate-800">$${Number(r.commission_amount).toFixed(2)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+        <span class="text-sm font-semibold text-slate-600">Total comisión (solo incluidas)</span>
+        <span class="text-base font-bold text-slate-800">$${total.toFixed(2)}</span>
+      </div>`;
+
+    rowsBox.querySelectorAll('[data-row-toggle]').forEach((cb) =>
+      cb.addEventListener('change', () => {
+        rows[+cb.dataset.rowToggle].commission_included = cb.checked;
+        paintRows();
+      }));
+    rowsBox.querySelectorAll('[data-candidate]').forEach((sel) =>
+      sel.addEventListener('change', () => {
+        const r = rows[+sel.dataset.candidate];
+        const c = r.candidates[+sel.value];
+        if (!c) return;
+        r.matched = true;
+        r.patient_name_matched = c.name;
+        r.studies_matched = c.studies;
+        r.episode_study_ids = c.episode_study_ids;
+        r.amount_charged = c.amount_charged;
+        r.commission_amount = c.commission_amount;
+        r.commission_pct = c.commission_pct;
+        r.commission_included = true;
+        paintRows();
+      }));
+  };
+
+  extractBtn.addEventListener('click', async () => {
+    if (!doctorSel.value || !image) return;
+    extracting = true;
+    extractBtn.disabled = true;
+    extractLabel.textContent = 'Extrayendo…';
+    try {
+      const res = await apiPost('commissions/extract', { party_id: +doctorSel.value, image });
+      rows = res.rows;
+      paintRows();
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      extracting = false;
+      extractLabel.textContent = 'Extraer con IA';
+      updateExtractEnabled();
+    }
+  });
+
+  genBtn.addEventListener('click', async () => {
+    if (saving || !rows) return;
+    const included = rows.filter((r) => r.commission_included);
+    if (!included.length) { toast('No hay líneas incluidas para generar el estado de cuenta', 'error'); return; }
+    saving = true;
+    genBtn.disabled = true;
+    try {
+      const res = await apiPost('commissions/extract_save', { party_id: +doctorSel.value, rows: included });
+      modal({
+        title: 'Estado de cuenta generado',
+        content: `<p class="text-sm text-slate-600">Folio <b class="font-mono text-slate-900">${escapeHtml(res.folio)}</b> guardado correctamente.</p>`,
+        actions: [
+          { label: 'Ver PDF', onClick: (close) => { window.open(`comision.php?id=${res.id}`, '_blank'); close(); ctx.navigate('apps/comisiones'); } },
+          { label: 'Volver al listado', primary: true, onClick: (close) => { close(); ctx.navigate('apps/comisiones'); } },
+        ],
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+      saving = false;
+      genBtn.disabled = false;
+    }
+  });
+
+  updateExtractEnabled();
+  paintRows();
 }

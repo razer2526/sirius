@@ -180,6 +180,10 @@ async function openDoctorModal(doctor, load) {
         <div><label class="${labelCls}">Email</label><input type="email" id="d-email" value="${escapeHtml(doctor?.email || '')}" class="${inputCls}"></div>
       </div>
       <div>
+        <label class="${labelCls}">ID de vinculación (opcional)</label>
+        <input type="text" id="d-linking-code" value="${escapeHtml(doctor?.linking_code || '')}" placeholder="p. ej. BPM202512A3" class="${inputCls}">
+      </div>
+      <div>
         <label class="${labelCls}">Concierge que lo trajo (opcional)</label>
         <select id="d-concierge" class="${inputCls}">
           <option value="">— Ninguno —</option>
@@ -209,6 +213,7 @@ async function openDoctorModal(doctor, load) {
               name,
               phone: wrap.querySelector('#d-phone').value.trim(),
               email: wrap.querySelector('#d-email').value.trim(),
+              linking_code: wrap.querySelector('#d-linking-code').value.trim(),
               concierge_id: wrap.querySelector('#d-concierge').value || null,
               is_active: wrap.querySelector('#d-active').checked,
             });
