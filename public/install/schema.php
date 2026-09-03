@@ -570,6 +570,22 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_result_delivery_due (due_date),
                 CONSTRAINT fk_result_delivery_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            'trash_items' => "CREATE TABLE IF NOT EXISTS trash_items (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                entity_type VARCHAR(20) NOT NULL,
+                entity_id INT UNSIGNED NOT NULL,
+                summary VARCHAR(250) NOT NULL,
+                snapshot JSON NOT NULL,
+                related_trash_id INT UNSIGNED NULL,
+                archived_by INT UNSIGNED NULL,
+                archived_by_name VARCHAR(150) NULL,
+                archived_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_trash_entity (entity_type, entity_id),
+                INDEX idx_trash_archived (archived_at),
+                INDEX idx_trash_related (related_trash_id),
+                CONSTRAINT fk_trash_related FOREIGN KEY (related_trash_id) REFERENCES trash_items(id) ON DELETE SET NULL,
+                CONSTRAINT fk_trash_archiver FOREIGN KEY (archived_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
             'wa_statuses' => "CREATE TABLE IF NOT EXISTS wa_statuses (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 skey VARCHAR(40) NOT NULL UNIQUE,
@@ -1107,6 +1123,17 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'trash_items' => "CREATE TABLE IF NOT EXISTS trash_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id INTEGER NOT NULL,
+                summary TEXT NOT NULL,
+                snapshot TEXT NOT NULL,
+                related_trash_id INTEGER NULL REFERENCES trash_items(id) ON DELETE SET NULL,
+                archived_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                archived_by_name TEXT NULL,
+                archived_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
             'wa_statuses' => "CREATE TABLE IF NOT EXISTS wa_statuses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 skey TEXT NOT NULL UNIQUE,
@@ -1204,6 +1231,9 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_taskassignee_user ON task_assignees (user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_projectassignee_user ON project_assignees (user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_result_delivery_due ON result_deliveries (due_date)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_trash_entity ON trash_items (entity_type, entity_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_trash_archived ON trash_items (archived_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_trash_related ON trash_items (related_trash_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_push_user ON push_subscriptions (user_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_notification_user ON notifications (user_id, read_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_item_active ON inventory_items (is_active, name)');

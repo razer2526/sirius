@@ -123,12 +123,26 @@ function handle_board(string $action): void
             $b = request_body();
             $item = find_board_item((int)($b['id'] ?? 0));
             require_board_access($item, $me, $canManage);
-            db()->prepare('DELETE FROM board_items WHERE id = ?')->execute([$item['id']]);
-            log_activity(
-                'pizarron', 'item_delete',
-                'Eliminó ' . board_type_label($item['type']) . ' del pizarrón ' . ($item['scope'] === 'public' ? 'público' : 'privado'),
-                'board_item', (int)$item['id']
-            );
+            $scopeLabel = $item['scope'] === 'public' ? 'público' : 'privado';
+            if ($canManage) {
+                db()->prepare('DELETE FROM board_items WHERE id = ?')->execute([$item['id']]);
+                log_activity(
+                    'pizarron', 'item_delete',
+                    'Eliminó ' . board_type_label($item['type']) . ' del pizarrón ' . $scopeLabel,
+                    'board_item', (int)$item['id']
+                );
+            } else {
+                require_once __DIR__ . '/../../includes/trash.php';
+                db()->prepare('DELETE FROM board_items WHERE id = ?')->execute([$item['id']]);
+                $typeNoun = ['note' => 'Nota', 'checklist' => 'Lista', 'drawing' => 'Dibujo'][$item['type']] ?? ucfirst($item['type']);
+                $summary = $item['title'] ? "{$item['title']} ($typeNoun)" : $typeNoun;
+                trash_archive('board_item', (int)$item['id'], $item, null, null, $summary, $me);
+                log_activity(
+                    'pizarron', 'item_delete',
+                    'Movió a la papelera ' . board_type_label($item['type']) . ' del pizarrón ' . $scopeLabel,
+                    'board_item', (int)$item['id']
+                );
+            }
             json_ok();
         }
     }
