@@ -90,6 +90,7 @@ function handle_tasks(string $action): void
             unset($t);
             foreach ($projects as &$p) {
                 $p['id'] = (int)$p['id'];
+                $p['created_by'] = $p['created_by'] !== null ? (int)$p['created_by'] : null;
                 $assignees = $assigneesByProject[$p['id']] ?? [];
                 $p['assigned_to'] = array_column($assignees, 'id');
                 $p['assigned_names'] = array_column($assignees, 'name');
@@ -137,17 +138,44 @@ function handle_tasks(string $action): void
         }
 
         case 'project_delete': {
-            require_task_manager($canManage);
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
-            $st = db()->prepare('SELECT name FROM projects WHERE id = ?');
+            $st = db()->prepare('SELECT * FROM projects WHERE id = ?');
             $st->execute([$id]);
             $p = $st->fetch();
             if (!$p) {
                 json_error('Proyecto no encontrado', 404);
             }
-            db()->prepare('DELETE FROM projects WHERE id = ?')->execute([$id]);
-            log_activity('tareas', 'project_delete', "Eliminó proyecto \"{$p['name']}\" (y sus tareas)", 'project', $id);
+            if (!$canManage && (int)$p['created_by'] !== (int)$me['id']) {
+                json_error('Solo puedes eliminar tus propios proyectos', 403);
+            }
+            if ($canManage) {
+                db()->prepare('DELETE FROM projects WHERE id = ?')->execute([$id]);
+                log_activity('tareas', 'project_delete', "Eliminó proyecto \"{$p['name']}\" (y sus tareas)", 'project', $id);
+            } else {
+                require_once __DIR__ . '/../../includes/trash.php';
+                $pdo = db();
+                $projectAssignees = assignee_ids('project_assignees', 'project_id', $id);
+                $tasksSt = $pdo->prepare('SELECT * FROM tasks WHERE project_id = ?');
+                $tasksSt->execute([$id]);
+                $projectTasks = $tasksSt->fetchAll();
+
+                $pdo->beginTransaction();
+                try {
+                    $trashId = trash_archive('project', $id, $p, $projectAssignees, null, "Proyecto: {$p['name']}", $me);
+                    foreach ($projectTasks as $t) {
+                        $taskAssignees = assignee_ids('task_assignees', 'task_id', (int)$t['id']);
+                        $completions = $t['recurrence'] ? task_completions_for((int)$t['id']) : null;
+                        trash_archive('task', (int)$t['id'], $t, $taskAssignees, $completions, "Tarea: {$t['title']}", $me, $trashId);
+                    }
+                    $pdo->prepare('DELETE FROM projects WHERE id = ?')->execute([$id]);
+                    $pdo->commit();
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                log_activity('tareas', 'project_delete', "Movió a la papelera el proyecto \"{$p['name']}\" (y sus tareas)", 'project', $id);
+            }
             json_ok();
         }
 
@@ -302,8 +330,34 @@ function handle_tasks(string $action): void
             if (!$canManage && (int)$task['created_by'] !== (int)$me['id']) {
                 json_error('Solo puedes eliminar tus propias tareas', 403);
             }
-            db()->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
-            log_activity('tareas', 'task_delete', "Eliminó tarea \"{$task['title']}\"", 'task', $id);
+            if ($canManage) {
+                db()->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
+                log_activity('tareas', 'task_delete', "Eliminó tarea \"{$task['title']}\"", 'task', $id);
+            } else {
+                require_once __DIR__ . '/../../includes/trash.php';
+                $pdo = db();
+                $taskAssignees = assignee_ids('task_assignees', 'task_id', $id);
+                $completions = $task['recurrence'] ? task_completions_for($id) : null;
+                $childrenSt = $pdo->prepare('SELECT * FROM tasks WHERE parent_id = ?');
+                $childrenSt->execute([$id]);
+                $children = $childrenSt->fetchAll();
+
+                $pdo->beginTransaction();
+                try {
+                    $trashId = trash_archive('task', $id, $task, $taskAssignees, $completions, "Tarea: {$task['title']}", $me);
+                    foreach ($children as $c) {
+                        $cAssignees = assignee_ids('task_assignees', 'task_id', (int)$c['id']);
+                        $cCompletions = $c['recurrence'] ? task_completions_for((int)$c['id']) : null;
+                        trash_archive('task', (int)$c['id'], $c, $cAssignees, $cCompletions, "Tarea: {$c['title']}", $me, $trashId);
+                    }
+                    $pdo->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
+                    $pdo->commit();
+                } catch (Throwable $e) {
+                    $pdo->rollBack();
+                    throw $e;
+                }
+                log_activity('tareas', 'task_delete', "Movió a la papelera la tarea \"{$task['title']}\"", 'task', $id);
+            }
             json_ok();
         }
 
@@ -446,8 +500,15 @@ function handle_tasks(string $action): void
             if (!$canManage && (int)$item['created_by'] !== (int)$me['id']) {
                 json_error('Solo puedes eliminar los registros que creaste tú', 403);
             }
-            db()->prepare('DELETE FROM result_deliveries WHERE id = ?')->execute([$id]);
-            log_activity('tareas', 'result_delivery_delete', "Eliminó el registro de \"{$item['patient_name']}\"", 'result_delivery', $id);
+            if ($canManage) {
+                db()->prepare('DELETE FROM result_deliveries WHERE id = ?')->execute([$id]);
+                log_activity('tareas', 'result_delivery_delete', "Eliminó el registro de \"{$item['patient_name']}\"", 'result_delivery', $id);
+            } else {
+                require_once __DIR__ . '/../../includes/trash.php';
+                db()->prepare('DELETE FROM result_deliveries WHERE id = ?')->execute([$id]);
+                trash_archive('result_delivery', $id, $item, null, null, "Resultados: {$item['patient_name']}", $me);
+                log_activity('tareas', 'result_delivery_delete', "Movió a la papelera el registro de \"{$item['patient_name']}\"", 'result_delivery', $id);
+            }
             json_ok();
         }
     }

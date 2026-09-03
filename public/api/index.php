@@ -52,6 +52,7 @@ $routes = [
     'whatsapp_config' => ['whatsapp_config.php', 'whatsapp_config'],
     'cobertura'     => ['cobertura.php', 'cobertura'],
     'coverage'      => ['cobertura.php', 'apps'],
+    'papelera'      => ['papelera.php', 'papelera'],
     'push'          => ['push.php', null],
 ];
 

@@ -145,6 +145,12 @@ return [
         'phase' => 2,
         'group' => 'admin_tools',
     ],
+    'papelera' => [
+        'label' => 'Papelera',
+        'icon'  => 'trash',
+        'phase' => 2,
+        'group' => 'admin_tools',
+    ],
     'plantillas_estudios' => [
         'label' => 'Plantillas de Estudios',
         'icon'  => 'clipboard',

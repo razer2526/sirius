@@ -222,6 +222,10 @@ function recurringRowHtml(t) {
     </div>`;
 }
 
+function canDeleteProject(p) {
+  return data.can_manage || p.created_by === data.me;
+}
+
 function paintProyectos(view) {
   if (projectFilter !== null) {
     const p = data.projects.find((x) => x.id === projectFilter);
@@ -265,10 +269,10 @@ function paintProyectos(view) {
                 ${p.status !== 'activo' ? ` · ${p.status}` : ''}
               </p>
             </button>
-            ${data.can_manage ? `
+            ${data.can_manage || canDeleteProject(p) ? `
             <div class="flex shrink-0 gap-1">
-              <button type="button" data-edit-project="${p.id}" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-3.5 w-3.5')}</button>
-              <button type="button" data-del-project="${p.id}" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-3.5 w-3.5')}</button>
+              ${data.can_manage ? `<button type="button" data-edit-project="${p.id}" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-3.5 w-3.5')}</button>` : ''}
+              ${canDeleteProject(p) ? `<button type="button" data-del-project="${p.id}" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-3.5 w-3.5')}</button>` : ''}
             </div>` : ''}
           </div>
           ${projectProgress(p)}
