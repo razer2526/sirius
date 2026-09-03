@@ -7,6 +7,8 @@
  * ALTER TABLE envueltos en try/catch (fallan en silencio si la columna ya existe).
  */
 
+require_once __DIR__ . '/../includes/geocoding.php';
+
 /** Crea las tablas (MySQL o SQLite) e índices. Devuelve líneas de log. */
 function sirius_schema_tables(PDO $pdo, bool $isMysql): array
 {
@@ -499,6 +501,29 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 CONSTRAINT fk_epstudy_episode FOREIGN KEY (episode_id) REFERENCES episodes(id) ON DELETE CASCADE,
                 CONSTRAINT fk_epstudy_study FOREIGN KEY (study_id) REFERENCES quote_studies(id) ON DELETE SET NULL
             )$suffix",
+            'coverage_zones' => "CREATE TABLE IF NOT EXISTS coverage_zones (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                estado VARCHAR(60) NOT NULL,
+                municipio VARCHAR(100) NOT NULL,
+                has_coverage TINYINT(1) NOT NULL DEFAULT 0,
+                extra_cost TINYINT(1) NOT NULL DEFAULT 0,
+                latitude DECIMAL(10,7) NULL,
+                longitude DECIMAL(10,7) NULL,
+                geocoded_at TIMESTAMP NULL,
+                UNIQUE KEY uq_zone_estado_municipio (estado, municipio)
+            )$suffix",
+            'postal_codes' => "CREATE TABLE IF NOT EXISTS postal_codes (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                cp VARCHAR(5) NOT NULL UNIQUE,
+                estado VARCHAR(60) NOT NULL,
+                municipio VARCHAR(100) NOT NULL,
+                colonias JSON NOT NULL,
+                zone_id INT UNSIGNED NULL,
+                coverage_override TINYINT(1) NULL,
+                extra_cost TINYINT(1) NULL,
+                INDEX idx_postalcode_cp (cp),
+                CONSTRAINT fk_postalcode_zone FOREIGN KEY (zone_id) REFERENCES coverage_zones(id) ON DELETE SET NULL
+            )$suffix",
             'commission_statements' => "CREATE TABLE IF NOT EXISTS commission_statements (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 folio VARCHAR(20) NOT NULL UNIQUE,
@@ -514,6 +539,22 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_cstatement_party (party_type, party_id),
                 CONSTRAINT fk_cstatement_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'commission_entries' => "CREATE TABLE IF NOT EXISTS commission_entries (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                doctor_id INT UNSIGNED NOT NULL,
+                patient_name VARCHAR(200) NOT NULL,
+                entry_date DATE NOT NULL,
+                studies JSON NOT NULL,
+                total_amount DECIMAL(10,2) NOT NULL DEFAULT 0,
+                total_commission DECIMAL(10,2) NOT NULL DEFAULT 0,
+                statement_id INT UNSIGNED NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_centry_doctor (doctor_id, statement_id),
+                CONSTRAINT fk_centry_doctor FOREIGN KEY (doctor_id) REFERENCES vinculacion_doctors(id) ON DELETE CASCADE,
+                CONSTRAINT fk_centry_statement FOREIGN KEY (statement_id) REFERENCES commission_statements(id) ON DELETE SET NULL,
+                CONSTRAINT fk_centry_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
             'result_deliveries' => "CREATE TABLE IF NOT EXISTS result_deliveries (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1008,6 +1049,27 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 commission_included INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'coverage_zones' => "CREATE TABLE IF NOT EXISTS coverage_zones (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                estado TEXT NOT NULL,
+                municipio TEXT NOT NULL,
+                has_coverage INTEGER NOT NULL DEFAULT 0,
+                extra_cost INTEGER NOT NULL DEFAULT 0,
+                latitude REAL NULL,
+                longitude REAL NULL,
+                geocoded_at TEXT NULL,
+                UNIQUE (estado, municipio)
+            )",
+            'postal_codes' => "CREATE TABLE IF NOT EXISTS postal_codes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cp TEXT NOT NULL UNIQUE,
+                estado TEXT NOT NULL,
+                municipio TEXT NOT NULL,
+                colonias TEXT NOT NULL,
+                zone_id INTEGER NULL REFERENCES coverage_zones(id) ON DELETE SET NULL,
+                coverage_override INTEGER NULL,
+                extra_cost INTEGER NULL
+            )",
             'commission_statements' => "CREATE TABLE IF NOT EXISTS commission_statements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 folio TEXT NOT NULL UNIQUE,
@@ -1017,6 +1079,18 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 period_end TEXT NOT NULL,
                 lines TEXT NOT NULL,
                 total_commission REAL NOT NULL DEFAULT 0,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'commission_entries' => "CREATE TABLE IF NOT EXISTS commission_entries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                doctor_id INTEGER NOT NULL REFERENCES vinculacion_doctors(id) ON DELETE CASCADE,
+                patient_name TEXT NOT NULL,
+                entry_date TEXT NOT NULL,
+                studies TEXT NOT NULL,
+                total_amount REAL NOT NULL DEFAULT 0,
+                total_commission REAL NOT NULL DEFAULT 0,
+                statement_id INTEGER NULL REFERENCES commission_statements(id) ON DELETE SET NULL,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
@@ -1151,6 +1225,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_episode ON episode_studies (episode_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_study ON episode_studies (study_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cstatement_party ON commission_statements (party_type, party_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_postalcode_cp ON postal_codes (cp)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_waconv_status ON wa_conversations (status_id)');
@@ -1202,6 +1278,14 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE wa_messages ADD COLUMN reaction_contact {$varchar(16)}",
         "ALTER TABLE wa_messages ADD COLUMN reaction_agent {$varchar(16)}",
         "ALTER TABLE vinculacion_doctors ADD COLUMN linking_code {$varchar(30)}",
+        // NULL = hereda la cobertura del municipio (coverage_zones.has_coverage);
+        // 0/1 = excepción puesta a mano para ese código postal específico.
+        "ALTER TABLE postal_codes ADD COLUMN coverage_override " . ($isMysql ? 'TINYINT(1) NULL' : 'INTEGER NULL'),
+        // Tercer estado "costo extra" (amarillo): solo aplica cuando no hay
+        // cobertura completa. En postal_codes viaja siempre junto con
+        // coverage_override (ambos NULL o ambos explícitos a la vez).
+        "ALTER TABLE coverage_zones ADD COLUMN extra_cost " . ($isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0'),
+        "ALTER TABLE postal_codes ADD COLUMN extra_cost " . ($isMysql ? 'TINYINT(1) NULL' : 'INTEGER NULL'),
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
@@ -1320,6 +1404,112 @@ function sirius_seed_whatsapp(PDO $pdo): array
     return ['WhatsApp: catálogo de estatus y mensajes automáticos sembrados'];
 }
 
+/**
+ * Siembra el catálogo de códigos postales de CDMX + Estado de México desde el
+ * CSV semilla (derivado de SEPOMEX, ver install/seed_data/) y geocodifica las
+ * zonas (estado+municipio) que aún no tengan coordenadas — máximo 40 por
+ * corrida, para no exceder el tiempo de una sola petición HTTP; basta con
+ * volver a visitar install/setup.php para completar el resto. Idempotente:
+ * nunca duplica códigos postales ni toca coverage_zones.has_coverage, que es
+ * lo que administra el usuario en Admin Tools > Cobertura.
+ */
+function sirius_seed_cobertura(PDO $pdo): array
+{
+    $csvPath = __DIR__ . '/seed_data/cobertura_cdmx_edomex.csv';
+    if (!is_file($csvPath)) {
+        return ['Cobertura: no se encontró el catálogo semilla, se omite'];
+    }
+
+    $fh = fopen($csvPath, 'r');
+    fgetcsv($fh); // encabezado: estado,municipio,cp,asentamiento,tipo
+    $byCp = [];
+    $zonesSeen = [];
+    while (($row = fgetcsv($fh)) !== false) {
+        if (count($row) < 5) {
+            continue;
+        }
+        [$estado, $municipio, $cp, $asentamiento, $tipo] = $row;
+        $zonesSeen["$estado|$municipio"] = [$estado, $municipio];
+        if (!isset($byCp[$cp])) {
+            $byCp[$cp] = ['estado' => $estado, 'municipio' => $municipio, 'colonias' => []];
+        }
+        $byCp[$cp]['colonias'][] = ['nombre' => $asentamiento, 'tipo' => $tipo];
+    }
+    fclose($fh);
+
+    // 1) Zonas: insertar las que falten (cobertura apagada por default).
+    $findZone = $pdo->prepare('SELECT id, latitude FROM coverage_zones WHERE estado = ? AND municipio = ?');
+    $insZone = $pdo->prepare('INSERT INTO coverage_zones (estado, municipio) VALUES (?, ?)');
+    $zoneIds = [];
+    $pending = [];
+    $pdo->beginTransaction();
+    foreach ($zonesSeen as $key => [$estado, $municipio]) {
+        $findZone->execute([$estado, $municipio]);
+        $row = $findZone->fetch();
+        if ($row) {
+            $zoneIds[$key] = (int)$row['id'];
+            if ($row['latitude'] === null) {
+                $pending[(int)$row['id']] = [$estado, $municipio];
+            }
+        } else {
+            $insZone->execute([$estado, $municipio]);
+            $id = (int)$pdo->lastInsertId();
+            $zoneIds[$key] = $id;
+            $pending[$id] = [$estado, $municipio];
+        }
+    }
+    $pdo->commit();
+
+    // 2) Geocodificar un lote (Nominatim: 1 req/seg, identificador de contacto
+    // en el User-Agent — ver includes/geocoding.php).
+    if (strpos((string)ini_get('disable_functions'), 'set_time_limit') === false) {
+        @set_time_limit(180);
+    }
+    $geocoded = 0;
+    $processed = 0;
+    $updZone = $pdo->prepare('UPDATE coverage_zones SET latitude = ?, longitude = ?, geocoded_at = CURRENT_TIMESTAMP WHERE id = ?');
+    foreach ($pending as $id => [$estado, $municipio]) {
+        if ($processed >= 40) {
+            break;
+        }
+        if ($processed > 0) {
+            sleep(1);
+        }
+        $processed++;
+        $coords = geocode_place($municipio, $estado);
+        if ($coords) {
+            $updZone->execute([$coords['lat'], $coords['lng'], $id]);
+            $geocoded++;
+        }
+    }
+
+    // 3) Códigos postales: upsert por cp (catálogo de solo lectura, sin estado
+    // configurable por el admin, se puede sobrescribir libremente).
+    $findCp = $pdo->prepare('SELECT id FROM postal_codes WHERE cp = ?');
+    $insCp = $pdo->prepare('INSERT INTO postal_codes (cp, estado, municipio, colonias, zone_id) VALUES (?, ?, ?, ?, ?)');
+    $updCp = $pdo->prepare('UPDATE postal_codes SET estado = ?, municipio = ?, colonias = ?, zone_id = ? WHERE id = ?');
+    $cpCount = 0;
+    $pdo->beginTransaction();
+    foreach ($byCp as $cp => $info) {
+        $zoneId = $zoneIds["{$info['estado']}|{$info['municipio']}"] ?? null;
+        $colonias = json_encode($info['colonias'], JSON_UNESCAPED_UNICODE);
+        $findCp->execute([$cp]);
+        $row = $findCp->fetch();
+        if ($row) {
+            $updCp->execute([$info['estado'], $info['municipio'], $colonias, $zoneId, $row['id']]);
+        } else {
+            $insCp->execute([$cp, $info['estado'], $info['municipio'], $colonias, $zoneId]);
+        }
+        $cpCount++;
+    }
+    $pdo->commit();
+
+    $pendingLeft = count($pending) - $processed;
+    $msg = 'Cobertura: ' . count($zoneIds) . " zonas, $cpCount códigos postales ($geocoded geocodificadas ahora";
+    $msg .= $pendingLeft > 0 ? ", $pendingLeft pendientes — vuelve a visitar esta página)" : ')';
+    return [$msg];
+}
+
 /** Crea tablas + migraciones + settings por defecto. No toca usuarios. */
 function sirius_install_schema(PDO $pdo, bool $isMysql, string $clinicName = 'Laboratorio y Clínica Bosques Polanco'): array
 {
@@ -1327,6 +1517,7 @@ function sirius_install_schema(PDO $pdo, bool $isMysql, string $clinicName = 'La
         sirius_schema_tables($pdo, $isMysql),
         sirius_schema_migrations($pdo, $isMysql),
         sirius_seed_settings($pdo, $clinicName),
-        sirius_seed_whatsapp($pdo)
+        sirius_seed_whatsapp($pdo),
+        sirius_seed_cobertura($pdo)
     );
 }

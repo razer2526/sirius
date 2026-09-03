@@ -207,6 +207,233 @@ function handle_commissions(string $action): void
             json_ok(['id' => $id, 'folio' => $folio]);
         }
 
+        /** Busca estudios del catálogo por nombre, para el buscador dinámico de "Nuevo registro". */
+        case 'studies_search': {
+            $q = trim((string)($_GET['q'] ?? ''));
+            if ($q === '') {
+                json_ok(['items' => []]);
+            }
+            $st = db()->prepare('SELECT id, name, public_price FROM quote_studies WHERE is_active = 1 AND name LIKE ? ORDER BY name LIMIT 20');
+            $st->execute(['%' . $q . '%']);
+            $items = $st->fetchAll();
+            foreach ($items as &$it) {
+                $it['id'] = (int)$it['id'];
+                $it['public_price'] = (float)$it['public_price'];
+            }
+            unset($it);
+            json_ok(['items' => $items]);
+        }
+
+        /** Registros manuales (pendientes y facturados) de un médico, más recientes primero. */
+        case 'entries_list': {
+            $doctorId = (int)($_GET['doctor_id'] ?? 0);
+            $st = db()->prepare(
+                'SELECT ce.id, ce.patient_name, ce.entry_date, ce.studies, ce.total_amount, ce.total_commission,
+                        ce.statement_id, cs.folio
+                 FROM commission_entries ce LEFT JOIN commission_statements cs ON cs.id = ce.statement_id
+                 WHERE ce.doctor_id = ? ORDER BY ce.entry_date DESC, ce.id DESC'
+            );
+            $st->execute([$doctorId]);
+            $rows = $st->fetchAll();
+            foreach ($rows as &$r) {
+                $r['id'] = (int)$r['id'];
+                $r['studies'] = json_decode((string)$r['studies'], true) ?: [];
+                $r['total_amount'] = (float)$r['total_amount'];
+                $r['total_commission'] = (float)$r['total_commission'];
+                $r['statement_id'] = $r['statement_id'] !== null ? (int)$r['statement_id'] : null;
+            }
+            unset($r);
+            json_ok(['entries' => $rows]);
+        }
+
+        /** Crea o edita (si no está facturado todavía) un registro manual de paciente referido. */
+        case 'entry_save': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $doctorId = (int)($b['doctor_id'] ?? 0);
+            $patientName = trim((string)($b['patient_name'] ?? ''));
+            $entryDate = commissions_valid_date($b['entry_date'] ?? '');
+            $studiesIn = is_array($b['studies'] ?? null) ? $b['studies'] : [];
+
+            if ($patientName === '') {
+                json_error('Escribe el nombre del paciente', 422);
+            }
+            if (!$entryDate) {
+                json_error('Fecha no válida', 422);
+            }
+            $st = db()->prepare('SELECT id FROM vinculacion_doctors WHERE id = ?');
+            $st->execute([$doctorId]);
+            if (!$st->fetch()) {
+                json_error('Médico no encontrado', 404);
+            }
+
+            $studies = [];
+            $totalAmount = 0.0;
+            $totalCommission = 0.0;
+            foreach ($studiesIn as $s) {
+                $name = trim((string)($s['name'] ?? ''));
+                $amount = (float)($s['amount_charged'] ?? 0);
+                if ($name === '' || $amount < 0) {
+                    continue;
+                }
+                $calc = commissions_calc_study($name, $amount);
+                $studies[] = [
+                    'name' => $name,
+                    'amount_charged' => round($amount, 2),
+                    'is_filmarray' => $calc['is_filmarray'],
+                    'commission_amount' => $calc['commission_amount'],
+                ];
+                $totalAmount += $amount;
+                $totalCommission += $calc['commission_amount'];
+            }
+            if (!$studies) {
+                json_error('Agrega al menos un estudio', 422);
+            }
+
+            $pdo = db();
+            $studiesJson = json_encode($studies, JSON_UNESCAPED_UNICODE);
+            if ($id > 0) {
+                $st = $pdo->prepare('SELECT statement_id FROM commission_entries WHERE id = ?');
+                $st->execute([$id]);
+                $row = $st->fetch();
+                if (!$row) {
+                    json_error('Registro no encontrado', 404);
+                }
+                if ($row['statement_id'] !== null) {
+                    json_error('Ya está facturado; bórralo del estado de cuenta primero', 422);
+                }
+                $pdo->prepare(
+                    'UPDATE commission_entries SET doctor_id = ?, patient_name = ?, entry_date = ?, studies = ?, total_amount = ?, total_commission = ? WHERE id = ?'
+                )->execute([$doctorId, $patientName, $entryDate, $studiesJson, round($totalAmount, 2), round($totalCommission, 2), $id]);
+                log_activity('apps', 'commission_entry_update', "Editó el registro de \"$patientName\"", 'commission_entry', $id);
+            } else {
+                $pdo->prepare(
+                    'INSERT INTO commission_entries (doctor_id, patient_name, entry_date, studies, total_amount, total_commission, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$doctorId, $patientName, $entryDate, $studiesJson, round($totalAmount, 2), round($totalCommission, 2), (int)$me['id']]);
+                $id = (int)$pdo->lastInsertId();
+                log_activity('apps', 'commission_entry_create', "Registró a \"$patientName\"", 'commission_entry', $id);
+            }
+            json_ok(['id' => $id]);
+        }
+
+        /** Borra un registro manual — solo si todavía no se facturó. */
+        case 'entry_delete': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $st = db()->prepare('SELECT statement_id FROM commission_entries WHERE id = ?');
+            $st->execute([$id]);
+            $row = $st->fetch();
+            if (!$row) {
+                json_error('Registro no encontrado', 404);
+            }
+            if ($row['statement_id'] !== null) {
+                json_error('Ya está facturado; bórralo del estado de cuenta primero', 422);
+            }
+            db()->prepare('DELETE FROM commission_entries WHERE id = ?')->execute([$id]);
+            log_activity('apps', 'commission_entry_delete', 'Eliminó un registro de comisión', 'commission_entry', $id);
+            json_ok(['deleted' => true]);
+        }
+
+        /** Vista previa (sin guardar) de los registros manuales pendientes de un médico en un rango de fechas. */
+        case 'manual_preview': {
+            $doctorId = (int)($_GET['doctor_id'] ?? 0);
+            $from = commissions_valid_date($_GET['period_start'] ?? '');
+            $to = commissions_valid_date($_GET['period_end'] ?? '');
+            if (!$from || !$to || $from > $to) {
+                json_error('Rango de fechas no válido', 422);
+            }
+            $st = db()->prepare('SELECT id FROM vinculacion_doctors WHERE id = ?');
+            $st->execute([$doctorId]);
+            if (!$st->fetch()) {
+                json_error('Médico no encontrado', 404);
+            }
+            $lines = commissions_manual_lines($doctorId, $from, $to);
+            json_ok(['lines' => $lines, 'total' => commissions_sum($lines)]);
+        }
+
+        /** Genera el estado de cuenta a partir de los registros manuales elegidos (uno por paciente, aplanados por estudio en el PDF). */
+        case 'manual_save': {
+            $b = request_body();
+            $doctorId = (int)($b['doctor_id'] ?? 0);
+            $entryIds = array_values(array_unique(array_map('intval', (array)($b['entry_ids'] ?? []))));
+            if (!$entryIds) {
+                json_error('No hay registros incluidos para generar el estado de cuenta', 422);
+            }
+            $st = db()->prepare('SELECT id FROM vinculacion_doctors WHERE id = ?');
+            $st->execute([$doctorId]);
+            if (!$st->fetch()) {
+                json_error('Médico no encontrado', 404);
+            }
+
+            $placeholders = implode(',', array_fill(0, count($entryIds), '?'));
+            $st2 = db()->prepare(
+                "SELECT id, patient_name, entry_date, studies FROM commission_entries
+                 WHERE doctor_id = ? AND statement_id IS NULL AND id IN ($placeholders)"
+            );
+            $st2->execute(array_merge([$doctorId], $entryIds));
+            $entries = $st2->fetchAll();
+            if (!$entries) {
+                json_error('Los registros elegidos ya no están disponibles (puede que ya se hayan facturado)', 422);
+            }
+
+            $items = [];
+            foreach ($entries as $e) {
+                $studies = json_decode((string)$e['studies'], true) ?: [];
+                foreach ($studies as $s) {
+                    $amount = (float)($s['amount_charged'] ?? 0);
+                    $commission = (float)($s['commission_amount'] ?? 0);
+                    $items[] = [
+                        'patient_name'      => $e['patient_name'],
+                        'study_name'        => (string)($s['name'] ?? ''),
+                        'amount_charged'    => $amount,
+                        'commission_pct'    => $amount > 0 ? round($commission / $amount * 100, 1) : 0,
+                        'commission_amount' => $commission,
+                    ];
+                }
+            }
+            if (!$items) {
+                json_error('Los registros elegidos no tienen estudios', 422);
+            }
+
+            $total = round((float)array_sum(array_column($items, 'commission_amount')), 2);
+            $partyName = commissions_doctor_name($doctorId);
+            $dates = array_column($entries, 'entry_date');
+            sort($dates);
+            $from = $dates ? (string)$dates[0] : date('Y-m-d');
+            $to = $dates ? (string)end($dates) : date('Y-m-d');
+
+            $pdo = db();
+            $folio = commissions_generate_folio($pdo);
+            $pdo->prepare(
+                'INSERT INTO commission_statements (folio, party_type, party_id, period_start, period_end, `lines`, total_commission, created_by)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+            )->execute([
+                $folio, 'doctor', $doctorId, $from, $to,
+                json_encode(['source' => 'manual', 'party_name' => $partyName, 'items' => $items], JSON_UNESCAPED_UNICODE),
+                $total, (int)$me['id'],
+            ]);
+            $id = (int)$pdo->lastInsertId();
+
+            $includedIds = array_column($entries, 'id');
+            $placeholders2 = implode(',', array_fill(0, count($includedIds), '?'));
+            $pdo->prepare("UPDATE commission_entries SET statement_id = ? WHERE id IN ($placeholders2)")
+                ->execute(array_merge([$id], $includedIds));
+
+            log_activity('apps', 'commission_statement_create', "Generó estado de cuenta de comisiones \"$folio\" ($partyName, registro manual)", 'commission_statement', $id);
+            json_ok(['id' => $id, 'folio' => $folio]);
+        }
+
+        /** Borra un estado de cuenta. Si venía de registros manuales, los libera de vuelta a pendientes. */
+        case 'statement_delete': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $statement = commissions_find_statement($id);
+            db()->prepare('UPDATE commission_entries SET statement_id = NULL WHERE statement_id = ?')->execute([$id]);
+            db()->prepare('DELETE FROM commission_statements WHERE id = ?')->execute([$id]);
+            log_activity('apps', 'commission_statement_delete', "Eliminó el estado de cuenta \"{$statement['folio']}\"", 'commission_statement', $id);
+            json_ok(['deleted' => true]);
+        }
+
         case 'list': {
             $q = trim((string)($_GET['q'] ?? ''));
             $page = max(1, (int)($_GET['page'] ?? 1));
@@ -256,6 +483,50 @@ function commissions_find_statement(int $id): array
         json_error('Estado de cuenta no encontrado', 404);
     }
     return $row;
+}
+
+/**
+ * Regla de comisión para registros manuales: FilmArray (biología molecular) es
+ * un monto fijo; cualquier otro estudio (análisis clínicos, o biología
+ * molecular que no sea FilmArray) es 10% del monto cobrado. Se clasifica por
+ * nombre del estudio, no por `commission_group` del catálogo — ese campo casi
+ * no está poblado en `quote_studies` y no tiene ningún estudio FilmArray dado
+ * de alta.
+ */
+function commissions_calc_study(string $studyName, float $amountCharged): array
+{
+    $isFilmArray = stripos($studyName, 'filmarray') !== false || stripos($studyName, 'film array') !== false;
+    $commission = $isFilmArray ? 750.00 : round($amountCharged * 0.10, 2);
+    return ['is_filmarray' => $isFilmArray, 'commission_amount' => $commission];
+}
+
+/** Registros manuales pendientes (sin facturar) de un médico en un rango de fechas, uno por línea (no por estudio). */
+function commissions_manual_lines(int $doctorId, string $from, string $to): array
+{
+    $st = db()->prepare(
+        'SELECT id, patient_name, entry_date, studies, total_amount, total_commission
+         FROM commission_entries
+         WHERE doctor_id = ? AND statement_id IS NULL AND entry_date BETWEEN ? AND ?
+         ORDER BY entry_date'
+    );
+    $st->execute([$doctorId, $from, $to]);
+    $lines = [];
+    foreach ($st->fetchAll() as $r) {
+        $studies = json_decode((string)$r['studies'], true) ?: [];
+        $amount = (float)$r['total_amount'];
+        $commission = (float)$r['total_commission'];
+        $lines[] = [
+            'id'                  => (int)$r['id'],
+            'patient_name'        => $r['patient_name'],
+            'study_name'          => implode(', ', array_column($studies, 'name')),
+            'entry_date'          => $r['entry_date'],
+            'amount_charged'      => $amount,
+            'commission_pct'      => $amount > 0 ? round($commission / $amount * 100, 1) : 0,
+            'commission_amount'   => $commission,
+            'commission_included' => true,
+        ];
+    }
+    return $lines;
 }
 
 /** Valida y normaliza los parámetros comunes de preview/save. Devuelve [partyType, partyId, from, to, rate]. */
