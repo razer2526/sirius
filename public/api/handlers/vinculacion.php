@@ -49,6 +49,7 @@ function handle_vinculacion(string $action): void
             }
             $phone = trim((string)($b['phone'] ?? '')) ?: null;
             $email = trim((string)($b['email'] ?? '')) ?: null;
+            $linkingCode = trim((string)($b['linking_code'] ?? '')) ?: null;
             $conciergeId = !empty($b['concierge_id']) ? (int)$b['concierge_id'] : null;
             $isActive = !empty($b['is_active']) ? 1 : 0;
             $id = (int)($b['id'] ?? 0);
@@ -61,13 +62,13 @@ function handle_vinculacion(string $action): void
             if ($id > 0) {
                 find_vinculacion_doctor($id);
                 $pdo->prepare(
-                    'UPDATE vinculacion_doctors SET name = ?, phone = ?, email = ?, concierge_id = ?, is_active = ? WHERE id = ?'
-                )->execute([$name, $phone, $email, $conciergeId, $isActive, $id]);
+                    'UPDATE vinculacion_doctors SET name = ?, phone = ?, email = ?, linking_code = ?, concierge_id = ?, is_active = ? WHERE id = ?'
+                )->execute([$name, $phone, $email, $linkingCode, $conciergeId, $isActive, $id]);
                 log_activity('vinculacion', 'doctor_update', "Editó médico \"$name\"", 'vinculacion_doctor', $id);
             } else {
                 $pdo->prepare(
-                    'INSERT INTO vinculacion_doctors (name, phone, email, concierge_id, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-                )->execute([$name, $phone, $email, $conciergeId, $isActive, (int)$me['id']]);
+                    'INSERT INTO vinculacion_doctors (name, phone, email, linking_code, concierge_id, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$name, $phone, $email, $linkingCode, $conciergeId, $isActive, (int)$me['id']]);
                 $id = (int)$pdo->lastInsertId();
                 log_activity('vinculacion', 'doctor_create', "Creó médico \"$name\"", 'vinculacion_doctor', $id);
             }

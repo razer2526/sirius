@@ -13,6 +13,7 @@ import {
   icon, escapeHtml, toast, modal, confirmDialog, spinner,
   inputCls, labelCls, debounce, fmtDateTime, fullName, calcAge,
 } from '../ui.js';
+import { renderCoverageMap } from '../coverage_map.js';
 
 let ctx;
 let catalog = null;
@@ -22,6 +23,7 @@ const TOOLS = [
   { key: 'membretador', label: 'Membretador', icon: 'file-text', color: 'bg-indigo-100 text-indigo-700', desc: 'Emitir estudios y documentos con membrete' },
   { key: 'cotizador',   label: 'Cotizador',   icon: 'calculator', color: 'bg-emerald-100 text-emerald-700', desc: 'Generar cotizaciones para pacientes' },
   { key: 'comisiones',  label: 'Comisiones',  icon: 'link', color: 'bg-amber-100 text-amber-700', desc: 'Comisiones de médicos y concierge con convenio' },
+  { key: 'cobertura',   label: 'Cobertura',   icon: 'map-pin', color: 'bg-sky-100 text-sky-700', desc: 'Verificar cobertura de la unidad móvil por código postal' },
 ];
 
 export async function render(root, context) {
@@ -33,7 +35,8 @@ export async function render(root, context) {
 
   if (!tool) return gridTools(root);
   if (tool === 'cotizador') return renderCotizador(root, category);
-  if (tool === 'comisiones') return renderComisiones(root, category);
+  if (tool === 'comisiones') return renderComisiones(root, category, type);
+  if (tool === 'cobertura') return renderCobertura(root);
   if (tool !== 'membretador') return gridTools(root);
 
   if (!category) return gridCategories(root);
@@ -1690,14 +1693,15 @@ function renderQuoteForm(root) {
 let commissionListState = { items: [], total: 0, per_page: 25 };
 let commissionFilters = { q: '', page: 1 };
 
-function renderComisiones(root, view) {
+function renderComisiones(root, view, sub) {
   if (view === 'nuevo') return renderCommissionForm(root);
+  if (view === 'medico' && /^\d+$/.test(sub || '')) return renderCommissionDoctorDetail(root, +sub);
   return renderCommissionList(root);
 }
 
 async function renderCommissionList(root) {
   root.innerHTML = `
-    <div class="mx-auto max-w-5xl space-y-4">
+    <div class="mx-auto max-w-5xl space-y-6">
       <a href="#/apps" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
         ${icon('chevron-left', 'h-4 w-4')} Volver a Apps
       </a>
@@ -1707,12 +1711,27 @@ async function renderCommissionList(root) {
           <input id="c-search" type="text" placeholder="Buscar por folio…" autocomplete="off"
                  class="w-full rounded-xl border-0 bg-white py-2.5 pl-11 pr-4 text-sm shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
         </div>
-        <a href="#/apps/comisiones/nuevo"
-           class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-          ${icon('plus', 'h-4 w-4')} Nuevo estado de cuenta
-        </a>
+        <div class="flex flex-wrap gap-2">
+          <button id="btn-new-entry" type="button"
+                  class="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-indigo-600 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50">
+            ${icon('user-plus', 'h-4 w-4')} Nuevo registro
+          </button>
+          <a href="#/apps/comisiones/nuevo"
+             class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+            ${icon('plus', 'h-4 w-4')} Nuevo estado de cuenta
+          </a>
+        </div>
       </div>
-      <div id="c-list">${spinner()}</div>
+
+      <section>
+        <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Médicos vinculados</p>
+        <div id="c-doctors">${spinner()}</div>
+      </section>
+
+      <section>
+        <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+        <div id="c-list">${spinner()}</div>
+      </section>
     </div>`;
 
   const input = root.querySelector('#c-search');
@@ -1723,7 +1742,31 @@ async function renderCommissionList(root) {
     paintCommissionList(root.querySelector('#c-list'), load);
   };
   input.addEventListener('input', debounce(() => load(), 300));
-  await load();
+
+  root.querySelector('#btn-new-entry').addEventListener('click', () => openCommissionEntryModal(null, null));
+
+  const paintDoctorsBox = async () => {
+    const { doctors } = await apiGet('commissions/parties');
+    const box = root.querySelector('#c-doctors');
+    if (!doctors.length) {
+      box.innerHTML = '<div class="rounded-2xl bg-white py-8 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">Sin médicos dados de alta en Vinculación.</div>';
+      return;
+    }
+    box.innerHTML = `
+      <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        ${doctors.map((d) => `
+          <a href="#/apps/comisiones/medico/${d.id}"
+             class="flex items-center gap-3 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200 hover:ring-indigo-300">
+            <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-indigo-600">${icon('user-plus', 'h-4 w-4')}</span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium text-slate-800">${escapeHtml(d.name)}</span>
+              ${d.concierge_name ? `<span class="block truncate text-xs text-slate-400">${escapeHtml(d.concierge_name)}</span>` : ''}
+            </span>
+          </a>`).join('')}
+      </div>`;
+  };
+
+  await Promise.all([load(), paintDoctorsBox()]);
 }
 
 function paintCommissionList(box, load) {
@@ -1767,6 +1810,8 @@ function paintCommissionList(box, load) {
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
                     <a href="comision.php?id=${s.id}&download=1" title="Descargar PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('download', 'h-4 w-4')}</a>
+                    <button type="button" data-del-statement="${s.id}" title="Eliminar"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>
                   </div>
                 </td>
               </tr>`).join('')}
@@ -1782,6 +1827,24 @@ function paintCommissionList(box, load) {
 
   box.querySelector('#pg-prev')?.addEventListener('click', () => { commissionFilters.page--; load(false); });
   box.querySelector('#pg-next')?.addEventListener('click', () => { commissionFilters.page++; load(false); });
+
+  box.querySelectorAll('[data-del-statement]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = +btn.dataset.delStatement;
+      const ok = await confirmDialog(
+        'Eliminar estado de cuenta',
+        'Se borra el PDF generado. Si venía de registros manuales, esos registros vuelven a quedar pendientes para facturarse después.',
+        { confirmLabel: 'Eliminar', danger: true }
+      );
+      if (!ok) return;
+      try {
+        await apiPost('commissions/statement_delete', { id });
+        toast('Estado de cuenta eliminado');
+        load(false);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }));
 }
 
 function defaultPeriodStart() {
@@ -1793,11 +1856,11 @@ function defaultPeriodEnd() {
   return new Date().toISOString().slice(0, 10);
 }
 
-/** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
+let commissionFormMode = 'auto';
+
+/** Envoltorio: elige entre armar el estado de cuenta por periodo (hoy) o pegando la lista de un médico (imagen + IA). */
 async function renderCommissionForm(root) {
   const { doctors, concierge } = await apiGet('commissions/parties');
-  let lines = [];
-  let saving = false;
 
   root.innerHTML = `
     <div class="mx-auto max-w-4xl space-y-5">
@@ -1806,9 +1869,41 @@ async function renderCommissionForm(root) {
       </a>
       <div>
         <h3 class="text-lg font-bold text-slate-900">Nuevo estado de cuenta de comisiones</h3>
-        <p class="text-sm text-slate-500">Elige a quién y el periodo; revisa las líneas antes de generar el PDF.</p>
+        <p class="text-sm text-slate-500">Por periodo jala lo ya capturado en Sirius; pegando la lista, la IA la ordena y la cruza contra Sirius por ti.</p>
       </div>
+      <div class="inline-flex rounded-lg bg-slate-100 p-1 text-sm font-semibold">
+        <button type="button" id="mode-auto" class="rounded-md px-3 py-1.5">Por periodo</button>
+        <button type="button" id="mode-image" class="rounded-md px-3 py-1.5">Pegar lista (imagen)</button>
+        <button type="button" id="mode-manual" class="rounded-md px-3 py-1.5">Registro manual</button>
+      </div>
+      <div id="mode-box"></div>
+    </div>`;
 
+  const box = root.querySelector('#mode-box');
+  const modeAutoBtn = root.querySelector('#mode-auto');
+  const modeImageBtn = root.querySelector('#mode-image');
+  const modeManualBtn = root.querySelector('#mode-manual');
+  const paint = () => {
+    modeAutoBtn.className = `rounded-md px-3 py-1.5 ${commissionFormMode === 'auto' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`;
+    modeImageBtn.className = `rounded-md px-3 py-1.5 ${commissionFormMode === 'image' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`;
+    modeManualBtn.className = `rounded-md px-3 py-1.5 ${commissionFormMode === 'manual' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'}`;
+    if (commissionFormMode === 'image') renderCommissionFormImage(box, doctors);
+    else if (commissionFormMode === 'manual') renderCommissionFormManual(box, doctors);
+    else renderCommissionFormAuto(box, doctors, concierge);
+  };
+  modeAutoBtn.addEventListener('click', () => { commissionFormMode = 'auto'; paint(); });
+  modeImageBtn.addEventListener('click', () => { commissionFormMode = 'image'; paint(); });
+  modeManualBtn.addEventListener('click', () => { commissionFormMode = 'manual'; paint(); });
+  paint();
+}
+
+/** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
+function renderCommissionFormAuto(root, doctors, concierge) {
+  let lines = [];
+  let saving = false;
+
+  root.innerHTML = `
+    <div class="space-y-5">
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
@@ -1958,5 +2053,699 @@ async function renderCommissionForm(root) {
       saving = false;
       genBtn.disabled = false;
     }
+  });
+}
+
+/** Médico + rango de fechas → vista previa de los registros manuales pendientes → generar PDF (los marca como facturados). */
+function renderCommissionFormManual(root, doctors) {
+  let lines = [];
+  let saving = false;
+
+  root.innerHTML = `
+    <div class="space-y-5">
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <div>
+            <label class="${labelCls}">Médico</label>
+            <select id="cm-doctor" class="${inputCls}">
+              <option value="">— Elige un médico —</option>
+              ${doctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('')}
+            </select>
+          </div>
+          <div>
+            <label class="${labelCls}">Desde</label>
+            <input type="date" id="cm-from" value="${defaultPeriodStart()}" class="${inputCls}">
+          </div>
+          <div>
+            <label class="${labelCls}">Hasta</label>
+            <input type="date" id="cm-to" value="${defaultPeriodEnd()}" class="${inputCls}">
+          </div>
+        </div>
+        <div class="mt-4">
+          <button id="cm-preview" type="button" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Vista previa</button>
+        </div>
+      </section>
+
+      <div id="cm-lines-box"></div>
+
+      <div class="flex justify-end">
+        <button id="cm-generate" type="button" disabled
+                class="flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">
+          ${icon('check-square', 'h-4 w-4')} Generar estado de cuenta
+        </button>
+      </div>
+    </div>`;
+
+  const doctorSel = root.querySelector('#cm-doctor');
+  const linesBox = root.querySelector('#cm-lines-box');
+  const genBtn = root.querySelector('#cm-generate');
+
+  const paintLines = () => {
+    const included = lines.filter((l) => l.commission_included);
+    genBtn.disabled = !included.length;
+    if (!lines.length) {
+      linesBox.innerHTML = '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">Sin vista previa todavía.</div>';
+      return;
+    }
+    const total = included.reduce((sum, l) => sum + l.commission_amount, 0);
+    linesBox.innerHTML = `
+      <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-3 py-2 w-10"></th>
+                <th class="px-3 py-2">Paciente / Estudios</th>
+                <th class="px-3 py-2 text-right">Monto</th>
+                <th class="px-3 py-2 text-center">%</th>
+                <th class="px-3 py-2 text-right">Comisión</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${lines.map((l) => `
+                <tr class="${l.commission_included ? '' : 'opacity-40'}">
+                  <td class="px-3 py-2"><input type="checkbox" data-toggle="${l.id}" ${l.commission_included ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
+                  <td class="px-3 py-2">
+                    <span class="block font-medium text-slate-800">${escapeHtml(l.patient_name)}</span>
+                    <span class="block text-xs text-slate-500">${escapeHtml(l.study_name)} · ${escapeHtml(l.entry_date)}</span>
+                  </td>
+                  <td class="px-3 py-2 text-right text-slate-700">$${Number(l.amount_charged).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center text-slate-500">${Number(l.commission_pct).toFixed(1)}%</td>
+                  <td class="px-3 py-2 text-right font-semibold text-slate-800">$${Number(l.commission_amount).toFixed(2)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+        <span class="text-sm font-semibold text-slate-600">Total comisión (solo incluidos)</span>
+        <span class="text-base font-bold text-slate-800">$${total.toFixed(2)}</span>
+      </div>`;
+
+    linesBox.querySelectorAll('[data-toggle]').forEach((cb) =>
+      cb.addEventListener('change', () => {
+        const line = lines.find((l) => l.id === +cb.dataset.toggle);
+        line.commission_included = cb.checked;
+        paintLines();
+      }));
+  };
+  paintLines();
+
+  const currentParams = () => ({
+    doctor_id: +doctorSel.value || 0,
+    period_start: root.querySelector('#cm-from').value,
+    period_end: root.querySelector('#cm-to').value,
+  });
+
+  root.querySelector('#cm-preview').addEventListener('click', async () => {
+    const p = currentParams();
+    if (!p.doctor_id) { toast('Elige un médico', 'error'); return; }
+    try {
+      const res = await apiGet('commissions/manual_preview', p);
+      lines = res.lines;
+      paintLines();
+      if (!lines.length) toast('No hay registros pendientes de este médico en ese periodo', 'info');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
+
+  genBtn.addEventListener('click', async () => {
+    if (saving) return;
+    const included = lines.filter((l) => l.commission_included);
+    if (!included.length) { toast('No hay registros incluidos para generar el estado de cuenta', 'error'); return; }
+    saving = true;
+    genBtn.disabled = true;
+    try {
+      const res = await apiPost('commissions/manual_save', { doctor_id: +doctorSel.value, entry_ids: included.map((l) => l.id) });
+      modal({
+        title: 'Estado de cuenta generado',
+        content: `<p class="text-sm text-slate-600">Folio <b class="font-mono text-slate-900">${escapeHtml(res.folio)}</b> guardado correctamente.</p>`,
+        actions: [
+          { label: 'Ver PDF', onClick: (close) => { window.open(`comision.php?id=${res.id}`, '_blank'); close(); ctx.navigate('apps/comisiones'); } },
+          { label: 'Volver al listado', primary: true, onClick: (close) => { close(); ctx.navigate('apps/comisiones'); } },
+        ],
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+      saving = false;
+      genBtn.disabled = false;
+    }
+  });
+}
+
+/** Pega una captura con la lista informal de un médico → la IA la extrae y la cruza contra Sirius → revisa → genera el PDF. */
+function renderCommissionFormImage(root, doctors) {
+  let image = null;   // {mime, data}
+  let rows = null;    // resultado de commissions/extract
+  let extracting = false;
+  let saving = false;
+
+  root.innerHTML = `
+    <div class="space-y-5">
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div>
+          <label class="${labelCls}">Médico</label>
+          <select id="ci-doctor" class="${inputCls}">
+            <option value="">— Elige un médico —</option>
+            ${doctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="mt-4">
+          <label class="${labelCls}">Captura de la lista</label>
+          <div id="ci-drop" tabindex="0"
+               class="flex cursor-text flex-col items-center justify-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-400 outline-none focus:border-indigo-400 focus:text-indigo-500">
+            ${icon('image', 'h-6 w-6')}
+            <span id="ci-drop-text">Haz clic aquí y pega la imagen (Ctrl+V)</span>
+            <img id="ci-preview" class="hidden max-h-48 rounded-lg ring-1 ring-slate-200">
+          </div>
+        </div>
+        <div class="mt-4">
+          <button id="ci-extract" type="button" disabled
+                  class="flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50">
+            ${icon('sparkles', 'h-4 w-4')} <span id="ci-extract-label">Extraer con IA</span>
+          </button>
+        </div>
+      </section>
+
+      <div id="ci-rows-box"></div>
+
+      <div class="flex justify-end">
+        <button id="ci-generate" type="button" disabled
+                class="flex items-center gap-2 rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500 disabled:opacity-50">
+          ${icon('check-square', 'h-4 w-4')} Generar estado de cuenta
+        </button>
+      </div>
+    </div>`;
+
+  const doctorSel = root.querySelector('#ci-doctor');
+  const drop = root.querySelector('#ci-drop');
+  const dropText = root.querySelector('#ci-drop-text');
+  const preview = root.querySelector('#ci-preview');
+  const extractBtn = root.querySelector('#ci-extract');
+  const extractLabel = root.querySelector('#ci-extract-label');
+  const rowsBox = root.querySelector('#ci-rows-box');
+  const genBtn = root.querySelector('#ci-generate');
+
+  const updateExtractEnabled = () => { extractBtn.disabled = extracting || !image || !doctorSel.value; };
+  doctorSel.addEventListener('change', updateExtractEnabled);
+
+  drop.addEventListener('click', () => drop.focus());
+  drop.addEventListener('paste', (e) => {
+    const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith('image/'));
+    if (!item) { toast('Pega una imagen (Ctrl+V) con la captura de la lista', 'error'); return; }
+    const blob = item.getAsFile();
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = String(reader.result || '');
+      const match = /^data:(.*?);base64,(.*)$/.exec(dataUrl);
+      if (!match) { toast('No se pudo leer la imagen pegada', 'error'); return; }
+      image = { mime: match[1], data: match[2] };
+      preview.src = dataUrl;
+      preview.classList.remove('hidden');
+      dropText.textContent = 'Imagen lista — pega otra para reemplazarla';
+      updateExtractEnabled();
+    };
+    reader.readAsDataURL(blob);
+  });
+
+  const paintRows = () => {
+    if (!rows || !rows.length) {
+      rowsBox.innerHTML = rows
+        ? '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">La imagen no arrojó ningún paciente.</div>'
+        : '';
+      genBtn.disabled = true;
+      return;
+    }
+    genBtn.disabled = !rows.some((r) => r.commission_included);
+    const total = rows.reduce((sum, r) => sum + (r.commission_included ? r.commission_amount : 0), 0);
+    rowsBox.innerHTML = `
+      <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              <tr>
+                <th class="px-3 py-2 w-10"></th>
+                <th class="px-3 py-2">Paciente / Estudios</th>
+                <th class="px-3 py-2">Coincidencia</th>
+                <th class="px-3 py-2 text-right">Monto</th>
+                <th class="px-3 py-2 text-center">%</th>
+                <th class="px-3 py-2 text-right">Comisión</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              ${rows.map((r, i) => `
+                <tr class="${r.commission_included ? '' : 'opacity-40'}">
+                  <td class="px-3 py-2"><input type="checkbox" data-row-toggle="${i}" ${r.commission_included ? 'checked' : ''} ${r.matched ? '' : 'disabled'} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
+                  <td class="px-3 py-2">
+                    <span class="block font-medium text-slate-800">${escapeHtml(r.patient_name_matched || r.patient_name_raw)}</span>
+                    <span class="block text-xs text-slate-500">${escapeHtml((r.studies_matched && r.studies_matched.length ? r.studies_matched : r.studies_raw).join(', '))} · ${escapeHtml(r.date_label || '')}${r.service_type === 'urgencia' ? ' · Urgencia' : ''}</span>
+                  </td>
+                  <td class="px-3 py-2">
+                    ${r.matched
+                      ? '<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-semibold text-emerald-700">Coincide</span>'
+                      : r.candidates && r.candidates.length
+                        ? `<select data-candidate="${i}" class="rounded-lg border-0 bg-amber-50 py-1 pl-2 pr-6 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 focus:ring-2 focus:ring-amber-400">
+                             <option value="">¿Es alguno de estos?</option>
+                             ${r.candidates.map((c, ci) => `<option value="${ci}">${escapeHtml(c.name)}</option>`).join('')}
+                           </select>`
+                        : '<span class="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-xs font-semibold text-red-700">Sin coincidencia</span>'}
+                  </td>
+                  <td class="px-3 py-2 text-right text-slate-700">$${Number(r.amount_charged).toFixed(2)}</td>
+                  <td class="px-3 py-2 text-center text-slate-500">${Number(r.commission_pct).toFixed(1)}%</td>
+                  <td class="px-3 py-2 text-right font-semibold text-slate-800">$${Number(r.commission_amount).toFixed(2)}</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+        <span class="text-sm font-semibold text-slate-600">Total comisión (solo incluidas)</span>
+        <span class="text-base font-bold text-slate-800">$${total.toFixed(2)}</span>
+      </div>`;
+
+    rowsBox.querySelectorAll('[data-row-toggle]').forEach((cb) =>
+      cb.addEventListener('change', () => {
+        rows[+cb.dataset.rowToggle].commission_included = cb.checked;
+        paintRows();
+      }));
+    rowsBox.querySelectorAll('[data-candidate]').forEach((sel) =>
+      sel.addEventListener('change', () => {
+        const r = rows[+sel.dataset.candidate];
+        const c = r.candidates[+sel.value];
+        if (!c) return;
+        r.matched = true;
+        r.patient_name_matched = c.name;
+        r.studies_matched = c.studies;
+        r.episode_study_ids = c.episode_study_ids;
+        r.amount_charged = c.amount_charged;
+        r.commission_amount = c.commission_amount;
+        r.commission_pct = c.commission_pct;
+        r.commission_included = true;
+        paintRows();
+      }));
+  };
+
+  extractBtn.addEventListener('click', async () => {
+    if (!doctorSel.value || !image) return;
+    extracting = true;
+    extractBtn.disabled = true;
+    extractLabel.textContent = 'Extrayendo…';
+    try {
+      const res = await apiPost('commissions/extract', { party_id: +doctorSel.value, image });
+      rows = res.rows;
+      paintRows();
+    } catch (e) {
+      toast(e.message, 'error');
+    } finally {
+      extracting = false;
+      extractLabel.textContent = 'Extraer con IA';
+      updateExtractEnabled();
+    }
+  });
+
+  genBtn.addEventListener('click', async () => {
+    if (saving || !rows) return;
+    const included = rows.filter((r) => r.commission_included);
+    if (!included.length) { toast('No hay líneas incluidas para generar el estado de cuenta', 'error'); return; }
+    saving = true;
+    genBtn.disabled = true;
+    try {
+      const res = await apiPost('commissions/extract_save', { party_id: +doctorSel.value, rows: included });
+      modal({
+        title: 'Estado de cuenta generado',
+        content: `<p class="text-sm text-slate-600">Folio <b class="font-mono text-slate-900">${escapeHtml(res.folio)}</b> guardado correctamente.</p>`,
+        actions: [
+          { label: 'Ver PDF', onClick: (close) => { window.open(`comision.php?id=${res.id}`, '_blank'); close(); ctx.navigate('apps/comisiones'); } },
+          { label: 'Volver al listado', primary: true, onClick: (close) => { close(); ctx.navigate('apps/comisiones'); } },
+        ],
+      });
+    } catch (e) {
+      toast(e.message, 'error');
+      saving = false;
+      genBtn.disabled = false;
+    }
+  });
+
+  updateExtractEnabled();
+  paintRows();
+}
+
+/** Apps > Cobertura: buscar un código postal → colonia(s) + cobertura de su zona + mapa. */
+function renderCobertura(root) {
+  let lastResult = null;
+
+  root.innerHTML = `
+    <div class="mx-auto max-w-2xl space-y-5">
+      <a href="#/apps" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        ${icon('chevron-left', 'h-4 w-4')} Volver a Apps
+      </a>
+      <div>
+        <h3 class="text-lg font-bold text-slate-900">Cobertura</h3>
+        <p class="text-sm text-slate-500">Escribe un código postal para saber la colonia/alcaldía y si la unidad móvil cubre esa zona.</p>
+      </div>
+
+      <div class="relative">
+        <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${icon('map-pin', 'h-5 w-5')}</span>
+        <input id="cv-cp" type="text" inputmode="numeric" maxlength="5" placeholder="Código postal (5 dígitos)" autocomplete="off"
+               class="w-full rounded-xl border-0 bg-white py-3 pl-11 pr-4 text-base shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+      </div>
+
+      <div id="cv-result"></div>
+    </div>`;
+
+  const input = root.querySelector('#cv-cp');
+  const resultBox = root.querySelector('#cv-result');
+  input.focus();
+
+  const search = debounce(async () => {
+    const cp = input.value.replace(/\D/g, '');
+    if (cp.length !== 5) {
+      resultBox.innerHTML = '';
+      return;
+    }
+    resultBox.innerHTML = spinner();
+    try {
+      lastResult = await apiGet('coverage/lookup', { cp });
+      paintResult();
+    } catch (e) {
+      resultBox.innerHTML = `<div class="rounded-2xl bg-amber-50 p-5 text-center text-sm text-amber-800 ring-1 ring-amber-200">${escapeHtml(e.message)}</div>`;
+    }
+  }, 350);
+  input.addEventListener('input', search);
+
+  function paintResult() {
+    const r = lastResult;
+    const badge = r.has_coverage
+      ? `<span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-sm font-semibold text-emerald-700">${icon('check-square', 'h-4 w-4')} Con cobertura</span>`
+      : r.extra_cost
+        ? `<span class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-3 py-1 text-sm font-semibold text-amber-700">${icon('alert-triangle', 'h-4 w-4')} Área extendida (costo extra)</span>`
+        : `<span class="inline-flex items-center gap-1.5 rounded-full bg-red-100 px-3 py-1 text-sm font-semibold text-red-700">${icon('x', 'h-4 w-4')} Sin cobertura</span>`;
+    resultBox.innerHTML = `
+      <div class="space-y-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-semibold text-slate-800">${escapeHtml(r.municipio)}</p>
+            <p class="text-xs text-slate-500">${escapeHtml(r.estado)} · CP ${escapeHtml(r.cp)}</p>
+          </div>
+          ${badge}
+        </div>
+        <div>
+          <p class="mb-1 text-xs font-bold uppercase tracking-wide text-slate-400">Colonia(s)</p>
+          <p class="text-sm text-slate-700">${r.colonias.map((c) => escapeHtml(c.nombre)).join(', ')}</p>
+        </div>
+        <div id="cv-map" class="h-56 w-full overflow-hidden rounded-xl ring-1 ring-slate-200"></div>
+      </div>`;
+
+    if (r.latitude != null) {
+      const stateLabel = r.has_coverage ? 'Con cobertura' : r.extra_cost ? 'Área extendida (costo extra)' : 'Sin cobertura';
+      renderCoverageMap(resultBox.querySelector('#cv-map'), [{
+        lat: r.latitude, lng: r.longitude, covered: r.has_coverage, extraCost: r.extra_cost,
+        label: `${escapeHtml(r.municipio)} — ${stateLabel}`,
+      }]);
+    } else {
+      resultBox.querySelector('#cv-map').innerHTML =
+        '<div class="flex h-full items-center justify-center px-4 text-center text-xs text-slate-400">Esta zona todavía no tiene coordenadas — reimporta el catálogo en Admin Tools &gt; Cobertura.</div>';
+    }
+  }
+}
+
+/* ================== Comisiones: registro manual por médico ================== */
+
+/** Regla de comisión, replicada en el cliente solo para la vista previa — el servidor la vuelve a calcular al guardar, nunca confía en este número. */
+function commissionEstimateIsFilmArray(name) {
+  const n = (name || '').toLowerCase();
+  return n.includes('filmarray') || n.includes('film array');
+}
+function commissionEstimateAmount(name, amount) {
+  return commissionEstimateIsFilmArray(name) ? 750 : Math.round((Number(amount) || 0) * 0.10 * 100) / 100;
+}
+
+/** Panel "cuenta de pacientes" de un médico: sus registros manuales, pendientes y facturados. */
+async function renderCommissionDoctorDetail(root, doctorId) {
+  root.innerHTML = `
+    <div class="mx-auto max-w-4xl space-y-5">
+      <a href="#/apps/comisiones" class="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+        ${icon('chevron-left', 'h-4 w-4')} Volver a Comisiones
+      </a>
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 id="cd-name" class="text-lg font-bold text-slate-900">…</h3>
+          <p class="text-sm text-slate-500">Cuenta de pacientes referidos.</p>
+        </div>
+        <button id="cd-new" type="button"
+                class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+          ${icon('plus', 'h-4 w-4')} Nuevo registro
+        </button>
+      </div>
+      <div id="cd-list">${spinner()}</div>
+    </div>`;
+
+  const { doctors } = await apiGet('commissions/parties');
+  const doctor = doctors.find((d) => d.id === doctorId);
+  root.querySelector('#cd-name').textContent = doctor ? doctor.name : 'Médico';
+  if (!doctor) {
+    root.querySelector('#cd-list').innerHTML = '<div class="rounded-2xl bg-amber-50 p-5 text-center text-sm text-amber-800 ring-1 ring-amber-200">Médico no encontrado.</div>';
+    return;
+  }
+
+  const load = async () => {
+    const { entries } = await apiGet('commissions/entries_list', { doctor_id: doctorId });
+    paintCommissionEntries(root.querySelector('#cd-list'), entries, load, doctorId);
+  };
+  root.querySelector('#cd-new').addEventListener('click', () => openCommissionEntryModal(null, doctorId, load));
+  await load();
+}
+
+function paintCommissionEntries(box, entries, load, doctorId) {
+  if (!entries.length) {
+    box.innerHTML = `
+      <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
+        <p class="text-sm font-medium text-slate-600">Sin registros todavía</p>
+        <p class="mt-1 text-xs text-slate-400">Agrega el primero con el botón de arriba.</p>
+      </div>`;
+    return;
+  }
+
+  const pendingTotal = entries.filter((e) => !e.statement_id).reduce((sum, e) => sum + Number(e.total_commission), 0);
+
+  box.innerHTML = `
+    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            <tr>
+              <th class="px-4 py-3">Fecha</th>
+              <th class="px-4 py-3">Paciente / Estudios</th>
+              <th class="px-4 py-3 text-right">Monto</th>
+              <th class="px-4 py-3 text-right">Comisión</th>
+              <th class="px-4 py-3">Estado</th>
+              <th class="px-4 py-3 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            ${entries.map((e) => `
+              <tr>
+                <td class="px-4 py-3 text-slate-500">${escapeHtml(e.entry_date)}</td>
+                <td class="px-4 py-3">
+                  <span class="block font-medium text-slate-800">${escapeHtml(e.patient_name)}</span>
+                  <span class="block text-xs text-slate-500">${escapeHtml(e.studies.map((s) => s.name).join(', '))}</span>
+                </td>
+                <td class="px-4 py-3 text-right text-slate-700">$${Number(e.total_amount).toFixed(2)}</td>
+                <td class="px-4 py-3 text-right font-semibold text-slate-800">$${Number(e.total_commission).toFixed(2)}</td>
+                <td class="px-4 py-3">
+                  ${e.statement_id
+                    ? `<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Facturado · ${escapeHtml(e.folio)}</span>`
+                    : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Pendiente</span>'}
+                </td>
+                <td class="px-4 py-3">
+                  ${e.statement_id ? '' : `
+                  <div class="flex justify-end gap-1">
+                    <button type="button" data-edit-entry="${e.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
+                    <button type="button" data-del-entry="${e.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>
+                  </div>`}
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
+      <span class="text-sm font-semibold text-slate-600">Total pendiente</span>
+      <span class="text-base font-bold text-slate-800">$${pendingTotal.toFixed(2)}</span>
+    </div>`;
+
+  box.querySelectorAll('[data-edit-entry]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const entry = entries.find((e) => e.id === +btn.dataset.editEntry);
+      openCommissionEntryModal(entry, doctorId, load);
+    }));
+  box.querySelectorAll('[data-del-entry]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const ok = await confirmDialog('Eliminar registro', '¿Eliminar este registro pendiente?', { confirmLabel: 'Eliminar', danger: true });
+      if (!ok) return;
+      try {
+        await apiPost('commissions/entry_delete', { id: +btn.dataset.delEntry });
+        toast('Registro eliminado');
+        load();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }));
+}
+
+/**
+ * Modal "Nuevo registro" / "Editar registro": fecha, médico, paciente y una
+ * mini-lista de estudios con búsqueda dinámica contra el catálogo — cada
+ * estudio calcula su comisión ($750 fijo si es FilmArray, 10% si no) nada más
+ * como preview; el servidor la recalcula real al guardar.
+ * `entry` = null para nuevo, o el registro (de entries_list) para editar.
+ * `presetDoctorId` precarga el médico (se usa desde el panel de un médico).
+ * `onSaved` se llama tras guardar con éxito, para refrescar la vista que abrió el modal.
+ */
+async function openCommissionEntryModal(entry, presetDoctorId, onSaved) {
+  const { doctors } = await apiGet('commissions/parties');
+  if (!doctors.length) {
+    toast('Da de alta un médico en Vinculación primero', 'error');
+    return;
+  }
+  const studies = entry ? entry.studies.map((s) => ({ ...s })) : [];
+
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="space-y-4">
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div>
+          <label class="${labelCls}">Fecha</label>
+          <input type="date" id="ce-date" value="${entry ? entry.entry_date : new Date().toISOString().slice(0, 10)}" class="${inputCls}">
+        </div>
+        <div>
+          <label class="${labelCls}">Médico</label>
+          <select id="ce-doctor" class="${inputCls}">
+            ${doctors.map((d) => `<option value="${d.id}" ${(entry ? entry.doctor_id : presetDoctorId) === d.id ? 'selected' : ''}>${escapeHtml(d.name)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label class="${labelCls}">Paciente</label>
+        <input type="text" id="ce-patient" value="${entry ? escapeHtml(entry.patient_name) : ''}" placeholder="Nombre del paciente" class="${inputCls}">
+      </div>
+      <div>
+        <label class="${labelCls}">Estudios</label>
+        <div class="relative">
+          <input type="text" id="ce-study-search" placeholder="Buscar estudio…" autocomplete="off" class="${inputCls}">
+          <div id="ce-study-results" class="absolute z-10 mt-1 hidden max-h-48 w-full overflow-auto rounded-lg bg-white py-1 shadow-lg ring-1 ring-slate-200"></div>
+        </div>
+        <div id="ce-study-list" class="mt-2 space-y-1"></div>
+      </div>
+      <div class="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm ring-1 ring-slate-200">
+        <span class="font-semibold text-slate-600">Comisión estimada</span>
+        <span id="ce-total" class="font-bold text-slate-800">$0.00</span>
+      </div>
+    </div>`;
+
+  const searchInput = wrap.querySelector('#ce-study-search');
+  const resultsBox = wrap.querySelector('#ce-study-results');
+  const listBox = wrap.querySelector('#ce-study-list');
+  const totalBox = wrap.querySelector('#ce-total');
+
+  const updateTotal = () => {
+    const total = studies.reduce((sum, s) => sum + commissionEstimateAmount(s.name, s.amount_charged), 0);
+    totalBox.textContent = `$${total.toFixed(2)}`;
+  };
+
+  const paintStudies = () => {
+    if (!studies.length) {
+      listBox.innerHTML = '<p class="text-xs text-slate-400">Sin estudios agregados todavía.</p>';
+    } else {
+      listBox.innerHTML = studies.map((s, i) => `
+        <div class="flex items-center gap-2 rounded-lg bg-white px-3 py-2 ring-1 ring-slate-200">
+          <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(s.name)}</span>
+          ${commissionEstimateIsFilmArray(s.name) ? '<span class="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-xs font-semibold text-indigo-600">FilmArray</span>' : ''}
+          <input type="number" min="0" step="0.01" data-study-amount="${i}" value="${s.amount_charged}"
+                 class="w-24 shrink-0 rounded-lg border-0 bg-slate-50 px-2 py-1 text-right text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+          <span data-study-commission="${i}" class="w-16 shrink-0 text-right text-xs font-semibold text-emerald-600">$${commissionEstimateAmount(s.name, s.amount_charged).toFixed(2)}</span>
+          <button type="button" data-remove-study="${i}" class="shrink-0 text-slate-400 hover:text-red-500">${icon('x', 'h-4 w-4')}</button>
+        </div>`).join('');
+      listBox.querySelectorAll('[data-study-amount]').forEach((inp) =>
+        inp.addEventListener('input', () => {
+          const idx = +inp.dataset.studyAmount;
+          studies[idx].amount_charged = parseFloat(inp.value) || 0;
+          listBox.querySelector(`[data-study-commission="${idx}"]`).textContent =
+            `$${commissionEstimateAmount(studies[idx].name, studies[idx].amount_charged).toFixed(2)}`;
+          updateTotal();
+        }));
+      listBox.querySelectorAll('[data-remove-study]').forEach((btn) =>
+        btn.addEventListener('click', () => {
+          studies.splice(+btn.dataset.removeStudy, 1);
+          paintStudies();
+          updateTotal();
+        }));
+    }
+    updateTotal();
+  };
+  paintStudies();
+
+  const addStudy = (name, amount) => {
+    studies.push({ name, amount_charged: Number(amount) || 0 });
+    searchInput.value = '';
+    resultsBox.classList.add('hidden');
+    resultsBox.innerHTML = '';
+    paintStudies();
+  };
+
+  searchInput.addEventListener('input', debounce(async () => {
+    const q = searchInput.value.trim();
+    if (!q) { resultsBox.classList.add('hidden'); resultsBox.innerHTML = ''; return; }
+    let items = [];
+    try {
+      const res = await apiGet('commissions/studies_search', { q });
+      items = res.items;
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+    const freeOption = `<button type="button" data-pick-free class="block w-full truncate px-3 py-2 text-left text-sm text-indigo-600 hover:bg-indigo-50">${icon('plus', 'h-3.5 w-3.5')} Agregar "${escapeHtml(q)}" como estudio libre</button>`;
+    resultsBox.innerHTML = (items.length
+      ? items.map((it, i) => `<button type="button" data-pick="${i}" class="block w-full truncate px-3 py-2 text-left text-sm hover:bg-slate-50">${escapeHtml(it.name)} <span class="text-xs text-slate-400">$${Number(it.public_price).toFixed(2)}</span></button>`).join('')
+      : '<p class="px-3 py-2 text-xs text-slate-400">Sin resultados en el catálogo.</p>') + freeOption;
+    resultsBox.classList.remove('hidden');
+    resultsBox.querySelectorAll('[data-pick]').forEach((btn) =>
+      btn.addEventListener('click', () => { const it = items[+btn.dataset.pick]; addStudy(it.name, it.public_price); }));
+    resultsBox.querySelector('[data-pick-free]')?.addEventListener('click', () => addStudy(q, 0));
+  }, 250));
+
+  modal({
+    title: entry ? 'Editar registro' : 'Nuevo registro',
+    content: wrap,
+    size: 'max-w-lg',
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Guardar', primary: true,
+        onClick: async (close, btn) => {
+          const doctorId = +wrap.querySelector('#ce-doctor').value;
+          const patientName = wrap.querySelector('#ce-patient').value.trim();
+          const entryDate = wrap.querySelector('#ce-date').value;
+          if (!patientName) { toast('Escribe el nombre del paciente', 'error'); return; }
+          if (!studies.length) { toast('Agrega al menos un estudio', 'error'); return; }
+          btn.disabled = true;
+          try {
+            await apiPost('commissions/entry_save', {
+              id: entry ? entry.id : undefined,
+              doctor_id: doctorId,
+              patient_name: patientName,
+              entry_date: entryDate,
+              studies: studies.map((s) => ({ name: s.name, amount_charged: s.amount_charged })),
+            });
+            toast(entry ? 'Registro actualizado' : 'Registro guardado');
+            close();
+            if (onSaved) onSaved();
+          } catch (e) {
+            toast(e.message, 'error');
+            btn.disabled = false;
+          }
+        },
+      },
+    ],
   });
 }

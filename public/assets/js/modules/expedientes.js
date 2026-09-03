@@ -7,6 +7,8 @@ import {
 } from '../ui.js';
 import { SERVICES, PATIENT_FIELDS, CLINICAL_FIELDS, loadCatalog } from '../services.js';
 import { sectionsHtml, initSections, fillSections, collectSections, dataRowsHtml } from '../forms.js';
+import { renderProgressChart } from '../progress_chart.js';
+import { renderBodySilhouette } from '../body_silhouette.js';
 
 let ctx;
 let catalog = null;
@@ -22,54 +24,6 @@ function isAdminUser() {
 /** ¿Puedo completar la etapa médica de este episodio? Admin o el responsable asignado. */
 function canCompleteEpisode(e) {
   return isAdminUser() || (e.assigned_user_id !== null && Number(e.assigned_user_id) === Number(ctx.user.id));
-}
-
-/* ================= Gráfica de progreso (Control de peso) ================= */
-// La lista de métricas ya no se fija aquí: la pestaña de Progreso la arma desde
-// el catálogo, así que una medición nueva en el JSON aparece sola.
-
-function chartPoints(e, metricKey) {
-  const pts = [];
-  const admVal = parseFloat(e.service_data?.[metricKey]);
-  if (!isNaN(admVal)) pts.push({ date: e.admission_date, value: admVal });
-  const sorted = [...e.consultations].sort((a, b) => a.consult_date.localeCompare(b.consult_date));
-  for (const c of sorted) {
-    const v = parseFloat(c.params?.[metricKey]);
-    if (!isNaN(v)) pts.push({ date: c.consult_date, value: v });
-  }
-  return pts;
-}
-
-function renderChartSvg(points) {
-  if (points.length < 2) {
-    return `<p class="py-6 text-center text-xs text-slate-400">Aún no hay suficientes registros para graficar (mínimo 2 visitas con este dato).</p>`;
-  }
-  const W = 560;
-  const H = 170;
-  const PAD = 28;
-  const values = points.map((p) => p.value);
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = max - min || 1;
-  const stepX = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
-  const x = (i) => PAD + i * stepX;
-  const y = (v) => H - PAD - ((v - min) / range) * (H - PAD * 2);
-
-  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)} ${y(p.value).toFixed(1)}`).join(' ');
-  const dots = points.map((p, i) => `
-    <circle cx="${x(i).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="3.5" fill="#4f46e5">
-      <title>${fmtDate(p.date)}: ${p.value}</title>
-    </circle>`).join('');
-  const labels = points.map((p, i) => `
-    <text x="${x(i).toFixed(1)}" y="${H - 6}" font-size="9" fill="#94a3b8" text-anchor="middle">${fmtDate(p.date).replace(/ de \d+$/, '')}</text>`).join('');
-
-  return `
-    <svg viewBox="0 0 ${W} ${H}" class="h-40 w-full">
-      <line x1="${PAD}" y1="${H - PAD}" x2="${W - PAD}" y2="${H - PAD}" stroke="#e2e8f0" stroke-width="1"/>
-      <path d="${path}" fill="none" stroke="#4f46e5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      ${dots}
-      ${labels}
-    </svg>`;
 }
 
 export async function render(root, context) {
@@ -758,10 +712,7 @@ function wireVisits(root, patient, episodes, patientId) {
     } catch (e) { toast(e.message, 'error'); }
   });
 
-  box.querySelector('[data-chart-metric]')?.addEventListener('change', (ev) => {
-    const chartBox = box.querySelector('[data-chart-box]');
-    if (chartBox) chartBox.innerHTML = renderChartSvg(chartPoints(ep, ev.target.value));
-  });
+  box.querySelector('[data-open-progress-viz]')?.addEventListener('click', () => openProgressVizModal(patient, ep));
 }
 
 /* ================= Pestaña de Progreso ================= */
@@ -811,8 +762,6 @@ function progressPanelHtml(e) {
       Todavía no hay con qué comparar: se necesita al menos una consulta subsecuente además de la admisión.</p>`;
   }
 
-  const allMetrics = PROGRESS_GROUPS.flatMap(([id]) => progressMetrics(e.service, id));
-
   return `
     <div class="space-y-5">
       ${PROGRESS_GROUPS.map(([id, title]) => {
@@ -857,16 +806,34 @@ function progressPanelHtml(e) {
       }).join('')}
 
       <div class="rounded-xl bg-slate-50 px-4 py-3">
-        <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
-          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Gráfica</p>
-          <select data-chart-metric="${e.id}" class="rounded-lg border-0 bg-white px-2 py-1 text-xs shadow-sm ring-1 ring-slate-200 outline-none focus:ring-2 focus:ring-indigo-500">
-            ${allMetrics.map(([k, l]) => `<option value="${escapeHtml(k)}">${escapeHtml(l)}</option>`).join('')}
-          </select>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Gráfica y silueta</p>
+          ${actionBtn(`data-open-progress-viz="${e.id}"`, 'activity', 'Ver progreso visual',
+            'bg-indigo-600 text-white ring-indigo-600 hover:bg-indigo-500')}
         </div>
-        <div data-chart-box="${e.id}">${renderChartSvg(chartPoints(e, allMetrics[0]?.[0] || 'peso_kg'))}</div>
       </div>
     </div>`;
 }
+
+/** Modal con la gráfica multicapa y la silueta comparativa (ver progress_chart.js / body_silhouette.js). */
+function openProgressVizModal(patient, e) {
+  const visits = progressVisits(e);
+  const box = document.createElement('div');
+  box.className = 'space-y-6';
+
+  const chartWrap = document.createElement('div');
+  chartWrap.innerHTML = '<p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Gráfica de evolución</p>';
+  chartWrap.appendChild(renderProgressChart(visits));
+
+  const siloWrap = document.createElement('div');
+  siloWrap.className = 'border-t border-slate-100 pt-5';
+  siloWrap.innerHTML = '<p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Comparación corporal</p>';
+  siloWrap.appendChild(renderBodySilhouette(visits, { sex: patient.sex }));
+
+  box.append(chartWrap, siloWrap);
+  modal({ title: 'Progreso visual', content: box, size: 'max-w-4xl', actions: [{ label: 'Cerrar' }] });
+}
+
 /* ================= Dx Assist ================= */
 
 /** ¿Hay asistente configurado? Se consulta una sola vez por carga de la app. */
@@ -945,6 +912,28 @@ function openDxAssist(patient) {
   ask('');
 }
 
+/**
+ * Los campos de sesión marcados "readonly" en el catálogo (ej. la talla en
+ * control de peso: se captura una vez, en la admisión, y no vuelve a
+ * preguntarse en cada consulta) siempre reflejan lo capturado en la admisión,
+ * nunca lo que traiga una consulta vieja — se fijan aquí, después de que el
+ * formulario ya está en el DOM, y se dispara "input" a mano para que los
+ * campos calculados que dependan de ese valor (ej. IMC) se actualicen.
+ */
+function applyReadonlyFromAdmission(form, sections, episode) {
+  for (const sec of sections) {
+    for (const f of sec.fields) {
+      if (!f.readonly) continue;
+      const el = form.querySelector(`[name="${f.k}"]`);
+      const v = episode?.service_data?.[f.k];
+      if (el && v !== undefined && v !== null && v !== '') {
+        el.value = v;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  }
+}
+
 /* ================= Consulta subsecuente ================= */
 function openConsultModal(patient, episodes, patientId) {
   if (!episodes.length) {
@@ -975,6 +964,7 @@ function openConsultModal(patient, episodes, patientId) {
     currentSections = ep?.service === 'control_peso' ? sesSections.filter((s) => s.stage !== 'doctor') : sesSections;
     paramsBox.innerHTML = sectionsHtml(currentSections, { compact: true });
     initSections(form);
+    applyReadonlyFromAdmission(form, currentSections, ep);
     // Número de sesión sugerido: consultas previas del episodio + 1
     const num = form.querySelector('[name=numero_sesion]');
     if (num && ep) num.value = (ep.consultations?.length || 0) + 1;
@@ -1152,6 +1142,7 @@ function openConsultEditModal(consult, episode, patientId) {
   });
   fillSections(form, all, consult.params);
   initSections(form);
+  applyReadonlyFromAdmission(form, all, episode);
 }
 
 /* ================= Edición (solo admin) ================= */
