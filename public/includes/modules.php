@@ -92,6 +92,7 @@ return [
             'membretador' => 'Usar el Membretador',
             'cotizador'   => 'Usar el Cotizador',
             'comisiones'  => 'Usar Comisiones',
+            'cobertura'   => 'Usar Cobertura',
             'review'      => 'Revisar y liberar estudios',
             'delete'      => 'Eliminar estudios membretados',
         ],
@@ -135,6 +136,12 @@ return [
     'vinculacion' => [
         'label' => 'Vinculación',
         'icon'  => 'link',
+        'phase' => 2,
+        'group' => 'admin_tools',
+    ],
+    'cobertura' => [
+        'label' => 'Cobertura',
+        'icon'  => 'map-pin',
         'phase' => 2,
         'group' => 'admin_tools',
     ],

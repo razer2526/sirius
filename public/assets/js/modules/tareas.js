@@ -24,6 +24,7 @@ let projectFilter = null;
 let resultsData = null;
 // '' en 'user' significa "yo mismo"; solo un gestor puede cambiarlo a otra persona.
 let misFilters = { status: '', project: '', user: '' };
+let resultFilters = { q: '', sample_date: '', due_date: '', status: '' };
 
 export async function render(root, context) {
   ctx = context;
@@ -92,6 +93,7 @@ const children = (t) => data.tasks.filter((x) => x.parent_id === t.id);
 const tasksForUser = (userId) => data.tasks.filter((t) => !t.parent_id && (t.assigned_to.includes(userId) || t.created_by === userId));
 const assigneeNames = (t) => (t.assigned_names || []).join(', ');
 const today = () => new Date().toISOString().slice(0, 10);
+const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); };
 const isOverdue = (t) => t.due_date && t.due_date < today() && t.status !== 'completada';
 
 function sortTasks(list) {
@@ -322,14 +324,124 @@ async function paintResultados(view) {
       return;
     }
   }
-  paintResultadosList(view);
+  view.innerHTML = `
+    <div class="space-y-5">
+      ${resultToolbarHtml()}
+      <div id="results-sections"></div>
+    </div>`;
+  wireResultToolbar(view);
+  paintResultSections(view);
 }
 
-function paintResultadosList(view) {
-  const items = resultsData.items;
-  view.innerHTML = items.length
-    ? `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${items.map((r) => resultCard(r)).join('')}</div>`
-    : emptyState('Sin resultados pendientes', 'Registra un paciente con "Nuevos resultados" para darle seguimiento.');
+function resultToolbarHtml() {
+  const active = resultFilters.q || resultFilters.sample_date || resultFilters.due_date || resultFilters.status;
+  return `
+    <div class="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="relative">
+          <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${icon('search', 'h-4 w-4')}</span>
+          <input id="rf-q" type="text" placeholder="Buscar paciente…" value="${escapeHtml(resultFilters.q)}" autocomplete="off"
+                 class="w-full rounded-lg border-0 bg-slate-50 py-2 pl-9 pr-3 text-sm ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+        </div>
+        <div>
+          <label class="${labelCls}">Toma de muestra</label>
+          <input id="rf-sample" type="date" value="${resultFilters.sample_date}" class="${inputCls}">
+        </div>
+        <div>
+          <label class="${labelCls}">Entrega</label>
+          <input id="rf-due" type="date" value="${resultFilters.due_date}" class="${inputCls}">
+        </div>
+        <div>
+          <label class="${labelCls}">Estado</label>
+          <select id="rf-status" class="${inputCls}">
+            <option value="">Todos</option>
+            <option value="pendiente" ${resultFilters.status === 'pendiente' ? 'selected' : ''}>Pendiente</option>
+            <option value="completado" ${resultFilters.status === 'completado' ? 'selected' : ''}>Completado</option>
+          </select>
+        </div>
+      </div>
+      ${active ? `<button id="rf-clear" type="button" class="mt-2 text-xs font-semibold text-indigo-600 hover:text-indigo-500">Quitar filtros</button>` : ''}
+    </div>`;
+}
+
+function wireResultToolbar(view) {
+  view.querySelector('#rf-q').addEventListener('input', debounce(() => {
+    resultFilters.q = view.querySelector('#rf-q').value;
+    paintResultSections(view);
+  }, 250));
+  view.querySelector('#rf-sample').addEventListener('change', () => {
+    resultFilters.sample_date = view.querySelector('#rf-sample').value;
+    paintResultSections(view);
+  });
+  view.querySelector('#rf-due').addEventListener('change', () => {
+    resultFilters.due_date = view.querySelector('#rf-due').value;
+    paintResultSections(view);
+  });
+  view.querySelector('#rf-status').addEventListener('change', () => {
+    resultFilters.status = view.querySelector('#rf-status').value;
+    paintResultSections(view);
+  });
+  view.querySelector('#rf-clear')?.addEventListener('click', () => {
+    resultFilters = { q: '', sample_date: '', due_date: '', status: '' };
+    // El toolbar sí se reconstruye aquí (los inputs deben volver a mostrarse vacíos).
+    view.innerHTML = `
+      <div class="space-y-5">
+        ${resultToolbarHtml()}
+        <div id="results-sections"></div>
+      </div>`;
+    wireResultToolbar(view);
+    paintResultSections(view);
+  });
+}
+
+/** Filtra la lista ya cargada (sin volver a pedirla al servidor) por búsqueda/fechas/estado. */
+function applyResultFilters(items) {
+  let out = items;
+  const q = resultFilters.q.trim().toLowerCase();
+  if (q) out = out.filter((r) => r.patient_name.toLowerCase().includes(q));
+  if (resultFilters.sample_date) out = out.filter((r) => r.sample_date === resultFilters.sample_date);
+  if (resultFilters.due_date) out = out.filter((r) => r.due_date === resultFilters.due_date);
+  if (resultFilters.status) {
+    out = out.filter((r) => resultIsComplete(r) === (resultFilters.status === 'completado'));
+  }
+  return out;
+}
+
+function resultIsComplete(r) {
+  const items = r.studies || [];
+  return items.length > 0 && items.every((i) => i.done);
+}
+
+/** Solo repinta la lista/secciones — el buscador y los filtros de arriba no se tocan (no pierden el foco al escribir). */
+function paintResultSections(view) {
+  const box = view.querySelector('#results-sections');
+  if (!resultsData.items.length) {
+    box.innerHTML = emptyState('Sin resultados pendientes', 'Registra un paciente con "Nuevos resultados" para darle seguimiento.');
+    return;
+  }
+  const filtered = applyResultFilters(resultsData.items);
+  if (!filtered.length) {
+    box.innerHTML = emptyState('Sin coincidencias', 'Ajusta la búsqueda o los filtros.');
+    return;
+  }
+
+  const t = today();
+  const tm = tomorrow();
+  const groups = [
+    { title: 'Entrega de resultados hoy', items: filtered.filter((r) => r.due_date && r.due_date <= t) },
+    { title: 'Entrega de resultados mañana', items: filtered.filter((r) => r.due_date === tm) },
+    { title: 'Entrega de resultados posteriores', items: filtered.filter((r) => !r.due_date || r.due_date > tm) },
+  ];
+
+  box.innerHTML = groups.filter((g) => g.items.length).map((g) => `
+    <div class="mb-6 last:mb-0">
+      <div class="mb-2 flex items-center justify-between">
+        <h4 class="text-sm font-semibold text-slate-700">${g.title}</h4>
+        <span class="text-xs text-slate-400">${g.items.length}</span>
+      </div>
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${g.items.map((r) => resultCard(r)).join('')}</div>
+    </div>`).join('');
+
   wireResultEvents(view);
 }
 
@@ -337,16 +449,36 @@ function resultCard(r) {
   const items = r.studies || [];
   const total = items.length;
   const done = items.filter((i) => i.done).length;
-  const complete = total > 0 && done === total;
+  const complete = resultIsComplete(r);
   const overdue = r.due_date && r.due_date < today() && !complete;
   const dueCls = complete ? 'bg-emerald-100 text-emerald-700' : overdue ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600';
   const canEditThis = resultsData.can_manage || r.created_by === resultsData.me;
+  // Verde si ya está completado (manda sobre la fecha); si no, rojo si es para
+  // hoy o ya venció, amarillo si es mañana, blanco (sin tinte) para lo demás —
+  // mismo lenguaje de color "transparente" que ya usa el pizarrón.
+  const cardTint = complete
+    ? 'bg-emerald-50'
+    : r.due_date && r.due_date <= today()
+      ? 'bg-red-50'
+      : r.due_date === tomorrow()
+        ? 'bg-amber-50'
+        : 'bg-white';
+  // Cenefa del nombre: mismo color que la tarjeta pero más saturado (100 en vez
+  // de 50), como ya se ve en el pizarrón — así el nombre resalta sobre el fondo
+  // pastel de la tarjeta en vez de perderse en él.
+  const nameBandCls = complete
+    ? 'bg-emerald-100 text-emerald-900'
+    : r.due_date && r.due_date <= today()
+      ? 'bg-red-100 text-red-900'
+      : r.due_date === tomorrow()
+        ? 'bg-amber-100 text-amber-900'
+        : 'text-slate-900';
   return `
-    <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 ${complete ? 'opacity-70' : ''}" data-result-card="${r.id}">
+    <div class="rounded-2xl ${cardTint} p-4 shadow-sm ring-1 ring-slate-200" data-result-card="${r.id}">
       <div class="flex items-start justify-between gap-2">
         <div class="min-w-0">
-          <p class="truncate text-sm font-bold text-slate-900">${escapeHtml(r.patient_name)}</p>
-          ${r.sample_date ? `<p class="mt-0.5 text-xs text-slate-500">Toma: ${fmtDate(r.sample_date)}</p>` : ''}
+          <p class="truncate rounded-md px-2 py-1 text-sm font-bold ${nameBandCls}">${escapeHtml(r.patient_name)}</p>
+          ${r.sample_date ? `<p class="mt-0.5 px-2 text-xs text-slate-500">Toma: ${fmtDate(r.sample_date)}</p>` : ''}
         </div>
         <div class="flex shrink-0 gap-1">
           ${canEditThis ? `
@@ -356,7 +488,6 @@ function resultCard(r) {
       </div>
       <div class="mt-2 flex flex-wrap items-center gap-1.5">
         ${r.due_date ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${dueCls}">${complete ? '✓ ' : overdue ? '⚠ ' : ''}Entrega ${fmtDate(r.due_date)}</span>` : ''}
-        ${r.needs_invoice ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">Factura</span>` : ''}
         ${total ? `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200">${done}/${total}</span>` : ''}
       </div>
       ${total ? `
@@ -368,6 +499,11 @@ function resultCard(r) {
             <span class="${it.done ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(it.text)}</span>
           </label>`).join('')}
       </div>` : `<p class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">Sin estudios capturados.</p>`}
+      <label class="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-sm text-slate-700">
+        <input type="checkbox" data-invoice="${r.id}" ${r.needs_invoice ? 'checked' : ''}
+               class="h-3.5 w-3.5 shrink-0 rounded border-slate-400 text-violet-600 focus:ring-violet-500">
+        Enviar factura
+      </label>
       ${r.observations ? `<p class="mt-2 whitespace-pre-line text-xs text-slate-500">${escapeHtml(r.observations)}</p>` : ''}
       ${r.creator_name ? `<p class="mt-2 text-[10px] text-slate-400">${escapeHtml(r.creator_name)}</p>` : ''}
     </div>`;
@@ -388,8 +524,22 @@ function wireResultEvents(view) {
           toast(e.message, 'error');
           r.studies[idx].done = prev;
         }
-        paintResultadosList(view);
+        paintResultSections(view);
       });
+    });
+    const invoiceCb = card.querySelector('[data-invoice]');
+    invoiceCb?.addEventListener('change', async () => {
+      const prev = r.needs_invoice;
+      r.needs_invoice = invoiceCb.checked;
+      invoiceCb.disabled = true;
+      try {
+        await apiPost('tasks/results_save', { id, needs_invoice: r.needs_invoice });
+      } catch (e) {
+        toast(e.message, 'error');
+        r.needs_invoice = prev;
+        invoiceCb.checked = prev;
+      }
+      invoiceCb.disabled = false;
     });
   });
   view.querySelectorAll('[data-edit-result]').forEach((b) =>
@@ -403,7 +553,7 @@ function wireResultEvents(view) {
         await apiPost('tasks/results_delete', { id: r.id });
         resultsData.items = resultsData.items.filter((x) => x.id !== r.id);
         toast('Registro eliminado');
-        paintResultadosList(view);
+        paintResultSections(view);
       } catch (e) {
         toast(e.message, 'error');
       }

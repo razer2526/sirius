@@ -50,6 +50,8 @@ $routes = [
     'mail'          => ['mail.php', 'api'],
     'whatsapp'        => ['whatsapp.php', 'whatsapp'],
     'whatsapp_config' => ['whatsapp_config.php', 'whatsapp_config'],
+    'cobertura'     => ['cobertura.php', 'cobertura'],
+    'coverage'      => ['cobertura.php', 'apps'],
     'push'          => ['push.php', null],
 ];
 

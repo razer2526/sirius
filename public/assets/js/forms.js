@@ -133,6 +133,14 @@ function fieldHtml(f) {
     }
     default: {
       const step = f.step ? `step="${f.step}"` : (f.t === 'number' ? 'step="any"' : '');
+      // Solo lectura: valor fijado desde otro formulario (ej. la talla de
+      // control de peso, que se captura en la admisión y no cambia en cada
+      // consulta) — se ve y se envía, pero no se puede tocar aquí.
+      if (f.readonly) {
+        return `<div class="${span}">${label}
+          <input type="${f.t}" name="${f.k}" ${step} readonly tabindex="-1"
+                 class="w-full rounded-lg border-0 bg-slate-100 px-3 py-2 text-sm font-semibold text-slate-500 ring-1 ring-inset ring-slate-200 outline-none"></div>`;
+      }
       return `<div class="${span}">${label}<input type="${f.t}" name="${f.k}" ${step} class="${inputCls}"></div>`;
     }
   }

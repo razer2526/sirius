@@ -24,6 +24,8 @@ const PDF_BOX_BG     = [247, 249, 251]; // caja de datos de muestra
 const PDF_BOX_BORDER = [226, 232, 240];
 const PDF_POS_TEXT   = [155, 28, 28];   // positivos
 const PDF_POS_BG     = [253, 238, 238];
+const PDF_FICHA_GRAY  = [93, 105, 117]; // título y líneas de la ficha (#5D6975, formato de referencia)
+const PDF_FICHA_ZEBRA = [245, 245, 245]; // filas alternas de la ficha (#F5F5F5, formato de referencia)
 
 class SiriusDocPDF extends FPDF
 {
@@ -216,12 +218,18 @@ class SiriusDocPDF extends FPDF
     {
         // El pie corporativo solo va en la última página; las demás llevan folio de página
         if ($this->lastPage && $this->footerImg) {
-            @$this->Image(
-                $this->footerImg,
-                $this->left(),
-                $this->GetPageHeight() - (float)$this->lh['footer_bottom'] - (float)$this->lh['footer_height'],
-                $this->usableWidth()
-            );
+            $footerY = $this->GetPageHeight() - (float)$this->lh['footer_bottom'] - (float)$this->lh['footer_height'];
+            // El folio de página también va en la última hoja (documentos de más de una
+            // página, como la ficha con su consentimiento): sin esto, esa hoja final era
+            // la única sin "Página X de Y", justo la más fácil de perder al imprimirla suelta.
+            if (!empty($this->lh['show_page_numbers']) && $this->PageNo() > 1) {
+                $this->SetY($footerY - 6);
+                $this->SetFont('Helvetica', '', 8);
+                $this->SetTextColor(...PDF_MUTED);
+                $this->Cell(0, 5, pdf_t('Página ' . $this->PageNo() . ' de {nb}'), 0, 0, 'R');
+                $this->SetTextColor(...PDF_INK);
+            }
+            @$this->Image($this->footerImg, $this->left(), $footerY, $this->usableWidth());
             return;
         }
         $y = $this->GetPageHeight() - 16;
@@ -359,6 +367,38 @@ class SiriusDocPDF extends FPDF
         $this->Cell(0, 8, pdf_t($title), 0, 1, 'L');
         $this->SetTextColor(...PDF_INK);
         $this->Ln(2);
+    }
+
+    /**
+     * Título de portada para documentos compactos (la ficha): centrado, en
+     * mayúsculas, con una línea completa arriba y otra abajo — replica el
+     * formato de referencia de la ficha de identificación (h1 con
+     * border-top/border-bottom, sin negrita, en gris azulado #5D6975).
+     */
+    public function pageTitle(string $title): void
+    {
+        $this->SetDrawColor(...PDF_FICHA_GRAY);
+        $this->SetLineWidth(0.3);
+        $this->Line($this->left(), $this->GetY(), $this->right(), $this->GetY());
+        $this->Ln(2.5);
+        $this->SetFont('Helvetica', '', 18);
+        $this->SetTextColor(...PDF_FICHA_GRAY);
+        $this->Cell(0, 9, pdf_t(mb_strtoupper($title, 'UTF-8')), 0, 1, 'C');
+        $this->Ln(1);
+        $this->Line($this->left(), $this->GetY(), $this->right(), $this->GetY());
+        $this->Ln(5);
+        $this->SetTextColor(...PDF_INK);
+    }
+
+    /**
+     * Quita la marca de agua del membrete para este documento. La ficha de
+     * identificación es compacta y de una sola página; el logo de fondo se
+     * encima con la firma y con filas de datos en vez de perderse entre tablas
+     * largas, así que ahí conviene un fondo limpio.
+     */
+    public function disableWatermark(): void
+    {
+        $this->watermarkImg = null;
     }
 
     /** Barra azul de sección con el nombre del panel y el número de determinaciones. */
@@ -624,20 +664,69 @@ class SiriusDocPDF extends FPDF
      */
     public function sectionLabel(string $title): void
     {
-        $this->ensureSpace(22);
-        $this->SetFont('Helvetica', 'B', 7.6);
-        $this->SetTextColor(...PDF_MUTED);
-        $this->Cell(0, 5, pdf_t(mb_strtoupper($title, 'UTF-8')), 0, 1, 'L');
+        $this->ensureSpace(24);
+        $this->Ln(1.5);
+        $this->SetFont('Helvetica', 'B', 8.6);
+        $this->SetTextColor(...PDF_INK);
+        $this->Cell(0, 5.4, pdf_t(mb_strtoupper($title, 'UTF-8')), 0, 1, 'L');
+        $this->Ln(0.8);
         $this->SetTextColor(...PDF_INK);
     }
 
     /**
-     * Renglones compactos "etiqueta: valor" para la ficha de identificación.
+     * Bloque de identificación de la ficha, calcado renglón por renglón del formato
+     * de referencia: cada renglón trae "Etiqueta: valor" ya unido en una sola celda
+     * (no etiqueta y valor por separado, como compactRows()), con su propio número
+     * de columnas y alineación, y sombreado alterno marcado explícitamente por
+     * renglón — el folio y la fecha no participan del sombreado (van en el
+     * encabezado de tabla del formato de referencia; el resto sí, empezando en
+     * "Paciente").
+     *
+     * $rows: lista de renglones. Cada renglón es ['cells' => [['text'=>..,
+     * 'align'=>'L'|'R'], ...], 'shade' => bool, 'bold' => bool (todo el renglón,
+     * para un título de sección como "Historia Clínica")].
+     */
+    public function identBlock(array $rows): void
+    {
+        $w = $this->usableWidth();
+        $h = 7.2;
+        foreach ($rows as $row) {
+            $cells = $row['cells'];
+            $n = max(1, count($cells));
+            $colW = $w / $n;
+            $this->ensureSpace($h + 1);
+            $y = $this->GetY();
+            if (!empty($row['shade'])) {
+                $this->SetFillColor(...PDF_FICHA_ZEBRA);
+                $this->Rect($this->left(), $y, $w, $h, 'F');
+            }
+            $this->SetX($this->left());
+            $this->SetFont('Helvetica', !empty($row['bold']) ? 'B' : '', 9.5);
+            $this->SetTextColor(...PDF_INK);
+            foreach ($cells as $cell) {
+                $align = ($cell['align'] ?? 'L') === 'R' ? 'R' : 'L';
+                $this->Cell($colW, $h, pdf_t((string)$cell['text']), 0, 0, $align);
+            }
+            $this->Ln($h);
+        }
+        $this->SetTextColor(...PDF_INK);
+    }
+
+    /**
+     * Renglones "etiqueta: valor" para la ficha de identificación, con sombreado
+     * alterno por renglón — el mismo recurso ("table tr:nth-child(2n-1) { background:
+     * #F5F5F5 }") que usa el formato de referencia para que se lea como tabla en vez
+     * de texto suelto, sin depender de líneas divisorias.
      *
      * fieldsTable() apila etiqueta y valor en celdas con recuadro (~12 mm por par),
      * lo que en la ficha empuja la firma a una segunda hoja. Aquí van en la misma
-     * línea (~6.5 mm), que es como se lee un comprobante y permite que quepa en una
+     * línea (~7 mm), que es como se lee un comprobante y permite que quepa en una
      * sola página. Un valor largo ocupa el ancho completo en lugar de recortarse.
+     *
+     * Nota: esto solo pinta un fondo detrás de cada renglón ya calculado — no cambia
+     * el orden, la etiqueta ni la posición horizontal de ningún valor, para no romper
+     * la lectura por coordenadas que usa la importación de fichas externas
+     * (parse_ficha_identificacion() en pdf_text.php).
      */
     public function compactRows(array $pairs, int $cols = 2): void
     {
@@ -646,15 +735,16 @@ class SiriusDocPDF extends FPDF
         }
         $w = $this->usableWidth();
         $colW = $w / $cols;
-        $h = 6.2;
+        $h = 7.2;
         $gap = 2.0;
 
         $labelW = static function (SiriusDocPDF $pdf, string $label): float {
-            $pdf->SetFont('Helvetica', '', 7.8);
+            $pdf->SetFont('Helvetica', '', 8.0);
             return $pdf->GetStringWidth(pdf_t($label . ':')) + 2.0;
         };
 
         $col = 0;
+        $rowIndex = 0;
         foreach ($pairs as [$label, $value]) {
             $label = (string)$label;
             $value = trim((string)$value);
@@ -662,7 +752,7 @@ class SiriusDocPDF extends FPDF
                 continue;
             }
             $lw = $labelW($this, $label);
-            $this->SetFont('Helvetica', 'B', 8.6);
+            $this->SetFont('Helvetica', 'B', 9.0);
             $needed = $this->GetStringWidth(pdf_t($value)) + $lw + 4;
             // Un valor que no cabe en su columna ocupa el renglón completo
             $full = $needed > $colW;
@@ -670,21 +760,26 @@ class SiriusDocPDF extends FPDF
             if ($full && $col !== 0) {
                 $this->Ln($h);
                 $col = 0;
+                $rowIndex++;
             }
             $this->ensureSpace($h + 1);
             if ($col === 0) {
                 $this->SetX($this->left());
+                if ($rowIndex % 2 === 0) {
+                    $this->SetFillColor(...PDF_FICHA_ZEBRA);
+                    $this->Rect($this->left(), $this->GetY(), $w, $h, 'F');
+                }
             }
 
             $cellW = $full ? $w : $colW;
             $x = $this->GetX();
             $y = $this->GetY();
 
-            $this->SetFont('Helvetica', '', 7.8);
+            $this->SetFont('Helvetica', '', 8.0);
             $this->SetTextColor(...PDF_MUTED);
             $this->Cell($lw, $h, pdf_t($label . ':'), 0, 0, 'L');
 
-            $this->SetFont('Helvetica', 'B', 8.6);
+            $this->SetFont('Helvetica', 'B', 9.0);
             $this->SetTextColor(...PDF_INK);
             $this->Cell($cellW - $lw - $gap, $h, pdf_t(pdf_fit($this, $value, $cellW - $lw - $gap)), 0, 0, 'L');
 
@@ -692,6 +787,7 @@ class SiriusDocPDF extends FPDF
             $col = $full ? 0 : ($col + 1) % $cols;
             if ($col === 0) {
                 $this->SetXY($this->left(), $y + $h);
+                $rowIndex++;
             }
         }
         if ($col !== 0) {
@@ -1057,6 +1153,136 @@ class SiriusDocPDF extends FPDF
         $this->SetFont('Helvetica', 'B', 11);
         $this->Cell($w * 0.5 - 8, $rowH, pdf_t('$' . number_format($total, 2)), 0, 0, 'R');
         $this->SetXY($this->left(), $y + $rowH + 4);
+        $this->SetTextColor(...PDF_INK);
+    }
+
+    /* ---------- Relación de pacientes referidos (desde imagen) ---------- */
+
+    /** Ancho de columnas: Paciente | Fecha | Estudios | Agendado | Procesado | Enviado | Estado | Monto | % | Comisión. */
+    private function referralColWidths(): array
+    {
+        $w = $this->usableWidth();
+        $paciente = 34.0;
+        $fecha = 14.0;
+        $estudios = 36.0;
+        $check = 11.0;
+        $estado = 16.0;
+        $monto = 17.0;
+        $pct = 9.0;
+        $comision = $w - $paciente - $fecha - $estudios - $check * 3 - $estado - $monto - $pct;
+        return [$paciente, $fecha, $estudios, $check, $check, $check, $estado, $monto, $pct, $comision];
+    }
+
+    public function referralItemsHead(): void
+    {
+        [$paciente, $fecha, $estudios, $agendado, $procesado, $enviado, $estado, $monto, $pct, $comision] = $this->referralColWidths();
+        $this->SetFillColor(...PDF_HEAD_BG);
+        $this->SetFont('Helvetica', 'B', 6.6);
+        $this->SetTextColor(75, 85, 99);
+        $this->Cell($paciente, 6.4, pdf_t('  PACIENTE'), 0, 0, 'L', true);
+        $this->Cell($fecha, 6.4, pdf_t('FECHA'), 0, 0, 'C', true);
+        $this->Cell($estudios, 6.4, pdf_t('ESTUDIOS'), 0, 0, 'L', true);
+        $this->Cell($agendado, 6.4, pdf_t('AGEND.'), 0, 0, 'C', true);
+        $this->Cell($procesado, 6.4, pdf_t('PROC.'), 0, 0, 'C', true);
+        $this->Cell($enviado, 6.4, pdf_t('ENV.'), 0, 0, 'C', true);
+        $this->Cell($estado, 6.4, pdf_t('ESTADO'), 0, 0, 'C', true);
+        $this->Cell($monto, 6.4, pdf_t('MONTO'), 0, 0, 'R', true);
+        $this->Cell($pct, 6.4, pdf_t('%'), 0, 0, 'C', true);
+        $this->Cell($comision, 6.4, pdf_t('COMISIÓN  '), 0, 1, 'R', true);
+        $this->SetTextColor(...PDF_INK);
+    }
+
+    public function referralItemRowHeight(string $patientLabel, string $studiesLabel): float
+    {
+        [$paciente, , $estudios] = $this->referralColWidths();
+        $pLines = $this->wrapLines($patientLabel, $paciente - 4, 'Helvetica', '', 8.0) ?: [''];
+        $sLines = $this->wrapLines($studiesLabel, $estudios - 4, 'Helvetica', '', 7.6) ?: [''];
+        $lines = max(count($pLines), count($sLines));
+        return max(9.0, $lines * 3.8 + 3.4);
+    }
+
+    /**
+     * Insignia de check: círculo verde relleno con un trazo blanco en forma de
+     * check. AGENDADO/PROCESADO/ENVIADO siempre se dibujan así (verde): Sirius
+     * no tiene columnas de estatus por estudio en episode_studies hoy — es una
+     * decisión de alcance documentada (ver comentario en render_commission_referral_body),
+     * no un placeholder que finge una integración pendiente.
+     */
+    public function referralCheckBadge(float $cx, float $cy): void
+    {
+        $d = 4.2;
+        $this->SetFillColor(34, 197, 94);
+        $this->roundedRect($cx - $d / 2, $cy - $d / 2, $d, $d, $d / 2, 'F');
+        $this->SetDrawColor(255, 255, 255);
+        $this->SetLineWidth(0.5);
+        $this->Line($cx - 1.3, $cy + 0.1, $cx - 0.3, $cy + 1.0);
+        $this->Line($cx - 0.3, $cy + 1.0, $cx + 1.5, $cy - 1.1);
+        $this->SetDrawColor(...PDF_LINE);
+    }
+
+    public function referralItemRow(string $patientName, string $dateLabel, string $studies, float $amount, float $pct, float $commission, bool $zebra): void
+    {
+        [$pacienteW, $fechaW, $estudiosW, $agendadoW, $procesadoW, $enviadoW, $estadoW, $montoW, $pctW, $comisionW] = $this->referralColWidths();
+        $h = $this->referralItemRowHeight($patientName, $studies);
+        $y = $this->GetY();
+
+        if ($zebra) {
+            $this->SetFillColor(...PDF_ZEBRA);
+            $this->Rect($this->left(), $y, $this->usableWidth(), $h, 'F');
+        }
+
+        $x = $this->left();
+        $this->SetTextColor(...PDF_INK);
+
+        $pLines = $this->wrapLines($patientName, $pacienteW - 4, 'Helvetica', '', 8.0) ?: [''];
+        $ny = $y + 1.8;
+        foreach ($pLines as $line) {
+            $this->SetXY($x + 2, $ny);
+            $this->Cell($pacienteW - 2, 3.8, pdf_t($line), 0, 0, 'L');
+            $ny += 3.8;
+        }
+        $x += $pacienteW;
+
+        $this->SetFont('Helvetica', '', 7.6);
+        $this->SetXY($x, $y + $h / 2 - 1.9);
+        $this->Cell($fechaW, 3.8, pdf_t($dateLabel), 0, 0, 'C');
+        $x += $fechaW;
+
+        $sLines = $this->wrapLines($studies, $estudiosW - 4, 'Helvetica', '', 7.6) ?: [''];
+        $ny = $y + 1.8;
+        foreach ($sLines as $line) {
+            $this->SetXY($x + 2, $ny);
+            $this->Cell($estudiosW - 2, 3.8, pdf_t($line), 0, 0, 'L');
+            $ny += 3.8;
+        }
+        $x += $estudiosW;
+
+        foreach ([$agendadoW, $procesadoW, $enviadoW] as $colW) {
+            $this->referralCheckBadge($x + $colW / 2, $y + $h / 2);
+            $x += $colW;
+        }
+
+        $this->SetFont('Helvetica', 'B', 7.2);
+        $this->SetTextColor(21, 128, 61);
+        $this->SetXY($x, $y + $h / 2 - 1.9);
+        $this->Cell($estadoW, 3.8, pdf_t('Completado'), 0, 0, 'C');
+        $x += $estadoW;
+        $this->SetTextColor(...PDF_INK);
+
+        $this->SetFont('Helvetica', '', 8.0);
+        $this->SetXY($x, $y + $h / 2 - 1.9);
+        $this->Cell($montoW - 2, 3.8, pdf_t('$' . number_format($amount, 2)), 0, 0, 'R');
+        $x += $montoW;
+
+        $this->SetXY($x, $y + $h / 2 - 1.9);
+        $this->Cell($pctW, 3.8, pdf_t(rtrim(rtrim(number_format($pct, 1), '0'), '.') . '%'), 0, 0, 'C');
+        $x += $pctW;
+
+        $this->SetFont('Helvetica', 'B', 8.0);
+        $this->SetXY($x, $y + $h / 2 - 1.9);
+        $this->Cell($comisionW - 2, 3.8, pdf_t('$' . number_format($commission, 2)), 0, 0, 'R');
+
+        $this->SetXY($this->left(), $y + $h);
         $this->SetTextColor(...PDF_INK);
     }
 }
@@ -1677,6 +1903,30 @@ function render_privacy_notice(SiriusDocPDF $pdf, string $clinicName): void
 }
 
 /**
+ * Remisión breve al aviso de privacidad, para la ficha de identificación: es un
+ * comprobante de una sola página, no el lugar para el texto legal completo (ese
+ * va íntegro al cierre del expediente, ver render_privacy_notice()).
+ */
+function render_ficha_privacy_note(SiriusDocPDF $pdf): void
+{
+    $pdf->Ln(3);
+    $pdf->SetFont('Helvetica', 'I', 7.6);
+    $pdf->SetTextColor(...PDF_MUTED);
+    $pdf->MultiCell(
+        $pdf->usableWidth(),
+        3.8,
+        pdf_t(
+            'Al firmar, el paciente acepta el tratamiento de sus datos personales y datos personales sensibles '
+            . 'de salud conforme al aviso de privacidad completo, disponible en bosquespolanco.com y en el '
+            . 'expediente clínico.'
+        ),
+        0,
+        'L'
+    );
+    $pdf->SetTextColor(...PDF_INK);
+}
+
+/**
  * Ficha de identificación de una admisión: el comprobante que se le manda al
  * paciente por correo al registrarlo. Es un documento de una sola admisión, a
  * diferencia de render_patient_record_pdf(), que imprime el expediente completo.
@@ -1695,99 +1945,307 @@ function render_ficha_pdf(
 
     $lh = letterhead_config();
     $pdf = new SiriusDocPDF($lh, $clinicName);
+    $pdf->disableWatermark();
 
+    // "No referido" en vez de un guion: el modo asistido (wizard) no obliga a
+    // capturar ningún dato, así que un campo vacío debe leerse como "no se
+    // preguntó/no se tiene", no como un simple placeholder ambiguo.
+    $nr = 'No referido';
     $fullName = trim(($patient['first_name'] ?? '') . ' ' . ($patient['paternal_surname'] ?? '') . ' ' . ($patient['maternal_surname'] ?? ''));
     $age = pdf_calc_age($patient['birth_date'] ?? null);
-    $sex = ['F' => 'Femenino', 'M' => 'Masculino', 'O' => 'Otro'][$patient['sex'] ?? ''] ?? '—';
+    $sex = ['F' => 'Femenino', 'M' => 'Masculino', 'O' => 'Otro'][$patient['sex'] ?? ''] ?? $nr;
     $admittedAt = $episode['admission_date'] ?? date('Y-m-d H:i:s');
+    // El folio impreso es el de la orden (AAMMDD-NN, como en el formato de
+    // referencia), no el número de expediente interno del paciente.
+    $folio = (string)($episode['service_folio'] ?? '') ?: (string)($patient['file_number'] ?? $nr);
+    $direccion = trim(implode(', ', array_filter([
+        $patient['street'] ?? null, $patient['colonia'] ?? null, $patient['postal_code'] ?? null,
+        $patient['city'] ?? null, $patient['state'] ?? null,
+    ]))) ?: $nr;
 
-    $pdf->setPatientInfo([
-        ['Folio', (string)($patient['file_number'] ?? '—'), 'Fecha y hora', date('d/m/Y H:i', strtotime($admittedAt)), 'bold' => true],
-        ['Paciente', $fullName ?: '—', null, null],
-    ]);
+    // El bloque de identificación no se repite por página (a diferencia de
+    // patientHeader()): la ficha es de una sola página casi siempre, y este
+    // formato exige columnas y alineación por renglón que patientHeader() no
+    // ofrece — ver identBlock().
     $pdf->AddPage();
-    $pdf->studyTitle('Ficha de identificación');
+    $pdf->pageTitle('Ficha de identificación básica');
+    $pdf->identBlock([
+        ['shade' => false, 'cells' => [
+            ['text' => 'Folio: ' . $folio, 'align' => 'L'],
+            ['text' => 'Fecha y hora: ' . date('d/m/Y H:i', strtotime($admittedAt)), 'align' => 'R'],
+        ]],
+        ['shade' => true, 'cells' => [
+            ['text' => 'Paciente: ' . ($fullName ?: $nr)],
+        ]],
+        ['shade' => false, 'cells' => [
+            ['text' => 'Fecha de nacimiento: ' . (!empty($patient['birth_date']) ? date('d/m/Y', strtotime($patient['birth_date'])) : $nr)],
+            ['text' => 'Edad: ' . ($age !== null ? $age . ' años' : $nr)],
+            ['text' => 'Sexo: ' . $sex],
+        ]],
+        ['shade' => true, 'cells' => [
+            ['text' => 'Grupo sanguíneo: ' . (($patient['blood_type'] ?? '') ?: $nr)],
+            ['text' => 'Teléfono: ' . ((string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: $nr))],
+            ['text' => 'Correo electrónico: ' . ((string)($patient['email'] ?? '') ?: $nr)],
+        ]],
+        ['shade' => false, 'cells' => [
+            ['text' => 'Dirección: ' . $direccion],
+        ]],
+    ]);
+    $pdf->Ln(3);
 
-    /* ---- Identificación ---- */
     $service = (string)($episode['service'] ?? '');
-    $pairs = [
-        ['Fecha de nacimiento', !empty($patient['birth_date']) ? date('d/m/Y', strtotime($patient['birth_date'])) : '—'],
-        ['Edad', $age !== null ? $age . ' años' : '—'],
-        ['Sexo', $sex],
-        ['Teléfono', (string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: '—')],
-        ['Correo electrónico', (string)($patient['email'] ?? '—') ?: '—'],
-        ['Servicio', SERVICE_LABELS[$service] ?? $service ?: '—'],
-    ];
-    if (!empty($episode['service_folio'])) {
-        $pairs[] = ['Folio de orden', (string)$episode['service_folio']];
-    }
-    if (!empty($episode['referring_doctor'])) {
-        $pairs[] = ['Médico solicitante', (string)$episode['referring_doctor']];
-    }
-    $pdf->sectionLabel('Datos del paciente');
-    $pdf->compactRows($pairs);
-    $pdf->Ln(2);
-
-    /* ---- Estudios y pago (laboratorio) ---- */
-    if ($studyLines) {
-        $total = 0.0;
-        $rows = [];
-        foreach ($studyLines as $l) {
-            $amount = (float)($l['amount_charged'] ?? 0);
-            $total += $amount;
-            $rows[] = [(string)($l['study_name'] ?? 'Estudio'), '$' . number_format($amount, 2)];
-        }
-        $pdf->sectionLabel('Estudios');
-        $pdf->compactRows($rows, 1);
-        $pdf->Ln(1);
-
-        $serviceData = is_array($episode['service_data'] ?? null)
-            ? $episode['service_data']
-            : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
-        $pdf->compactRows([
-            ['Método de pago', (string)($serviceData['pago_metodo'] ?? '') ?: '—'],
-            ['Total', '$' . number_format($total, 2)],
-        ]);
-        $pdf->Ln(2);
-    }
-
-    /* ---- Lo capturado en la ficha del servicio (historia, síntomas, medicamentos, firma) ---- */
     $serviceData = is_array($episode['service_data'] ?? null)
         ? $episode['service_data']
         : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
-    if (!empty($episode['reason'])) {
-        $pdf->sectionLabel('Motivo');
-        $pdf->compactRows([['Motivo de la admisión', (string)$episode['reason']]], 1);
-        $pdf->Ln(2);
-    }
-    // El pago ya se imprimió arriba junto con los estudios, y la firma se dibuja
-    // aparte al cierre para que no se quede sola en una hoja nueva
-    $skip = ['lab_pago', 'firma'];
-    $sections = array_values(array_filter(
-        service_sections($service, 'admission'),
-        static fn($s) => !in_array($s['id'] ?? '', $skip, true)
-    ));
-    render_pdf_service_sections($pdf, $sections, $serviceData, true);
 
-    /* ---- Cierre: firma y aviso de privacidad ----
-     * markLastPage() ya deja armado el salto automático a la altura correcta (no
-     * choca con el pie corporativo), así que firma y aviso fluyen con normalidad en
-     * vez de forzar una hoja nueva por estimación: eso era lo que dejaba una hoja
-     * casi vacía con la firma sola cuando el cálculo se quedaba corto. */
-    $pdf->markLastPage();
+    if ($service === 'laboratorio') {
+        /* ---- Historia clínica: calcada línea por línea del formato de referencia ---- */
+        $yn = static fn($v) => ($v === true || $v === '1' || $v === 1) ? 'Sí' : $nr;
+        $pdf->identBlock([
+            ['shade' => true, 'bold' => true, 'cells' => [['text' => 'Historia Clínica']]],
+            ['shade' => false, 'cells' => [
+                ['text' => 'Fumador: ' . $yn($serviceData['fumador'] ?? null)],
+                ['text' => 'Anticoagulantes: ' . $yn($serviceData['anticoagulantes'] ?? null)],
+                ['text' => 'Legrado: ' . $yn($serviceData['legrado'] ?? null)],
+            ]],
+            ['shade' => true, 'cells' => [
+                ['text' => 'Anticonceptivos: ' . $yn($serviceData['anticonceptivos'] ?? null)],
+                ['text' => 'FUR: ' . ((string)($serviceData['fur'] ?? '') ?: $nr)],
+            ]],
+            ['shade' => false, 'cells' => [
+                ['text' => 'Médico solicitante: ' . ((string)($episode['referring_doctor'] ?? '') ?: $nr)],
+            ]],
+            ['shade' => true, 'cells' => [
+                ['text' => 'Síntomas: ' . (ficha_lab_sintomas_line($serviceData) ?: $nr)],
+            ]],
+            ['shade' => false, 'cells' => [
+                ['text' => 'Medicamentos: ' . ((string)($serviceData['medicamentos'] ?? '') ?: $nr)],
+            ]],
+            ['shade' => true, 'cells' => [
+                ['text' => 'Estudios a realizar: ' . ($studyLines
+                    ? implode(', ', array_map(static fn($l) => (string)($l['study_name'] ?? 'Estudio'), $studyLines))
+                    : $nr)],
+            ]],
+        ]);
+        $pdf->Ln(3);
+
+        /* ---- Método de pago y monto: el total ya no se calcula por estudio, se
+         * captura a mano — esta sección solo muestra el agregado, sin desglose. */
+        $total = 0.0;
+        foreach ($studyLines as $l) {
+            $total += (float)($l['amount_charged'] ?? 0);
+        }
+        $pdf->sectionLabel('Método de pago y monto');
+        $pdf->compactRows([
+            ['Método de pago', (string)($serviceData['pago_metodo'] ?? '') ?: $nr],
+            ['Monto', $total > 0 ? '$' . number_format($total, 2) : $nr],
+        ]);
+        $pdf->Ln(2);
+
+        if (!empty($episode['reason'])) {
+            $pdf->sectionLabel('Motivo');
+            $pdf->compactRows([['Motivo de la admisión', (string)$episode['reason']]], 1);
+            $pdf->Ln(2);
+        }
+    } else {
+        /* ---- Otros servicios (podología, control de peso, fisioterapia): sin
+         * el formato de referencia (que es específico de laboratorio), se
+         * mantiene el comportamiento genérico anterior. ---- */
+        $pairs = [
+            ['Servicio', SERVICE_LABELS[$service] ?? $service ?: '—'],
+        ];
+        if (!empty($episode['referring_doctor'])) {
+            $pairs[] = ['Médico solicitante', (string)$episode['referring_doctor']];
+        }
+        $pdf->compactRows($pairs);
+        $pdf->Ln(2);
+
+        if ($studyLines) {
+            $total = 0.0;
+            $rows = [];
+            foreach ($studyLines as $l) {
+                $amount = (float)($l['amount_charged'] ?? 0);
+                $total += $amount;
+                $rows[] = [(string)($l['study_name'] ?? 'Estudio'), '$' . number_format($amount, 2)];
+            }
+            $pdf->sectionLabel('Estudios');
+            $pdf->compactRows($rows, 1);
+            $pdf->Ln(1);
+            $pdf->compactRows([
+                ['Método de pago', (string)($serviceData['pago_metodo'] ?? '') ?: '—'],
+                ['Total', '$' . number_format($total, 2)],
+            ]);
+            $pdf->Ln(2);
+        }
+
+        if (!empty($episode['reason'])) {
+            $pdf->sectionLabel('Motivo');
+            $pdf->compactRows([['Motivo de la admisión', (string)$episode['reason']]], 1);
+            $pdf->Ln(2);
+        }
+        // El pago ya se imprimió arriba junto con los estudios, y la firma se dibuja
+        // aparte al cierre para que no se quede sola en una hoja nueva
+        $skip = ['lab_pago', 'firma'];
+        $sections = array_values(array_filter(
+            service_sections($service, 'admission'),
+            static fn($s) => !in_array($s['id'] ?? '', $skip, true)
+        ));
+        render_pdf_service_sections($pdf, $sections, $serviceData, true);
+    }
+
+    /* ---- Cierre de la identificación: firma y aviso breve de privacidad.
+     * Ya no es la última página del documento — el consentimiento informado va
+     * después, en su propia hoja — así que aquí NO se llama markLastPage(): esta
+     * página usa el margen inferior normal y un pie simple, y el pie corporativo
+     * completo solo aparece en la hoja final (ver abajo). */
     $signature = (string)($serviceData['firma'] ?? '');
     if ($signature !== '') {
         $pdf->Ln(4);
         $pdf->dataUrlImage($signature, 'Firma del paciente', null, true);
     }
     $pdf->Ln(4);
-    render_privacy_notice($pdf, $clinicName);
+    render_ficha_privacy_note($pdf);
+
+    /* ---- Consentimiento informado, en hoja aparte: ahora sí es el cierre real
+     * del documento, así que reserva el espacio del pie corporativo. Reutiliza la
+     * misma firma ya capturada en el formulario en vez de pedir una segunda. */
+    $pdf->AddPage();
+    $pdf->markLastPage();
+    render_ficha_consent_page($pdf, $fullName ?: $nr, $signature);
 
     if ($path) {
         $pdf->Output('F', $path);
         return $path;
     }
     return $pdf->Output('S');
+}
+
+/**
+ * Declaraciones del consentimiento informado para toma de muestra y estudios de
+ * laboratorio — redactado para Especialidades Médicas Bosques Polanco.
+ */
+function ficha_consent_items(): array
+{
+    return [
+        'He sido informado(a), de manera clara y en un lenguaje que comprendo, sobre la naturaleza, el '
+            . 'propósito y el procedimiento del o los estudios de laboratorio solicitados, detallados en esta '
+            . 'ficha de identificación.',
+        'Entiendo que la toma de muestra (sangre, orina u otro fluido o tejido, según el estudio) será '
+            . 'realizada por personal capacitado, siguiendo las medidas de higiene y seguridad correspondientes.',
+        'He sido informado(a) de los riesgos asociados a la toma de muestra, que pueden incluir: dolor leve o '
+            . 'molestia en el sitio de punción, formación de hematoma (moretón), mareo o desvanecimiento '
+            . 'transitorio y, en muy raras ocasiones, infección local. Estos riesgos son poco frecuentes y '
+            . 'generalmente leves.',
+        'Declaro que la información proporcionada sobre mis antecedentes, síntomas, medicamentos y demás '
+            . 'datos clínicos es verídica y completa, y entiendo que su omisión o inexactitud puede afectar la '
+            . 'interpretación de los resultados.',
+        'Autorizo al personal de Especialidades Médicas Bosques Polanco a realizar la toma de muestra y su '
+            . 'procesamiento para la obtención de resultados, incluyendo, de ser necesario, el envío de la '
+            . 'muestra a un laboratorio de referencia externo para su análisis.',
+        'Entiendo que los resultados me serán entregados a mí o a mi médico tratante, y que el tratamiento de '
+            . 'mis datos personales y datos personales sensibles de salud se rige por el aviso de privacidad de '
+            . 'Especialidades Médicas Bosques Polanco.',
+        'Se me ha dado la oportunidad de hacer preguntas sobre el procedimiento y estas han sido respondidas '
+            . 'a mi satisfacción.',
+        'Entiendo que puedo negarme a la toma de muestra o retirar este consentimiento en cualquier momento '
+            . 'antes de que esta se realice, sin que ello afecte la atención médica que reciba por otras vías.',
+    ];
+}
+
+/** Hoja de consentimiento informado, al cierre de la ficha (ver render_ficha_pdf()). */
+function render_ficha_consent_page(SiriusDocPDF $pdf, string $patientName, string $signatureDataUrl): void
+{
+    $pdf->pageTitle('Consentimiento informado');
+    $pdf->SetFont('Helvetica', '', 8.6);
+    $pdf->SetTextColor(...PDF_MUTED);
+    $pdf->MultiCell(
+        $pdf->usableWidth(),
+        4.2,
+        pdf_t('Toma de muestra y estudios de laboratorio · Especialidades Médicas Bosques Polanco'),
+        0,
+        'C'
+    );
+    $pdf->Ln(4);
+    $pdf->SetTextColor(...PDF_INK);
+
+    $pdf->SetFont('Helvetica', '', 8.8);
+    $pdf->MultiCell($pdf->usableWidth(), 4.4, pdf_t(
+        'Yo, ' . $patientName . ', paciente (o mi representante legal, en caso de menores de edad o personas '
+        . 'que no puedan otorgar consentimiento por sí mismas), declaro que:'
+    ), 0, 'J');
+    $pdf->Ln(3);
+
+    $i = 1;
+    foreach (ficha_consent_items() as $item) {
+        $pdf->ensureSpace(10);
+        $num = $i . '. ';
+        $numW = $pdf->GetStringWidth(pdf_t($num)) + 1;
+        $x = $pdf->GetX();
+        $y = $pdf->GetY();
+        $pdf->SetFont('Helvetica', 'B', 8.8);
+        $pdf->Cell($numW, 4.4, pdf_t($num), 0, 0, 'L');
+        $pdf->SetFont('Helvetica', '', 8.8);
+        $pdf->SetXY($x + $numW, $y);
+        $pdf->MultiCell($pdf->usableWidth() - $numW, 4.4, pdf_t($item), 0, 'J');
+        $pdf->Ln(2);
+        $i++;
+    }
+
+    $pdf->Ln(2);
+    $pdf->SetFont('Helvetica', '', 8.8);
+    $pdf->MultiCell($pdf->usableWidth(), 4.4, pdf_t(
+        'Con base en lo anterior, otorgo mi consentimiento libre, voluntario e informado para la toma de '
+        . 'muestra y la realización de los estudios de laboratorio señalados.'
+    ), 0, 'J');
+    $pdf->Ln(6);
+
+    if ($signatureDataUrl !== '') {
+        $pdf->dataUrlImage($signatureDataUrl, 'Firma del paciente o representante legal', null, true);
+        return;
+    }
+    $pdf->Ln(14);
+    $centerX = $pdf->GetPageWidth() / 2;
+    $pdf->SetDrawColor(...PDF_LINE);
+    $pdf->Line($centerX - 35, $pdf->GetY(), $centerX + 35, $pdf->GetY());
+    $pdf->Ln(1);
+    $pdf->SetFont('Helvetica', '', 8);
+    $pdf->SetTextColor(...PDF_MUTED);
+    $pdf->Cell(0, 4.6, pdf_t('Firma del paciente o representante legal'), 0, 1, 'C');
+    $pdf->SetTextColor(...PDF_INK);
+}
+
+/**
+ * Resume los síntomas de admisión de laboratorio en una sola línea de texto para
+ * la ficha ("Síntomas: Diarrea (2 a 6 días), Fiebre (Hoy o ayer), ..."). El
+ * catálogo los captura como una lista de casillas con duración (campos 'symptom')
+ * más un campo libre "Otro — especificar" ('sintomas'), a diferencia del formato
+ * de referencia, que tenía un único cuadro de texto — se lee del catálogo en vez
+ * de hardcodear las claves, para no desincronizarse si cambia.
+ */
+function ficha_lab_sintomas_line(array $serviceData): string
+{
+    $parts = [];
+    foreach (service_sections('laboratorio', 'admission') as $sec) {
+        if (($sec['id'] ?? '') !== 'lab_sintomas') {
+            continue;
+        }
+        foreach ($sec['fields'] as $f) {
+            if (($f['t'] ?? '') !== 'symptom') {
+                continue;
+            }
+            $v = $serviceData[$f['k']] ?? null;
+            if ($v === true) {
+                $parts[] = (string)$f['l'];
+            } elseif (is_string($v) && trim($v) !== '') {
+                $parts[] = $f['l'] . ' (' . trim($v) . ')';
+            }
+        }
+    }
+    $otro = trim((string)($serviceData['sintomas'] ?? ''));
+    if ($otro !== '') {
+        $parts[] = $otro;
+    }
+    return implode(', ', $parts);
 }
 
 /* ---- Datos que necesita la ficha, compartidos por ficha.php y el envío automático ---- */
@@ -1991,6 +2449,7 @@ function render_quote_pdf(array $quote, ?string $path = null): string
 function render_commission_pdf(array $statement, ?string $path = null): string
 {
     $lines = is_array($statement['lines']) ? $statement['lines'] : (json_decode((string)$statement['lines'], true) ?: []);
+    $source = $lines['source'] ?? 'auto';
     $items = $lines['items'] ?? [];
     $partyName = (string)($lines['party_name'] ?? '');
     $partyLabel = $statement['party_type'] === 'concierge' ? 'Concierge' : 'Médico';
@@ -2008,6 +2467,23 @@ function render_commission_pdf(array $statement, ?string $path = null): string
 
     $lh = letterhead_config();
     $pdf = new SiriusDocPDF($lh, $clinicName);
+
+    if ($source === 'image') {
+        render_commission_referral_body($pdf, $statement, $partyName, $items);
+    } else {
+        render_commission_auto_body($pdf, $statement, $partyName, $partyLabel, $items);
+    }
+
+    if ($path) {
+        $pdf->Output('F', $path);
+        return $path;
+    }
+    return $pdf->Output('S');
+}
+
+/** Cuerpo del estado de cuenta "automático" (jalado de episodios ya capturados en Sirius): tabla N°/Paciente-Estudio/Monto/%/Comisión. */
+function render_commission_auto_body(SiriusDocPDF $pdf, array $statement, string $partyName, string $partyLabel, array $items): void
+{
     $period = date('d/m/Y', strtotime((string)$statement['period_start'])) . ' – ' . date('d/m/Y', strtotime((string)$statement['period_end']));
     $pdf->setPatientInfo([
         ['Folio', (string)$statement['folio'], 'Periodo', $period, 'bold' => true],
@@ -2036,10 +2512,52 @@ function render_commission_pdf(array $statement, ?string $path = null): string
     $pdf->Ln(6);
 
     $pdf->commissionTotalsBox((float)($statement['total_commission'] ?? $total));
+}
 
-    if ($path) {
-        $pdf->Output('F', $path);
-        return $path;
+/**
+ * Cuerpo del estado de cuenta "desde imagen" (lista de pacientes referidos que
+ * el médico mandó como captura): formato de la "Relación de pacientes
+ * referidos" de referencia, con folio/ID de vinculación arriba, tabla con
+ * checks de estatus y columnas de comisión al final.
+ */
+function render_commission_referral_body(SiriusDocPDF $pdf, array $statement, string $partyName, array $items): void
+{
+    $linkingCode = '';
+    try {
+        $st = db()->prepare('SELECT linking_code FROM vinculacion_doctors WHERE id = ?');
+        $st->execute([(int)$statement['party_id']]);
+        $linkingCode = trim((string)($st->fetch()['linking_code'] ?? ''));
+    } catch (Throwable $e) {
     }
-    return $pdf->Output('S');
+
+    $reportDate = date('d/m/Y', strtotime((string)($statement['created_at'] ?? 'now')));
+    $infoRows = [
+        ['Folio', (string)$statement['folio'], 'Fecha de reporte', $reportDate, 'bold' => true],
+    ];
+    $infoRows[] = $linkingCode !== ''
+        ? ['ID de vinculación', "($linkingCode) $partyName", null, null]
+        : ['Médico', $partyName, null, null];
+    $pdf->setPatientInfo($infoRows);
+
+    $pdf->AddPage();
+    $pdf->markLastPage();
+
+    $pdf->panelBar('RELACIÓN DE PACIENTES REFERIDOS', 'Desglose de referencia — ' . count($items) . ' paciente(s)');
+    $pdf->referralItemsHead();
+    $total = 0.0;
+    foreach ($items as $i => $item) {
+        $patientName = (string)($item['patient_name_matched'] ?? $item['patient_name_raw'] ?? '');
+        $dateLabel = (string)($item['date_label'] ?? '');
+        $studies = (string)($item['studies'] ?? '');
+        $amount = (float)($item['amount_charged'] ?? 0);
+        $pct = (float)($item['commission_pct'] ?? 0);
+        $commission = (float)($item['commission_amount'] ?? 0);
+        $total += $commission;
+        $h = $pdf->referralItemRowHeight($patientName, $studies);
+        $pdf->ensureSpace($h, static fn($p) => $p->referralItemsHead());
+        $pdf->referralItemRow($patientName, $dateLabel, $studies, $amount, $pct, $commission, $i % 2 === 1);
+    }
+    $pdf->Ln(6);
+
+    $pdf->commissionTotalsBox((float)($statement['total_commission'] ?? $total));
 }

@@ -293,7 +293,12 @@ function ai_list_models_claude(string $apiKey): array
  * se ignora en silencio y el asistente responde como siempre, sin poder consultar
  * nada por su cuenta — no es un error, es la degradación esperada.
  */
-function ai_generate(array $history, string $systemPrompt = '', ?string $modelOverride = null, int $maxTokens = 1200, array $tools = []): string
+/**
+ * $image opcional: ['mime' => 'image/png'|'image/jpeg', 'data' => '<base64 sin prefijo data:>'],
+ * se adjunta al último turno de $history (el que le importa a quien llama).
+ * Los 3 proveedores soportan visión; se arma el bloque de imagen propio de cada uno.
+ */
+function ai_generate(array $history, string $systemPrompt = '', ?string $modelOverride = null, int $maxTokens = 1200, array $tools = [], ?array $image = null): string
 {
     $cfg = ai_config();
     if (!ai_is_ready()) {
@@ -316,6 +321,9 @@ function ai_generate(array $history, string $systemPrompt = '', ?string $modelOv
     }
     if (!$turns) {
         throw new RuntimeException('No hay nada que enviar.');
+    }
+    if ($image) {
+        $turns[count($turns) - 1]['image'] = $image;
     }
 
     return match ($provider) {
@@ -349,9 +357,13 @@ function ai_generate_gemini(array $turns, string $systemPrompt, string $model, i
 
     $contents = [];
     foreach ($turns as $t) {
+        $parts = [['text' => $t['text']]];
+        if (!empty($t['image'])) {
+            $parts[] = ['inline_data' => ['mime_type' => $t['image']['mime'], 'data' => $t['image']['data']]];
+        }
         $contents[] = [
             'role'  => $t['role'] === 'assistant' ? 'model' : 'user',
-            'parts' => [['text' => $t['text']]],
+            'parts' => $parts,
         ];
     }
 
@@ -434,7 +446,14 @@ function ai_generate_openai(array $turns, string $systemPrompt, string $model, i
         $messages[] = ['role' => 'system', 'content' => $systemPrompt];
     }
     foreach ($turns as $t) {
-        $messages[] = ['role' => $t['role'], 'content' => $t['text']];
+        if (!empty($t['image'])) {
+            $messages[] = ['role' => $t['role'], 'content' => [
+                ['type' => 'text', 'text' => $t['text']],
+                ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $t['image']['mime'] . ';base64,' . $t['image']['data']]],
+            ]];
+        } else {
+            $messages[] = ['role' => $t['role'], 'content' => $t['text']];
+        }
     }
 
     $payload = [
@@ -470,7 +489,14 @@ function ai_generate_claude(array $turns, string $systemPrompt, string $model, i
 {
     $messages = [];
     foreach ($turns as $t) {
-        $messages[] = ['role' => $t['role'], 'content' => $t['text']];
+        if (!empty($t['image'])) {
+            $messages[] = ['role' => $t['role'], 'content' => [
+                ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $t['image']['mime'], 'data' => $t['image']['data']]],
+                ['type' => 'text', 'text' => $t['text']],
+            ]];
+        } else {
+            $messages[] = ['role' => $t['role'], 'content' => $t['text']];
+        }
     }
 
     $payload = [
