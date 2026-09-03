@@ -499,11 +499,19 @@ function resultCard(r) {
             <span class="${it.done ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(it.text)}</span>
           </label>`).join('')}
       </div>` : `<p class="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-400">Sin estudios capturados.</p>`}
-      <label class="mt-3 flex items-center gap-2 border-t border-slate-100 pt-3 text-sm text-slate-700">
-        <input type="checkbox" data-invoice="${r.id}" ${r.needs_invoice ? 'checked' : ''}
-               class="h-3.5 w-3.5 shrink-0 rounded border-slate-400 text-violet-600 focus:ring-violet-500">
-        Enviar factura
-      </label>
+      <div class="mt-3 space-y-1 border-t border-slate-100 pt-3">
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-invoice="${r.id}" ${r.needs_invoice ? 'checked' : ''}
+                 class="h-3.5 w-3.5 shrink-0 rounded border-slate-400 text-violet-600 focus:ring-violet-500">
+          Solicitar factura
+        </label>
+        ${r.needs_invoice ? `
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-invoice-sent="${r.id}" ${r.invoice_sent ? 'checked' : ''}
+                 class="h-3.5 w-3.5 shrink-0 rounded border-slate-400 text-sky-600 focus:ring-sky-500">
+          Factura enviada
+        </label>` : ''}
+      </div>
       ${r.observations ? `<p class="mt-2 whitespace-pre-line text-xs text-slate-500">${escapeHtml(r.observations)}</p>` : ''}
       ${r.creator_name ? `<p class="mt-2 text-[10px] text-slate-400">${escapeHtml(r.creator_name)}</p>` : ''}
     </div>`;
@@ -530,16 +538,35 @@ function wireResultEvents(view) {
     const invoiceCb = card.querySelector('[data-invoice]');
     invoiceCb?.addEventListener('change', async () => {
       const prev = r.needs_invoice;
+      const prevSent = r.invoice_sent;
       r.needs_invoice = invoiceCb.checked;
+      // No tiene sentido "enviada" sin "solicitada" — se destilda junto.
+      if (!r.needs_invoice) r.invoice_sent = false;
       invoiceCb.disabled = true;
       try {
         await apiPost('tasks/results_save', { id, needs_invoice: r.needs_invoice });
+        paintResultSections(view); // muestra/oculta "Factura enviada" según el nuevo estado
       } catch (e) {
         toast(e.message, 'error');
         r.needs_invoice = prev;
+        r.invoice_sent = prevSent;
         invoiceCb.checked = prev;
+        invoiceCb.disabled = false;
       }
-      invoiceCb.disabled = false;
+    });
+    const invoiceSentCb = card.querySelector('[data-invoice-sent]');
+    invoiceSentCb?.addEventListener('change', async () => {
+      const prev = r.invoice_sent;
+      r.invoice_sent = invoiceSentCb.checked;
+      invoiceSentCb.disabled = true;
+      try {
+        await apiPost('tasks/results_save', { id, invoice_sent: r.invoice_sent });
+      } catch (e) {
+        toast(e.message, 'error');
+        r.invoice_sent = prev;
+        invoiceSentCb.checked = prev;
+      }
+      invoiceSentCb.disabled = false;
     });
   });
   view.querySelectorAll('[data-edit-result]').forEach((b) =>

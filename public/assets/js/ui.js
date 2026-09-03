@@ -99,6 +99,12 @@ export function modal({ title, content, actions = [], size = 'max-w-lg' }) {
   const root = document.getElementById('modal-root');
   const wrap = document.createElement('div');
   wrap.className = 'fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-0 sm:items-center sm:p-4';
+  // El pizarrón (y cualquier otra vista con z-index propio, p. ej. "traer al
+  // frente" de una nota) puede acumular z-index por encima de 50 con el uso —
+  // z-50 de Tailwind ya no basta para garantizar que el modal quede arriba.
+  // Se fija por estilo inline (gana siempre, sin depender de qué clase exista
+  // ya compilada) un valor que ninguna nota va a alcanzar nunca.
+  wrap.style.zIndex = '9999';
   wrap.innerHTML = `
     <div class="flex max-h-[92vh] w-full ${size} flex-col rounded-t-2xl bg-white shadow-xl sm:rounded-2xl">
       <div class="flex shrink-0 items-center justify-between border-b border-slate-200 px-5 py-4">

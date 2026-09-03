@@ -317,6 +317,7 @@ function handle_tasks(string $action): void
             foreach ($rows as &$r) {
                 $r['id'] = (int)$r['id'];
                 $r['needs_invoice'] = (bool)$r['needs_invoice'];
+                $r['invoice_sent'] = (bool)$r['invoice_sent'];
                 $r['studies'] = $r['studies'] ? json_decode($r['studies'], true) : [];
                 $r['created_by'] = $r['created_by'] !== null ? (int)$r['created_by'] : null;
             }
@@ -392,6 +393,14 @@ function handle_tasks(string $action): void
             }
             if (array_key_exists('needs_invoice', $b)) {
                 $fields['needs_invoice'] = !empty($b['needs_invoice']) ? 1 : 0;
+                // No tiene sentido "enviada" sin "solicitada": si se destilda la
+                // solicitud, se destilda también el envío.
+                if (!$fields['needs_invoice']) {
+                    $fields['invoice_sent'] = 0;
+                }
+            }
+            if (array_key_exists('invoice_sent', $b)) {
+                $fields['invoice_sent'] = !empty($b['invoice_sent']) ? 1 : 0;
             }
             if (array_key_exists('observations', $b)) {
                 $obs = trim((string)$b['observations']);
