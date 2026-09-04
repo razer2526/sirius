@@ -1,5 +1,5 @@
-/** Módulo Tareas: mis tareas (únicas y frecuentes, en una sola lista ordenada),
- *  proyectos con subtareas, monitor de equipo y seguimiento de resultados. */
+/** Módulo Tareas: mis tareas (únicas y frecuentes, agrupadas por vencimiento),
+ *  proyectos con subtareas, y seguimiento de resultados. */
 
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce, isUserBusy } from '../ui.js';
@@ -88,8 +88,6 @@ function paint(root) {
     ['proyectos', 'Proyectos', 'briefcase'],
     ['resultados', 'Resultados', 'flask'],
   ];
-  if (data.can_manage) tabs.push(['equipo', 'Equipo', 'users']);
-
   root.innerHTML = `
     <div class="mx-auto max-w-5xl space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
@@ -126,8 +124,7 @@ function paint(root) {
   const view = root.querySelector('#tasks-view');
   if (tab === 'mis') paintMis(view);
   else if (tab === 'proyectos') paintProyectos(view);
-  else if (tab === 'resultados') paintResultados(view);
-  else paintEquipo(view);
+  else paintResultados(view);
 }
 
 /* ---------- helpers de datos ---------- */
@@ -136,19 +133,6 @@ const tasksForUser = (userId) => data.tasks.filter((t) => !t.parent_id && (t.ass
 const assigneeNames = (t) => (t.assigned_names || []).join(', ');
 const today = () => new Date().toISOString().slice(0, 10);
 const tomorrow = () => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); };
-const isOverdue = (t) => t.due_date && t.due_date < today() && t.status !== 'completada';
-
-function sortTasks(list) {
-  return [...list].sort((a, b) => {
-    const doneA = a.status === 'completada' ? 1 : 0;
-    const doneB = b.status === 'completada' ? 1 : 0;
-    if (doneA !== doneB) return doneA - doneB;
-    const p = PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-    if (p !== 0) return p;
-    return (a.due_date || '9999') < (b.due_date || '9999') ? -1 : 1;
-  });
-}
-
 /* ---------- vistas ---------- */
 /**
  * Agrupa por vencimiento en vez de por tipo de recurrencia: completadas siempre al
@@ -194,18 +178,12 @@ function sortByDueDate(list) {
 }
 
 /**
- * "Mis tareas": agrupada por vencimiento (hoy/mañana/esta semana/posterior), con
- * alta/urgente destacadas arriba en tarjetas cuadradas sin importar su fecha, y
- * completadas al final — mismo lenguaje visual que ya usa Tareas > Resultados. Un
- * gestor puede además "ver como" a otra persona del equipo con el filtro de usuario,
- * en vez de tener que ir a la pestaña Equipo.
+ * Arma las secciones por vencimiento (prioridad alta / hoy / mañana / esta semana /
+ * posterior / completadas) para cualquier lista de tareas — compartida por "Mis
+ * tareas" y por el detalle de un proyecto en "Proyectos", mismo lenguaje visual para
+ * ambos. Regresa `null` si la lista no genera ninguna sección (todo vacío).
  */
-function paintMis(view) {
-  const targetUser = data.can_manage && misFilters.user ? +misFilters.user : data.me;
-  let list = tasksForUser(targetUser);
-  if (misFilters.status) list = list.filter((t) => t.status === misFilters.status);
-  if (misFilters.project) list = list.filter((t) => t.project_id === +misFilters.project);
-
+function renderTaskSections(list) {
   const b = bucketMisTasks(list);
   const prioridad = [...b.prioridad].sort((x, y) => {
     const p = PRIORITY_ORDER[x.priority] - PRIORITY_ORDER[y.priority];
@@ -233,10 +211,25 @@ function paintMis(view) {
     group('Completadas', completadas, stack('completadas')),
   ].filter(Boolean);
 
+  return sections.length ? `<div class="space-y-5">${sections.join('')}</div>` : null;
+}
+
+/**
+ * "Mis tareas": agrupada por vencimiento (hoy/mañana/esta semana/posterior), con
+ * alta/urgente destacadas arriba en tarjetas cuadradas sin importar su fecha, y
+ * completadas al final — mismo lenguaje visual que ya usa Tareas > Resultados. Un
+ * gestor puede además "ver como" a otra persona del equipo con el filtro de usuario.
+ */
+function paintMis(view) {
+  const targetUser = data.can_manage && misFilters.user ? +misFilters.user : data.me;
+  let list = tasksForUser(targetUser);
+  if (misFilters.status) list = list.filter((t) => t.status === misFilters.status);
+  if (misFilters.project) list = list.filter((t) => t.project_id === +misFilters.project);
+
   view.innerHTML = `
     <div class="space-y-4">
       ${filterBarHtml()}
-      ${sections.length ? `<div class="space-y-5">${sections.join('')}</div>` : emptyState('Sin tareas pendientes', 'Crea una tarea o espera a que te asignen una.')}
+      ${renderTaskSections(list) || emptyState('Sin tareas pendientes', 'Crea una tarea o espera a que te asignen una.')}
     </div>`;
 
   wireFilterBar(view);
@@ -271,13 +264,13 @@ function wireFilterBar(view) {
 }
 
 /**
- * Tarjeta de "Mis tareas": título con cenefa de color según la sección donde cayó
- * (hoy/mañana/semana/posterior/completadas — ver SECTION_COLORS), o según su propia
- * prioridad en la sección "Prioridad alta" (ver PRIORITY_CARD_COLORS, esa sección se
- * saca justo por no depender de la fecha). A diferencia de taskCard() (que comparten
- * Proyectos y Equipo, sin tocar), aquí el creador y el asignado se muestran siempre,
- * no solo a gestores. Las tareas recurrentes (diaria/semanal) usan el check binario
- * data-recurring en vez del ciclo de estado pendiente→en progreso→completada.
+ * Tarjeta compartida por "Mis tareas" y el detalle de un proyecto: título con cenefa
+ * de color según la sección donde cayó (hoy/mañana/semana/posterior/completadas —
+ * ver SECTION_COLORS), o según su propia prioridad en la sección "Prioridad alta"
+ * (ver PRIORITY_CARD_COLORS, esa sección se saca justo por no depender de la fecha).
+ * El creador y el asignado se muestran siempre, no solo a gestores. Las tareas
+ * recurrentes (diaria/semanal) usan el check binario data-recurring en vez del ciclo
+ * de estado pendiente→en progreso→completada.
  */
 function misTaskCard(t, { square = false, sectionKey } = {}) {
   const isRecurring = !!t.recurrence;
@@ -344,7 +337,7 @@ function canDeleteProject(p) {
 function paintProyectos(view) {
   if (projectFilter !== null) {
     const p = data.projects.find((x) => x.id === projectFilter);
-    const list = sortTasks(data.tasks.filter((t) => t.project_id === projectFilter && !t.parent_id));
+    const list = data.tasks.filter((t) => t.project_id === projectFilter && !t.parent_id);
     view.innerHTML = `
       <button type="button" id="btn-back-projects" class="mb-3 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
         ${icon('chevron-left', 'h-4 w-4')} Todos los proyectos
@@ -362,7 +355,7 @@ function paintProyectos(view) {
         </div>
         ${projectProgress(p)}
       </div>
-      ${list.length ? `<div class="space-y-2.5">${list.map((t) => taskCard(t)).join('')}</div>` : emptyState('Proyecto sin tareas', 'Agrega la primera tarea.')}`;
+      ${renderTaskSections(list) || emptyState('Proyecto sin tareas', 'Agrega la primera tarea.')}`;
     view.querySelector('#btn-back-projects').addEventListener('click', () => { projectFilter = null; paint(document.getElementById('module-root')); });
     view.querySelector('#btn-add-to-project')?.addEventListener('click', () => openTaskModal(null, { project_id: projectFilter }));
     wireTaskEvents(view);
@@ -410,26 +403,6 @@ function paintProyectos(view) {
         load(document.getElementById('module-root'));
       } catch (e) { toast(e.message, 'error'); }
     }));
-}
-
-function paintEquipo(view) {
-  const grupos = [...data.users.map((u) => ({ id: u.id, name: u.full_name })), { id: null, name: 'Sin asignar' }];
-  const html = grupos.map((g) => {
-    const list = sortTasks(data.tasks.filter((t) => !t.parent_id && !t.recurrence
-      && (g.id === null ? t.assigned_to.length === 0 : t.assigned_to.includes(g.id))));
-    if (!list.length) return '';
-    const done = list.filter((t) => t.status === 'completada').length;
-    return `
-      <div>
-        <div class="mb-2 flex items-center justify-between">
-          <h4 class="text-sm font-semibold text-slate-700">${escapeHtml(g.name)}</h4>
-          <span class="text-xs text-slate-400">${done}/${list.length} completadas</span>
-        </div>
-        <div class="space-y-2.5">${list.map((t) => taskCard(t)).join('')}</div>
-      </div>`;
-  }).filter(Boolean).join('');
-  view.innerHTML = html ? `<div class="space-y-6">${html}</div>` : emptyState('Sin tareas asignadas', 'Crea tareas y asígnalas al equipo.');
-  wireTaskEvents(view);
 }
 
 /* ================= Resultados por entregar ================= */
@@ -887,52 +860,6 @@ function projectProgress(p) {
 
 function canEdit(t) {
   return data.can_manage || t.created_by === data.me;
-}
-
-function taskCard(t) {
-  const subs = children(t);
-  const subsDone = subs.filter((s) => s.status === 'completada').length;
-  const st = STATUS[t.status];
-  const proj = t.project_id ? data.projects.find((p) => p.id === t.project_id) : null;
-  return `
-    <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 ${t.status === 'completada' ? 'opacity-70' : ''}">
-      <div class="flex items-start gap-3">
-        <button type="button" data-toggle="${t.id}" title="Completar"
-                class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${t.status === 'completada' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
-          <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-        </button>
-        <div class="min-w-0 flex-1">
-          <p class="text-sm font-semibold ${t.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-900'}">${escapeHtml(t.title)}</p>
-          ${t.description ? `<p class="mt-0.5 text-xs text-slate-500">${escapeHtml(t.description)}</p>` : ''}
-          <div class="mt-2 flex flex-wrap items-center gap-1.5">
-            <button type="button" data-status="${t.id}" class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${st.cls}" title="Cambiar estado">${st.label}</button>
-            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
-            ${t.due_date ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${isOverdue(t) ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}">${isOverdue(t) ? '⚠ ' : ''}${fmtDate(t.due_date)}</span>` : ''}
-            ${proj ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>` : ''}
-            ${data.can_manage && assigneeNames(t) ? `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] text-slate-500 ring-1 ring-slate-200">${escapeHtml(assigneeNames(t))}</span>` : ''}
-          </div>
-        </div>
-        <div class="flex shrink-0 gap-1">
-          ${!t.parent_id ? `<button type="button" data-subtask="${t.id}" title="Agregar subtarea" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('plus', 'h-4 w-4')}</button>` : ''}
-          ${canEdit(t) ? `
-          <button type="button" data-edit="${t.id}" title="Editar" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
-          <button type="button" data-del="${t.id}" title="Eliminar" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
-        </div>
-      </div>
-      ${subs.length ? `
-      <div class="ml-9 mt-3 space-y-1.5 border-l-2 border-slate-100 pl-3">
-        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Subtareas ${subsDone}/${subs.length}</p>
-        ${subs.map((s) => `
-          <div class="flex items-center gap-2">
-            <button type="button" data-toggle="${s.id}"
-                    class="flex h-4.5 w-4.5 h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${s.status === 'completada' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
-              <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </button>
-            <span class="min-w-0 flex-1 truncate text-sm ${s.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(s.title)}</span>
-            ${canEdit(s) ? `<button type="button" data-del="${s.id}" class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-300 hover:text-red-500">${icon('x', 'h-3.5 w-3.5')}</button>` : ''}
-          </div>`).join('')}
-      </div>` : ''}
-    </div>`;
 }
 
 function emptyState(title, subtitle) {
