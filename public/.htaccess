@@ -12,21 +12,6 @@ Options -Indexes
   AddType font/woff2 .woff2
 </IfModule>
 
-# El callback de OAuth de Google (google_oauth.php?code=...&state=...) trae
-# parámetros que algunas reglas genéricas de ModSecurity del hosting confunden
-# con un ataque y bloquean con "406 Not Acceptable" antes de que le toque a
-# PHP procesarlos. Se desactiva ModSecurity solo para este archivo.
-<IfModule mod_security.c>
-  <Files "google_oauth.php">
-    SecRuleEngine Off
-  </Files>
-</IfModule>
-<IfModule mod_security2.c>
-  <Files "google_oauth.php">
-    SecRuleEngine Off
-  </Files>
-</IfModule>
-
 # En producción con SSL activo, descomentar para forzar HTTPS:
 # <IfModule mod_rewrite.c>
 #   RewriteEngine On
