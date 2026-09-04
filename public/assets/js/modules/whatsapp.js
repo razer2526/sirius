@@ -12,7 +12,7 @@ const STATUS_COLOR = {
   slate: 'bg-slate-100 text-slate-700', amber: 'bg-amber-100 text-amber-700', blue: 'bg-blue-100 text-blue-700',
   emerald: 'bg-emerald-100 text-emerald-700', red: 'bg-red-100 text-red-700', indigo: 'bg-indigo-100 text-indigo-700',
 };
-const POLL_MS = 15000;
+const POLL_MS = 10000;
 // Emojis de reacción y de captura rápida: WhatsApp Cloud API no permite consultar la
 // foto de perfil de un contacto (restricción de la plataforma, no de Sirius) — por
 // eso el chat muestra un avatar con iniciales en su lugar.

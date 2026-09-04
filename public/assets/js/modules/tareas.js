@@ -2,7 +2,9 @@
  *  proyectos con subtareas, monitor de equipo y seguimiento de resultados. */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce } from '../ui.js';
+import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce, isUserBusy } from '../ui.js';
+
+const POLL_MS = 20000;
 
 const PRIORITY = {
   baja:    { label: 'Baja',    cls: 'bg-slate-100 text-slate-600' },
@@ -25,6 +27,7 @@ let resultsData = null;
 // '' en 'user' significa "yo mismo"; solo un gestor puede cambiarlo a otra persona.
 let misFilters = { status: '', project: '', user: '' };
 let resultFilters = { q: '', sample_date: '', due_date: '', status: '' };
+let pollTimer = null;
 
 export async function render(root, context) {
   ctx = context;
@@ -33,6 +36,24 @@ export async function render(root, context) {
   if (context.args[0] === 'resultados') tab = 'resultados';
   root.innerHTML = spinner();
   await load(root);
+
+  const tick = async () => {
+    // #tasks-view se recrea en cada paint(); si ya no está en el DOM es que el
+    // router navegó a otro módulo (mismo criterio que whatsapp.js).
+    if (!document.getElementById('tasks-view')?.isConnected) { clearInterval(pollTimer); return; }
+    if (isUserBusy()) return; // modal abierto o foco en un campo: se reintenta en el siguiente tick
+    try {
+      const fresh = await apiGet('tasks/list');
+      if (isUserBusy()) return; // pudo empezar a interactuar mientras la petición estaba en vuelo
+      data = fresh;
+      // paintResultados() reutiliza resultsData si ya tiene valor — sin esto, un
+      // refresco de fondo repintaría datos viejos de Resultados sin darse cuenta.
+      if (tab === 'resultados') resultsData = null;
+      paint(root);
+    } catch { /* red intermitente: se reintenta en el próximo tick */ }
+  };
+  clearInterval(pollTimer);
+  pollTimer = setInterval(tick, POLL_MS);
 }
 
 async function load(root) {
