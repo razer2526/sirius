@@ -17,7 +17,7 @@ jobs:
       - name: Versionar service worker
         run: |
           SHA=$(git rev-parse --short HEAD)
-          sed -i "s/__BUILD__/$SHA/" public/sw.js
+          sed -i "s/sirius-shell-[^']*/sirius-shell-$SHA/" public/sw.js
           printf '%s' "$SHA" > public/BUILD_VERSION
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
