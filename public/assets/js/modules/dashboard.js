@@ -8,12 +8,32 @@
  */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, fmtDate, toast } from '../ui.js';
+import { icon, escapeHtml, fmtDate, toast, isUserBusy } from '../ui.js';
 
+const POLL_MS = 20000;
 let clockInterval = null;
+let pollTimer = null;
 
 export async function render(root, ctx) {
   const stats = await apiGet('dashboard/stats');
+  paintDashboard(root, ctx, stats);
+
+  const tick = async () => {
+    // #dash-clock se recrea en cada paintDashboard(); si ya no está en el DOM es que
+    // el router navegó a otro módulo (mismo criterio que tareas.js/pizarron.js).
+    if (!document.getElementById('dash-clock')?.isConnected) { clearInterval(pollTimer); return; }
+    if (isUserBusy()) return; // modal abierto o foco en un campo: se reintenta en el siguiente tick
+    try {
+      const fresh = await apiGet('dashboard/stats');
+      if (isUserBusy()) return; // pudo empezar a interactuar mientras la petición estaba en vuelo
+      paintDashboard(root, ctx, fresh);
+    } catch { /* red intermitente: se reintenta en el próximo tick */ }
+  };
+  clearInterval(pollTimer);
+  pollTimer = setInterval(tick, POLL_MS);
+}
+
+function paintDashboard(root, ctx, stats) {
   if (clockInterval) clearInterval(clockInterval);
 
   const hour = new Date().getHours();
@@ -42,12 +62,12 @@ export async function render(root, ctx) {
   wireDismissButtons(root);
 
   const clockEl = root.querySelector('#dash-clock');
-  const tick = () => {
+  const tickClock = () => {
     if (!clockEl.isConnected) { clearInterval(clockInterval); return; }
     clockEl.textContent = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   };
-  tick();
-  clockInterval = setInterval(tick, 1000);
+  tickClock();
+  clockInterval = setInterval(tickClock, 1000);
 }
 
 /* ================= KPIs ================= */
@@ -151,7 +171,7 @@ function alertsSection(alerts) {
 
   if (!cards.length) return '';
   return `
-    <div>
+    <div id="alerts-section">
       <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Alertas</h3>
       ${cardGrid(cards)}
     </div>`;
@@ -210,10 +230,13 @@ function wireDismissButtons(root) {
       e.stopPropagation();
       const alertKey = btn.dataset.dismissAlert;
       const card = btn.closest('a');
+      const section = document.getElementById('alerts-section');
       btn.disabled = true;
       try {
         await apiPost('dashboard/dismiss_alert', { alert_key: alertKey });
         card?.remove();
+        // Si era la última, no dejar el encabezado "Alertas" solo hasta el próximo tick.
+        if (section && !section.querySelector('[data-dismiss-alert]')) section.remove();
       } catch (err) {
         toast(err.message, 'error');
         btn.disabled = false;
