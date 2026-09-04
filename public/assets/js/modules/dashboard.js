@@ -1,13 +1,14 @@
 /**
  * Módulo Dashboard: compilado de lo más importante de cada módulo — reloj y saludo,
- * franja compacta de KPIs, alertas sin fecha concreta, y la agenda accionable de
- * hoy y mañana (citas, tareas y laboratorio por entregar). No repite la navegación
- * a módulos: para eso está el sidebar, alcanzable en cualquier tamaño de pantalla
- * (en móvil, con el botón de menú).
+ * franja compacta de KPIs, alertas descartables, y la agenda accionable de hoy y
+ * mañana (citas, tareas y laboratorio por entregar), cada una en tarjetas
+ * individuales con el ícono y la etiqueta del módulo de origen. No repite la
+ * navegación a módulos: para eso está el sidebar, alcanzable en cualquier tamaño de
+ * pantalla (en móvil, con el botón de menú).
  */
 
-import { apiGet } from '../api.js';
-import { icon, escapeHtml, fmtDate } from '../ui.js';
+import { apiGet, apiPost } from '../api.js';
+import { icon, escapeHtml, fmtDate, toast } from '../ui.js';
 
 let clockInterval = null;
 
@@ -33,13 +34,12 @@ export async function render(root, ctx) {
 
       ${kpiStrip(stats.kpis, stats.alerts.whatsapp)}
 
-      <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        ${agendaCard('¿Qué tenemos para hoy?', stats.today, 'today')}
-        ${agendaCard('¿Qué va a pasar mañana?', stats.tomorrow, 'tomorrow')}
-      </div>
-
       ${alertsSection(stats.alerts)}
+      ${agendaSection('¿Qué tenemos para hoy?', stats.today)}
+      ${agendaSection('¿Qué va a pasar mañana?', stats.tomorrow)}
     </div>`;
+
+  wireDismissButtons(root);
 
   const clockEl = root.querySelector('#dash-clock');
   const tick = () => {
@@ -73,150 +73,151 @@ function kpiStrip(kpis, waUnread) {
     </div>`;
 }
 
+/**
+ * Tarjeta compartida por Alertas y por la agenda de Hoy/Mañana: ícono a la izquierda
+ * (la campanita fija para una alerta; el ícono propio del tipo — calendario/tareas/
+ * matraz — para un elemento de agenda, ahí identifica mejor qué es la tarjeta que un
+ * aviso genérico), etiqueta de módulo, título/subtítulo, y si se pasa `alertKey` un
+ * botón "-" para descartarla (exclusivo de Alertas — la agenda no se descarta).
+ */
+function dashCard({ iconName, moduleLabel, colorCls, main, sub, href, alertKey }) {
+  return `
+    <a href="${href}" class="relative block rounded-2xl bg-white p-3.5 ${alertKey ? 'pr-9' : ''} shadow-sm ring-1 ring-slate-200 transition hover:shadow-md">
+      ${alertKey ? `
+      <button type="button" data-dismiss-alert="${escapeHtml(alertKey)}" title="Descartar"
+              class="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">
+        ${icon('x', 'h-3.5 w-3.5')}
+      </button>` : ''}
+      <div class="flex items-start gap-2.5">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${colorCls}">${icon(iconName, 'h-4 w-4')}</span>
+        <div class="min-w-0 flex-1">
+          <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-500">${escapeHtml(moduleLabel)}</span>
+          <p class="mt-1 truncate text-sm font-semibold text-slate-800">${escapeHtml(main)}</p>
+          ${sub ? `<p class="truncate text-xs text-slate-500">${escapeHtml(String(sub))}</p>` : ''}
+        </div>
+      </div>
+    </a>`;
+}
+
+function cardGrid(cards) {
+  return `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${cards.join('')}</div>`;
+}
+
+/* ================= Alertas (sin fecha concreta, descartables) ================= */
+function alertsSection(alerts) {
+  const cards = [];
+  const push = (moduleLabel, colorCls, href, items, mapItem) => {
+    for (const it of items) {
+      const [main, sub] = mapItem(it);
+      cards.push(dashCard({ iconName: 'bell', moduleLabel, colorCls, main, sub, href, alertKey: it.alert_key }));
+    }
+  };
+
+  if (alerts.inventory) {
+    push('Inventario', 'text-red-600 bg-red-50', '#/inventario', alerts.inventory.expired, (i) => [i.name, 'Caducado']);
+    push('Inventario', 'text-amber-600 bg-amber-50', '#/inventario', alerts.inventory.expiring, (i) => [i.name, 'Por caducar']);
+    push('Inventario', 'text-amber-600 bg-amber-50', '#/inventario', alerts.inventory.low_stock, (i) => [i.name, 'Stock bajo']);
+  }
+  if (alerts.tasks_recurring) {
+    push('Tareas', 'text-violet-600 bg-violet-50', '#/tareas', alerts.tasks_recurring, (t) => [t.title, t.recurrence]);
+  }
+  if (alerts.tasks_deadline_soon) {
+    push('Tareas', 'text-amber-600 bg-amber-50', '#/tareas', alerts.tasks_deadline_soon, (t) => [t.title, fmtDate(t.due_date)]);
+  }
+  if (alerts.new_boards) {
+    push('Pizarrón', 'text-emerald-600 bg-emerald-50', '#/pizarron', alerts.new_boards, (b) => [b.title || '(sin título)', b.author || '']);
+  }
+  if (alerts.new_files) {
+    push('Archivos', 'text-sky-600 bg-sky-50', '#/archivos', alerts.new_files, (f) => [f.name, f.author || '']);
+  }
+  if (alerts.birthdays) {
+    push('Expedientes', 'text-rose-600 bg-rose-50', '#/expedientes', alerts.birthdays, (p) => [
+      [p.first_name, p.paternal_surname].filter(Boolean).join(' '),
+      p.days_until === 0 ? `Hoy · cumple ${p.turns}` : `En ${p.days_until} días · cumple ${p.turns}`,
+    ]);
+  }
+  if (alerts.whatsapp?.conversations) {
+    for (const c of alerts.whatsapp.conversations) {
+      cards.push(dashCard({
+        iconName: 'bell', moduleLabel: 'WhatsApp', colorCls: 'text-teal-600 bg-teal-50',
+        main: c.contact_name || c.wa_id, sub: `${c.unread_count} sin leer`,
+        href: `#/whatsapp/${c.id}`, alertKey: c.alert_key,
+      }));
+    }
+  }
+  if (alerts.documents_pending_review) {
+    push('Apps', 'text-amber-600 bg-amber-50', '#/apps/membretador', alerts.documents_pending_review, (d) => [d.patient_name, d.type_label]);
+  }
+
+  if (!cards.length) return '';
+  return `
+    <div>
+      <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Alertas</h3>
+      ${cardGrid(cards)}
+    </div>`;
+}
+
 /* ================= Agenda de un día (hoy / mañana) ================= */
-function agendaCard(title, agenda, variant) {
-  const appts = agenda.appointments || [];
-  const tasks = agenda.tasks || [];
-  const lab = agenda.lab_pending || [];
-  const results = agenda.result_deliveries || [];
-  const empty = !appts.length && !tasks.length && !lab.length && !results.length;
-  const accent = variant === 'today' ? 'text-indigo-600' : 'text-slate-500';
+function agendaSection(title, agenda) {
+  const cards = [];
+
+  for (const a of agenda.appointments || []) {
+    cards.push(dashCard({
+      iconName: 'calendar', moduleLabel: 'Calendario', colorCls: 'text-indigo-600 bg-indigo-50',
+      main: a.title, sub: `${a.start_at.slice(11, 16)}${a.assigned_name ? ' · ' + a.assigned_name : ''}`,
+      href: '#/calendario',
+    }));
+  }
+  for (const t of agenda.tasks || []) {
+    cards.push(dashCard({
+      iconName: 'check-square', moduleLabel: 'Tareas', colorCls: 'text-violet-600 bg-violet-50',
+      main: t.title, sub: t.recurrence || (t.priority === 'urgente' || t.priority === 'alta' ? t.priority : ''),
+      href: '#/tareas',
+    }));
+  }
+  for (const l of agenda.lab_pending || []) {
+    cards.push(dashCard({
+      iconName: 'flask', moduleLabel: 'Expedientes', colorCls: 'text-sky-600 bg-sky-50',
+      main: [l.first_name, l.paternal_surname, l.maternal_surname].filter(Boolean).join(' '),
+      sub: `${l.file_number}${l.service_folio ? ' · ' + l.service_folio : ''}`,
+      href: `#/expedientes/${l.patient_id}`,
+    }));
+  }
+  for (const r of agenda.result_deliveries || []) {
+    const st = r.studies || [];
+    const done = st.filter((s) => s.done).length;
+    cards.push(dashCard({
+      iconName: 'flask', moduleLabel: 'Tareas', colorCls: 'text-teal-600 bg-teal-50',
+      main: r.patient_name, sub: `${r.needs_invoice ? 'Factura · ' : ''}${st.length ? `${done}/${st.length}` : ''}`,
+      href: '#/tareas/resultados',
+    }));
+  }
 
   return `
-    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-      <h3 class="mb-4 text-base font-bold ${accent}">${title}</h3>
-      ${empty ? `<p class="py-6 text-center text-sm text-slate-400">Nada pendiente por aquí 🎉</p>` : `
-      <div class="space-y-4">
-        ${appts.length ? agendaGroup('calendar', 'Citas', appts.map((a) => `
-          <div class="flex items-center gap-2.5">
-            <span class="shrink-0 text-xs font-semibold text-slate-400">${a.start_at.slice(11, 16)}</span>
-            <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(a.title)}</span>
-            ${a.assigned_name ? `<span class="shrink-0 text-[11px] text-slate-400">${escapeHtml(a.assigned_name)}</span>` : ''}
-          </div>`)) : ''}
-        ${tasks.length ? agendaGroup('check-square', 'Tareas', tasks.map((t) => `
-          <div class="flex items-center gap-2.5">
-            <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(t.title)}</span>
-            ${t.recurrence ? `<span class="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600">${t.recurrence}</span>`
-              : priorityBadge(t.priority)}
-          </div>`)) : ''}
-        ${lab.length ? agendaGroup('flask', 'Laboratorio por entregar', lab.map((l) => `
-          <a href="#/expedientes/${l.patient_id}" class="flex items-center gap-2.5 hover:text-indigo-600">
-            <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml([l.first_name, l.paternal_surname, l.maternal_surname].filter(Boolean).join(' '))}</span>
-            <span class="shrink-0 text-[11px] text-slate-400">${escapeHtml(l.file_number)}${l.service_folio ? ' · ' + escapeHtml(l.service_folio) : ''}</span>
-          </a>`)) : ''}
-        ${results.length ? agendaGroup('flask', 'Resultados por enviar', results.map((r) => {
-          const st = r.studies || [];
-          const done = st.filter((s) => s.done).length;
-          return `
-          <a href="#/tareas/resultados" class="flex items-center gap-2.5 hover:text-indigo-600">
-            <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(r.patient_name)}</span>
-            ${r.needs_invoice ? `<span class="shrink-0 rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-600">Factura</span>` : ''}
-            ${st.length ? `<span class="shrink-0 text-[11px] text-slate-400">${done}/${st.length}</span>` : ''}
-          </a>`;
-        })) : ''}
+    <div>
+      <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">${escapeHtml(title)}</h3>
+      ${cards.length ? cardGrid(cards) : `
+      <div class="rounded-2xl bg-white py-8 text-center shadow-sm ring-1 ring-slate-200">
+        <p class="text-sm text-slate-400">Nada pendiente por aquí 🎉</p>
       </div>`}
     </div>`;
 }
 
-function agendaGroup(iconName, label, rows) {
-  return `
-    <div>
-      <p class="mb-1.5 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-slate-400">
-        ${icon(iconName, 'h-3.5 w-3.5')} ${label}
-      </p>
-      <div class="space-y-1.5">${rows.join('')}</div>
-    </div>`;
-}
-
-function priorityBadge(priority) {
-  const cls = { urgente: 'bg-red-50 text-red-600', alta: 'bg-amber-50 text-amber-700' }[priority];
-  return cls ? `<span class="shrink-0 rounded-full ${cls} px-2 py-0.5 text-[10px] font-semibold">${priority}</span>` : '';
-}
-
-/* ================= Alertas (sin fecha concreta) ================= */
-function alertsSection(alerts) {
-  const blocks = [];
-
-  if (alerts.whatsapp?.conversations?.length) {
-    blocks.push(alertBlock('chat', 'WhatsApp sin leer', 'text-teal-600 bg-teal-50', '#/whatsapp',
-      alerts.whatsapp.conversations.map((c) => rowText(
-        c.contact_name || c.wa_id, `${c.unread_count} sin leer`, 'text-teal-600'
-      ))));
-  }
-
-  if (alerts.inventory) {
-    const inv = alerts.inventory;
-    const total = inv.low_stock.length + inv.expiring.length + inv.expired.length;
-    if (total) {
-      blocks.push(alertBlock('package', 'Inventario', 'text-sky-600 bg-sky-50', '#/inventario', [
-        ...inv.expired.map((i) => rowText(i.name, 'Caducado', 'text-red-600')),
-        ...inv.expiring.map((i) => rowText(i.name, 'Por caducar', 'text-amber-600')),
-        ...inv.low_stock.map((i) => rowText(i.name, 'Stock bajo', 'text-amber-600')),
-      ]));
-    }
-  }
-
-  if (alerts.tasks_recurring?.length) {
-    blocks.push(alertBlock('repeat', 'Tareas recurrentes pendientes', 'text-violet-600 bg-violet-50', '#/tareas',
-      alerts.tasks_recurring.map((t) => rowText(t.title, t.recurrence))));
-  }
-
-  if (alerts.tasks_deadline_soon?.length) {
-    blocks.push(alertBlock('flag', 'Deadlines próximos', 'text-amber-600 bg-amber-50', '#/tareas',
-      alerts.tasks_deadline_soon.map((t) => rowText(t.title, fmtDate(t.due_date)))));
-  }
-
-  if (alerts.new_boards?.length) {
-    blocks.push(alertBlock('clipboard', 'Nuevo en el pizarrón público', 'text-emerald-600 bg-emerald-50', '#/pizarron',
-      alerts.new_boards.map((b) => rowText(b.title || '(sin título)', b.author || ''))));
-  }
-
-  if (alerts.new_files?.length) {
-    blocks.push(alertBlock('folder-open', 'Archivos compartidos nuevos', 'text-sky-600 bg-sky-50', '#/archivos',
-      alerts.new_files.map((f) => rowText(f.name, f.author || ''))));
-  }
-
-  if (alerts.birthdays?.length) {
-    blocks.push(alertBlock('users', 'Cumpleaños próximos', 'text-rose-600 bg-rose-50', '#/expedientes',
-      alerts.birthdays.map((p) => rowText(
-        [p.first_name, p.paternal_surname].filter(Boolean).join(' '),
-        p.days_until === 0 ? `Hoy · cumple ${p.turns}` : `En ${p.days_until} días · cumple ${p.turns}`
-      ))));
-  }
-
-  if (alerts.documents_pending_review?.length) {
-    // Sin destino único por tipo o categoría (un borrador puede ser de cualquiera),
-    // así que enlaza al Membretador y de ahí el usuario entra a revisarlo.
-    blocks.push(alertBlock('file-text', 'Estudios por revisar', 'text-amber-600 bg-amber-50', '#/apps/membretador',
-      alerts.documents_pending_review.map((d) => rowText(d.patient_name, d.type_label))));
-  }
-
-  if (!blocks.length) return '';
-
-  return `
-    <div>
-      <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-500">Alertas</h3>
-      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">${blocks.join('')}</div>
-    </div>`;
-}
-
-function rowText(main, sub, subCls = 'text-slate-400') {
-  return `<div class="flex items-center justify-between gap-2">
-    <span class="min-w-0 flex-1 truncate text-sm text-slate-700">${escapeHtml(main)}</span>
-    ${sub ? `<span class="shrink-0 text-[11px] font-medium ${subCls}">${escapeHtml(String(sub))}</span>` : ''}
-  </div>`;
-}
-
-function alertBlock(iconName, title, colorCls, href, rows) {
-  const shown = rows.slice(0, 5);
-  const extra = rows.length - shown.length;
-  return `
-    <a href="${href}" class="block rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md">
-      <div class="mb-2.5 flex items-center gap-2.5">
-        <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${colorCls}">${icon(iconName, 'h-4 w-4')}</span>
-        <p class="text-sm font-bold text-slate-800">${title}</p>
-      </div>
-      <div class="space-y-1.5">${shown.join('')}</div>
-      ${extra > 0 ? `<p class="mt-1.5 text-xs text-slate-400">+${extra} más</p>` : ''}
-    </a>`;
+function wireDismissButtons(root) {
+  root.querySelectorAll('[data-dismiss-alert]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const alertKey = btn.dataset.dismissAlert;
+      const card = btn.closest('a');
+      btn.disabled = true;
+      try {
+        await apiPost('dashboard/dismiss_alert', { alert_key: alertKey });
+        card?.remove();
+      } catch (err) {
+        toast(err.message, 'error');
+        btn.disabled = false;
+      }
+    });
+  });
 }

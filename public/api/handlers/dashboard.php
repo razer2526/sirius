@@ -19,14 +19,26 @@ const DASH_BIRTHDAY_DAYS = 7;        // ventana de "fechas importantes" (cumplea
 
 function handle_dashboard(string $action): void
 {
-    if ($action === 'stats') {
-        $me = current_user();
-        json_ok([
-            'kpis'     => dash_kpis(),
-            'alerts'   => dash_alerts($me),
-            'today'    => dash_agenda($me, date('Y-m-d')),
-            'tomorrow' => dash_agenda($me, date('Y-m-d', strtotime('+1 day'))),
-        ]);
+    $me = current_user();
+    switch ($action) {
+        case 'stats':
+            json_ok([
+                'kpis'     => dash_kpis(),
+                'alerts'   => dash_alerts($me),
+                'today'    => dash_agenda($me, date('Y-m-d')),
+                'tomorrow' => dash_agenda($me, date('Y-m-d', strtotime('+1 day'))),
+            ]);
+
+        case 'dismiss_alert': {
+            $key = trim((string)(request_body()['alert_key'] ?? ''));
+            if ($key === '') {
+                json_error('alert_key requerido', 422);
+            }
+            $verb = db_driver() === 'mysql' ? 'INSERT IGNORE' : 'INSERT OR IGNORE';
+            db()->prepare("$verb INTO dismissed_alerts (user_id, alert_key) VALUES (?, ?)")
+                ->execute([(int)$me['id'], mb_substr($key, 0, 150)]);
+            json_ok();
+        }
     }
 }
 
@@ -54,6 +66,24 @@ function dash_kpis(): array
     ];
 }
 
+/**
+ * Claves usadas para "descartar" una alerta (tabla dismissed_alerts): cuando la
+ * condición que la generó cambia de verdad (nuevo periodo de una recurrente, nuevo
+ * mensaje de WhatsApp, el cumpleaños del año siguiente), la clave cambia con ella,
+ * así un descarte viejo no tapa una alerta que en los hechos es nueva.
+ */
+function dash_dismissed_keys(int $userId): array
+{
+    $st = db()->prepare('SELECT alert_key FROM dismissed_alerts WHERE user_id = ?');
+    $st->execute([$userId]);
+    return array_fill_keys($st->fetchAll(PDO::FETCH_COLUMN), true);
+}
+
+function dash_strip_dismissed(array $items, array $dismissed): array
+{
+    return array_values(array_filter($items, fn($i) => !isset($dismissed[$i['alert_key']])));
+}
+
 /* ================= Alertas (sin fecha concreta) ================= */
 function dash_alerts(array $me): array
 {
@@ -63,6 +93,12 @@ function dash_alerts(array $me): array
 
     if (user_can('inventario')) {
         $alerts = inventory_alerts();
+        foreach ($alerts['low_stock'] as &$r) { $r['alert_key'] = "inventory:low_stock:{$r['id']}"; }
+        unset($r);
+        foreach ($alerts['expired'] as &$r) { $r['alert_key'] = "inventory:expired:{$r['lot_id']}"; }
+        unset($r);
+        foreach ($alerts['expiring'] as &$r) { $r['alert_key'] = "inventory:expiring:{$r['lot_id']}"; }
+        unset($r);
         $out['inventory'] = [
             'low_stock' => $alerts['low_stock'],
             'expiring'  => $alerts['expiring'],
@@ -72,8 +108,16 @@ function dash_alerts(array $me): array
 
     if (user_can('tareas')) {
         // Tareas recurrentes (diaria/semanal) aún no completadas en el periodo actual,
-        // cada una con su propio día de corte (ver pending_recurring_tasks()).
-        $out['tasks_recurring'] = pending_recurring_tasks($pdo, $meId);
+        // cada una con su propio día de corte (ver pending_recurring_tasks()). El
+        // periodo entra en la clave: al empezar uno nuevo, la alerta "reaparece" aunque
+        // se haya descartado la del periodo anterior.
+        $recurring = pending_recurring_tasks($pdo, $meId);
+        foreach ($recurring as &$r) {
+            $wd = $r['weekday'] !== null ? (int)$r['weekday'] : null;
+            $r['alert_key'] = "tasks:recurring:{$r['id']}:" . period_key($r['recurrence'], $wd);
+        }
+        unset($r);
+        $out['tasks_recurring'] = $recurring;
 
         // Deadlines próximos, más allá de mañana (hoy/mañana ya se ven en su propia sección)
         $from = date('Y-m-d', strtotime('+2 days'));
@@ -85,7 +129,10 @@ function dash_alerts(array $me): array
              ORDER BY due_date"
         );
         $st->execute([$meId, $from, $to]);
-        $out['tasks_deadline_soon'] = $st->fetchAll();
+        $deadlineSoon = $st->fetchAll();
+        foreach ($deadlineSoon as &$r) { $r['alert_key'] = "tasks:deadline:{$r['id']}"; }
+        unset($r);
+        $out['tasks_deadline_soon'] = $deadlineSoon;
     }
 
     if (user_can('pizarron')) {
@@ -96,7 +143,10 @@ function dash_alerts(array $me): array
              WHERE b.scope = 'public' AND b.created_at >= ? ORDER BY b.created_at DESC LIMIT 8"
         );
         $st->execute([$since]);
-        $out['new_boards'] = $st->fetchAll();
+        $newBoards = $st->fetchAll();
+        foreach ($newBoards as &$r) { $r['alert_key'] = "pizarron:board:{$r['id']}"; }
+        unset($r);
+        $out['new_boards'] = $newBoards;
     }
 
     if (user_can('archivos')) {
@@ -107,7 +157,10 @@ function dash_alerts(array $me): array
              WHERE f.scope = 'public' AND f.created_at >= ? ORDER BY f.created_at DESC LIMIT 8"
         );
         $st->execute([$since]);
-        $out['new_files'] = $st->fetchAll();
+        $newFiles = $st->fetchAll();
+        foreach ($newFiles as &$r) { $r['alert_key'] = "archivos:file:{$r['id']}"; }
+        unset($r);
+        $out['new_files'] = $newFiles;
     }
 
     if (user_can('expedientes')) {
@@ -130,9 +183,25 @@ function dash_alerts(array $me): array
         $templates = doc_templates();
         foreach ($rows as &$r) {
             $r['type_label'] = $templates[$r['doc_type']]['short'] ?? $r['doc_type'];
+            $r['alert_key'] = "apps:document:{$r['id']}";
         }
         unset($r);
         $out['documents_pending_review'] = $rows;
+    }
+
+    $dismissed = dash_dismissed_keys($meId);
+    if (isset($out['inventory'])) {
+        $out['inventory']['low_stock'] = dash_strip_dismissed($out['inventory']['low_stock'], $dismissed);
+        $out['inventory']['expiring'] = dash_strip_dismissed($out['inventory']['expiring'], $dismissed);
+        $out['inventory']['expired'] = dash_strip_dismissed($out['inventory']['expired'], $dismissed);
+    }
+    foreach (['tasks_recurring', 'tasks_deadline_soon', 'new_boards', 'new_files', 'birthdays', 'documents_pending_review'] as $key) {
+        if (isset($out[$key])) {
+            $out[$key] = dash_strip_dismissed($out[$key], $dismissed);
+        }
+    }
+    if (isset($out['whatsapp'])) {
+        $out['whatsapp']['conversations'] = dash_strip_dismissed($out['whatsapp']['conversations'], $dismissed);
     }
 
     return $out;
@@ -160,6 +229,12 @@ function dash_whatsapp_unread(array $me): array
     );
     $st->execute($params);
     $rows = $st->fetchAll();
+    // last_message_at entra en la clave de descarte: un mensaje nuevo cambia la
+    // clave, así que la conversación reaparece aunque ya se hubiera descartado.
+    foreach ($rows as &$r) {
+        $r['alert_key'] = "whatsapp:conversation:{$r['id']}:{$r['last_message_at']}";
+    }
+    unset($r);
     return [
         'total'         => (int)array_sum(array_column($rows, 'unread_count')),
         'conversations' => array_slice($rows, 0, 8),
@@ -201,6 +276,9 @@ function dash_upcoming_birthdays(array $me): array
         if ($days <= DASH_BIRTHDAY_DAYS) {
             $p['days_until'] = $days;
             $p['turns'] = (int)$next->format('Y') - (int)$b->format('Y');
+            // El año de $next entra en la clave: el cumpleaños del año siguiente
+            // reaparece aunque el de este año ya se haya descartado.
+            $p['alert_key'] = "expedientes:birthday:{$p['id']}:{$next->format('Y')}";
             $out[] = $p;
         }
     }
