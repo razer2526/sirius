@@ -83,6 +83,14 @@ function handle_push(string $action): void
             json_ok();
         }
 
+        /** Al abrir la campanita: el contador baja a 0 de inmediato, y una nueva
+         *  notificación que llegue después vuelve a contar desde ahí. */
+        case 'mark_all_read': {
+            db()->prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL')
+                ->execute([date('Y-m-d H:i:s'), (int)$me['id']]);
+            json_ok();
+        }
+
         /** El service worker llama esto al recibir un push (que llega sin contenido, ver
          *  includes/webpush.php). Devuelve lo pendiente para mostrarlo y lo marca leído. */
         case 'pending': {

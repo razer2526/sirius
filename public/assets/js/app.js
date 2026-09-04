@@ -384,9 +384,17 @@ function initNotificationBell(swReg) {
     panel.querySelectorAll('[data-bell-close]').forEach((a) => a.addEventListener('click', closePanel));
   };
 
-  const openPanel = () => {
+  const openPanel = async () => {
     notifPanelOpen = true;
     panel.classList.remove('hidden');
+    // Al abrir la campanita se dan por vistas las notificaciones push (no los mensajes
+    // de WhatsApp sin leer — esos siguen su propio criterio de leído, el mismo que ya
+    // usa el módulo de WhatsApp, para no desincronizarlo con solo pasar por aquí).
+    if ((notifUnreadPrev ?? 0) > 0) {
+      try { await apiPost('push/mark_all_read', {}); } catch { /* red intermitente: el próximo sondeo lo corrige */ }
+      notifUnreadPrev = 0;
+      renderBadge((waUnreadPrev ?? 0) + notifUnreadPrev);
+    }
     renderPanel();
   };
   const closePanel = () => {
