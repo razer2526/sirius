@@ -5,7 +5,7 @@
  * - /api/, login.php, print.php: network-only — datos clínicos JAMÁS se cachean.
  * En cada deploy, subir la versión del cache.
  */
-const CACHE = 'sirius-shell-v27';
+const CACHE = 'sirius-shell-__BUILD__';
 
 const SHELL = [
   'offline.html',
@@ -23,6 +23,7 @@ const SHELL = [
   'assets/js/api.js',
   'assets/js/router.js',
   'assets/js/ui.js',
+  'assets/js/pwa_install.js',
   'assets/js/services.js',
   'assets/js/services_catalog.json',
   'assets/js/forms.js',
@@ -39,6 +40,7 @@ const SHELL = [
   'assets/js/modules/calendario.js',
   'assets/js/modules/whatsapp.js',
   'assets/js/modules/whatsapp_config.js',
+  'assets/js/modules/configuracion.js',
   'assets/js/modules/apps.js',
   'assets/js/modules/membretes.js',
   'assets/js/modules/log.js',
@@ -52,7 +54,14 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // Sin skipWaiting automático: la versión nueva se queda "esperando" hasta que
+  // la página la active a propósito (ver Configuración > Buscar actualizaciones),
+  // no se le impone a nadie a media sesión.
+  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)));
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data?.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {

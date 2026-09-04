@@ -1,26 +1,18 @@
 /** Bootstrap de la SPA: sesión → sidebar → router → asistente → service worker. */
 
 import { apiGet, apiPost, setCsrf } from './api.js';
-import { icon, toast, modal, escapeHtml, fmtRelative } from './ui.js';
+import { icon, toast, escapeHtml, fmtRelative } from './ui.js';
 import { initRouter, currentModuleKey } from './router.js';
 import { initAssistant } from './assistant.js';
+import { initInstallCapture } from './pwa_install.js';
 
 /**
  * El navegador puede disparar "beforeinstallprompt" en cualquier momento después
  * de cargar la página (según su propio criterio de "qué tan instalable" ve el
  * sitio) — hay que estar escuchando desde ya, antes de boot(), para no perdérselo
- * si llega antes de que el usuario abra el menú de cuenta.
+ * aunque el usuario nunca visite Configuración en esta sesión.
  */
-let deferredInstallPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  e.preventDefault();
-  deferredInstallPrompt = e;
-  updateInstallButtonVisibility();
-});
-window.addEventListener('appinstalled', () => {
-  deferredInstallPrompt = null;
-  updateInstallButtonVisibility();
-});
+initInstallCapture();
 
 const state = {
   user: null,
@@ -49,6 +41,7 @@ async function boot() {
   renderSidebar();
   initSidebarToggle();
   initUserMenu();
+  initRefreshButton();
   lockDesktopScroll();
   initAssistant(state);
   initRouter(state);
@@ -140,7 +133,6 @@ function initUserMenu() {
   const wrap = document.getElementById('user-menu-wrap');
   const btn = document.getElementById('user-menu-btn');
   const panel = document.getElementById('user-menu-panel');
-  const installBtn = document.getElementById('btn-install-app');
   let open = false;
 
   const openMenu = () => { open = true; panel.classList.remove('hidden'); };
@@ -149,58 +141,11 @@ function initUserMenu() {
   document.addEventListener('click', (e) => {
     if (open && !wrap.contains(e.target)) closeMenu();
   });
-
-  updateInstallButtonVisibility();
-  installBtn.addEventListener('click', async () => {
-    closeMenu();
-    if (isIOS()) {
-      showIOSInstallInstructions();
-      return;
-    }
-    if (!deferredInstallPrompt) {
-      toast('Usa el menú de tu navegador (⋮) y busca "Instalar aplicación".', 'info');
-      return;
-    }
-    deferredInstallPrompt.prompt();
-    const { outcome } = await deferredInstallPrompt.userChoice;
-    deferredInstallPrompt = null;
-    updateInstallButtonVisibility();
-    if (outcome === 'accepted') toast('Sirius instalado');
-  });
+  panel.querySelectorAll('[data-close-menu]').forEach((a) => a.addEventListener('click', closeMenu));
 }
 
-const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
-const isStandaloneDisplay = () => window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-
-/**
- * El botón se muestra salvo que la app ya esté instalada/corriendo en modo
- * standalone — incluso antes de que "beforeinstallprompt" llegue (o en iOS, donde
- * ese evento no existe nunca): el clic explica cómo instalar en cada caso.
- */
-function updateInstallButtonVisibility() {
-  const installBtn = document.getElementById('btn-install-app');
-  const divider = document.getElementById('user-menu-divider');
-  if (!installBtn) return; // el menú aún no se ha montado
-  const show = !isStandaloneDisplay();
-  installBtn.classList.toggle('hidden', !show);
-  installBtn.classList.toggle('flex', show);
-  divider.classList.toggle('hidden', !show);
-}
-
-function showIOSInstallInstructions() {
-  modal({
-    title: 'Instalar en iPhone o iPad',
-    content: `
-      <div class="space-y-3 text-sm text-slate-600">
-        <p>iOS no deja instalar apps web de forma automática — se hace así, desde Safari:</p>
-        <ol class="list-decimal space-y-2 pl-5">
-          <li>Toca el botón <b>Compartir</b> (el cuadrito con la flecha hacia arriba, abajo de la pantalla).</li>
-          <li>Baja en la lista hasta <b>"Agregar a pantalla de inicio"</b>.</li>
-          <li>Confirma tocando <b>"Agregar"</b>, arriba a la derecha.</li>
-        </ol>
-      </div>`,
-    actions: [{ label: 'Entendido', primary: true }],
-  });
+function initRefreshButton() {
+  document.getElementById('btn-refresh').addEventListener('click', () => location.reload());
 }
 
 /**

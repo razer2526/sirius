@@ -17,6 +17,12 @@ function modules_registry(): array
     return $registry;
 }
 
+/** Módulos que cualquier usuario autenticado ve, sin necesidad de una fila en
+ *  user_permissions — ajustes personales del dispositivo/navegador, no datos
+ *  clínicos ni de la clínica, así que no tiene sentido pedir que se otorguen uno
+ *  por uno como el resto de los módulos. */
+const ALWAYS_AVAILABLE_MODULES = ['configuracion'];
+
 /** Mapa module_key => flags (arreglo) para un usuario estandar. */
 function user_permission_rows(int $userId): array
 {
@@ -52,7 +58,7 @@ function user_can(string $moduleKey): bool
  *  necesario fuera de una petición con sesión, como el cron del resumen diario. */
 function user_can_for(array $user, string $moduleKey): bool
 {
-    if (is_admin_role($user)) {
+    if (in_array($moduleKey, ALWAYS_AVAILABLE_MODULES, true) || is_admin_role($user)) {
         return isset(modules_registry()[$moduleKey]);
     }
     return array_key_exists($moduleKey, user_permission_rows((int)$user['id']));
