@@ -144,6 +144,11 @@ function alertsSection(alerts) {
   if (alerts.tasks_deadline_soon) {
     push('Tareas', 'text-amber-600 bg-amber-50', '#/tareas', alerts.tasks_deadline_soon, (t) => [t.title, fmtDate(t.due_date)]);
   }
+  if (alerts.appointments_soon) {
+    push('Calendario', 'text-indigo-600 bg-indigo-50', '#/calendario', alerts.appointments_soon, (a) => [
+      a.title, `${fmtDate(a.start_at)} · ${a.start_at.slice(11, 16)}${a.assigned_name ? ' · ' + a.assigned_name : ''}`,
+    ]);
+  }
   if (alerts.new_boards) {
     push('Pizarrón', 'text-emerald-600 bg-emerald-50', '#/pizarron', alerts.new_boards, (b) => [b.title || '(sin título)', b.author || '']);
   }
