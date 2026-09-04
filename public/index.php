@@ -6,6 +6,7 @@ if (!current_user()) {
     header('Location: login.php');
     exit;
 }
+$appVersion = trim((string)@file_get_contents(__DIR__ . '/BUILD_VERSION')) ?: 'dev';
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -13,6 +14,7 @@ if (!current_user()) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#4f46e5">
+<meta name="app-version" content="<?= htmlspecialchars($appVersion) ?>">
 <title>Sirius</title>
 <link rel="icon" href="assets/img/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/icons/icon-192.png">
@@ -47,6 +49,10 @@ if (!current_user()) {
       </button>
       <h2 id="topbar-title" class="min-w-0 truncate text-lg font-semibold text-slate-900">Dashboard</h2>
       <div class="ml-auto flex items-center gap-3">
+        <button id="btn-refresh" type="button" aria-label="Recargar página"
+                class="flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
+          <svg viewBox="0 0 24 24" class="h-5 w-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        </button>
         <div id="notif-bell-wrap" class="relative hidden">
           <button id="notif-bell-btn" type="button" aria-label="Notificaciones"
                   class="relative flex h-10 w-10 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100">
@@ -64,11 +70,11 @@ if (!current_user()) {
             <div id="topbar-avatar" class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-sm font-bold text-indigo-700"></div>
           </button>
           <div id="user-menu-panel" class="absolute right-0 top-full z-50 mt-2 hidden w-64 rounded-xl bg-white p-2 shadow-lg ring-1 ring-slate-200">
-            <button id="btn-install-app" type="button" class="hidden w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50">
-              <svg viewBox="0 0 24 24" class="h-4.5 w-4.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-              Instalar aplicación
-            </button>
-            <div id="user-menu-divider" class="my-1 hidden border-t border-slate-100"></div>
+            <a href="#/configuracion" data-close-menu class="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-slate-700 hover:bg-slate-50">
+              <svg viewBox="0 0 24 24" class="h-4.5 w-4.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+              Configuración
+            </a>
+            <div class="my-1 border-t border-slate-100"></div>
             <a href="logout.php" class="flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-red-600 hover:bg-red-50">
               <svg viewBox="0 0 24 24" class="h-4.5 w-4.5 shrink-0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
               Cerrar sesión

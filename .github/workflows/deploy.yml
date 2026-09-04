@@ -9,6 +9,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Versionar service worker
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          sed -i "s/__BUILD__/$SHA/" public/sw.js
+          printf '%s' "$SHA" > public/BUILD_VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/sw.js public/BUILD_VERSION
+          git commit -m "chore: versiona sw.js ($SHA) [skip ci]" || echo "sin cambios que versionar"
+          git push
+
       - name: Actualizar repositorio y desplegar en cPanel
         uses: pinkasey/cpanel-deploy-action@v1.0.0
         with:

@@ -166,4 +166,12 @@ return [
         // del sidebar — mismos "servicios externos" que ya agrupa esa pantalla.
         'hidden' => true,
     ],
+    'configuracion' => [
+        'label'  => 'Configuración',
+        'icon'   => 'settings',
+        'phase'  => 2,
+        // Se alcanza desde el menú del avatar, no del sidebar — y ver ALWAYS_AVAILABLE_MODULES
+        // en permissions.php: disponible para cualquier usuario, sin fila de permiso.
+        'hidden' => true,
+    ],
 ];
