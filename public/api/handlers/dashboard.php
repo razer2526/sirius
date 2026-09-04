@@ -14,6 +14,7 @@ require_once __DIR__ . '/inventory.php';
 require_once __DIR__ . '/../../includes/task_recurrence.php';
 
 const DASH_DEADLINE_SOON_DAYS = 7;   // ventana de "deadline próximo" en Alertas (más allá de mañana)
+const DASH_APPT_SOON_DAYS = 7;       // ventana de "cita próxima" en Alertas (más allá de mañana)
 const DASH_NEW_CONTENT_DAYS = 3;     // ventana de "nuevo" para pizarrón/archivos públicos
 const DASH_BIRTHDAY_DAYS = 7;        // ventana de "fechas importantes" (cumpleaños próximos)
 
@@ -135,6 +136,29 @@ function dash_alerts(array $me): array
         $out['tasks_deadline_soon'] = $deadlineSoon;
     }
 
+    if (user_can('calendario')) {
+        // Más allá de mañana (hoy/mañana ya se ven en su propia sección de agenda) —
+        // así una cita agendada u editada directo en Google Calendar, sin que nadie
+        // haya tocado Sirius, también se nota aquí y no solo el día que llega.
+        $from = date('Y-m-d', strtotime('+2 days'));
+        $to   = date('Y-m-d', strtotime('+' . DASH_APPT_SOON_DAYS . ' days'));
+        $sql = "SELECT a.id, a.title, a.start_at, u.full_name AS assigned_name
+                FROM appointments a LEFT JOIN users u ON u.id = a.assigned_user_id
+                WHERE a.status <> 'cancelada' AND a.start_at BETWEEN ? AND ?";
+        $params = ["$from 00:00:00", "$to 23:59:59"];
+        if (!is_admin_role($me) && !user_flag('calendario', 'manage')) {
+            $sql .= ' AND (a.assigned_user_id IS NULL OR a.assigned_user_id = ?)';
+            $params[] = $meId;
+        }
+        $sql .= ' ORDER BY a.start_at';
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        $appointmentsSoon = $st->fetchAll();
+        foreach ($appointmentsSoon as &$r) { $r['alert_key'] = "calendario:appt:{$r['id']}:{$r['start_at']}"; }
+        unset($r);
+        $out['appointments_soon'] = $appointmentsSoon;
+    }
+
     if (user_can('pizarron')) {
         $since = date('Y-m-d H:i:s', strtotime('-' . DASH_NEW_CONTENT_DAYS . ' days'));
         $st = $pdo->prepare(
@@ -195,7 +219,7 @@ function dash_alerts(array $me): array
         $out['inventory']['expiring'] = dash_strip_dismissed($out['inventory']['expiring'], $dismissed);
         $out['inventory']['expired'] = dash_strip_dismissed($out['inventory']['expired'], $dismissed);
     }
-    foreach (['tasks_recurring', 'tasks_deadline_soon', 'new_boards', 'new_files', 'birthdays', 'documents_pending_review'] as $key) {
+    foreach (['tasks_recurring', 'tasks_deadline_soon', 'appointments_soon', 'new_boards', 'new_files', 'birthdays', 'documents_pending_review'] as $key) {
         if (isset($out[$key])) {
             $out[$key] = dash_strip_dismissed($out[$key], $dismissed);
         }

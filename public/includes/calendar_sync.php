@@ -10,6 +10,7 @@
 
 require_once __DIR__ . '/google_calendar.php';
 require_once __DIR__ . '/log.php';
+require_once __DIR__ . '/webpush.php';
 
 const CALSYNC_TIMEZONE = 'America/Mexico_City';
 
@@ -91,6 +92,7 @@ function apply_gcal_event(array $event): string
                 'calendario', 'appointment_cancel_google',
                 'Google canceló "' . $existing['title'] . '"', 'appointment', (int)$existing['id']
             );
+            notify_appt_change($existing, 'Cita cancelada', "\"{$existing['title']}\" fue cancelada desde Google Calendar.");
             return 'cancelled';
         }
         return 'skipped';
@@ -134,6 +136,10 @@ function apply_gcal_event(array $event): string
             'calendario', 'appointment_update_google',
             'Google actualizó "' . $title . '"', 'appointment', (int)$existing['id']
         );
+        notify_appt_change(
+            $existing, 'Cita actualizada',
+            "\"$title\" cambió · " . date('d/m H:i', strtotime($startSql))
+        );
         return 'updated';
     }
 
@@ -147,7 +153,38 @@ function apply_gcal_event(array $event): string
         'calendario', 'appointment_import_google',
         'Importó cita de Google "' . $title . '"', 'appointment', $newId
     );
+    // Sin assigned_user_id conocido (se importa como cita general): no hay a quién
+    // dirigir un aviso individual, así que se avisa a todos los que ven el módulo.
+    notify_appt_change(
+        ['assigned_user_id' => null], 'Nueva cita en el calendario',
+        "\"$title\" · " . date('d/m H:i', strtotime($startSql))
+    );
     return 'imported';
+}
+
+/**
+ * Avisa del lado de Sirius un cambio que llegó de Google Calendar (import, edición
+ * o cancelación) — a diferencia de un cambio hecho en Sirius, aquí nadie en el
+ * equipo sabe todavía qué pasó, así que sí amerita avisar aunque solo haya cambiado
+ * el horario o los detalles (ver appointments.php para el criterio del lado Sirius,
+ * más conservador porque quien edita ya sabe lo que cambió).
+ *
+ * Nunca lanza: un push roto no debe poder tirar el resto del lote del cron ni
+ * impedir que se guarde el syncToken al final de gcal_sync_pull().
+ */
+function notify_appt_change(array $appt, string $title, string $body): void
+{
+    $assignedUserId = isset($appt['assigned_user_id']) && $appt['assigned_user_id'] !== null
+        ? (int)$appt['assigned_user_id'] : null;
+    try {
+        if ($assignedUserId !== null) {
+            webpush_notify($assignedUserId, $title, $body, '#/calendario');
+        } else {
+            notify_module_users('calendario', $title, $body, '#/calendario');
+        }
+    } catch (Throwable $e) {
+        error_log('notify_appt_change: ' . $e->getMessage());
+    }
 }
 
 function gcal_to_sql_datetime(string $rfc3339): string
