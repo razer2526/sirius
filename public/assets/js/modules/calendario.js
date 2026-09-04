@@ -1,4 +1,4 @@
-/** Módulo Calendario: citas de todos los servicios (mensual + agenda + invitados externos). */
+/** Módulo Calendario: citas de todos los servicios (día / semana / mes + invitados externos). */
 
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, confirmDialog, inputCls, labelCls, spinner, debounce, fullName } from '../ui.js';
@@ -27,44 +27,187 @@ const STATUS_BADGE = {
   completada: 'bg-emerald-100 text-emerald-700',
 };
 const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+const WEEKDAY_FULL = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 const MONTH_NAMES = [
   'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
 const pad2 = (n) => String(n).padStart(2, '0');
-const todayStr = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+/** Parsea "YYYY-MM-DD" en hora local (new Date("YYYY-MM-DD") lo interpretaría como UTC). */
+const parseDate = (s) => {
+  const [y, m, d] = s.split('-').map(Number);
+  return new Date(y, m - 1, d);
+};
+const toDateStr = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const todayStr = () => toDateStr(new Date());
+const addDays = (dateStr, n) => {
+  const d = parseDate(dateStr);
+  d.setDate(d.getDate() + n);
+  return toDateStr(d);
+};
+const startOfWeek = (dateStr) => {
+  const d = parseDate(dateStr);
+  d.setDate(d.getDate() - d.getDay());
+  return toDateStr(d);
+};
+const dayLabel = (dateStr) => {
+  const d = parseDate(dateStr);
+  return `${WEEKDAY_FULL[d.getDay()]} ${d.getDate()} de ${MONTH_NAMES[d.getMonth()].toLowerCase()}`;
+};
+const weekLabel = (startStr, endStr) => {
+  const s = parseDate(startStr);
+  const e = parseDate(endStr);
+  const sMonth = MONTH_NAMES[s.getMonth()].slice(0, 3).toLowerCase();
+  const eMonth = MONTH_NAMES[e.getMonth()].slice(0, 3).toLowerCase();
+  return s.getMonth() === e.getMonth()
+    ? `${s.getDate()} – ${e.getDate()} ${sMonth} ${e.getFullYear()}`
+    : `${s.getDate()} ${sMonth} – ${e.getDate()} ${eMonth} ${e.getFullYear()}`;
 };
 
+const VIEWS = ['dia', 'semana', 'mes'];
+
 export async function render(root, ctx) {
-  const arg = ctx.args[0];
-  const today = new Date();
-  let year = today.getFullYear();
-  let month = today.getMonth() + 1;
-  if (arg && /^\d{4}-\d{2}$/.test(arg)) {
-    [year, month] = arg.split('-').map(Number);
-  }
-  await renderMonth(root, ctx, year, month);
+  const [viewArg, dateArg] = ctx.args;
+  const view = VIEWS.includes(viewArg) ? viewArg : 'mes';
+  const refDate = dateArg && /^\d{4}-\d{2}-\d{2}$/.test(dateArg) ? dateArg : todayStr();
+  if (view === 'dia') await renderDay(root, ctx, refDate);
+  else if (view === 'semana') await renderWeek(root, ctx, refDate);
+  else await renderMonth(root, ctx, refDate);
 }
 
-async function renderMonth(root, ctx, year, month) {
-  root.innerHTML = spinner();
+function goToView(ctx, view, dateStr) {
+  ctx.navigate(`calendario/${view}/${dateStr}`);
+}
 
-  const from = `${year}-${pad2(month)}-01`;
-  const lastDay = new Date(year, month, 0).getDate();
-  const to = `${year}-${pad2(month)}-${pad2(lastDay)}`;
+/** Barra compartida por las tres vistas: navegación de fecha, selector Día/Semana/Mes y "Nueva cita". */
+function toolbarHtml({ label, view }) {
+  const viewBtn = (key, text) => `
+    <button type="button" data-view-btn="${key}"
+      class="rounded-md px-3 py-1.5 text-xs font-semibold ${view === key ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-white'}">${text}</button>`;
+  return `
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="flex items-center gap-2">
+        <button id="btn-prev" type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-slate-200 hover:bg-slate-50">${icon('chevron-left', 'h-4 w-4')}</button>
+        <h3 class="min-w-0 flex-1 truncate text-center text-lg font-bold text-slate-900">${label}</h3>
+        <button id="btn-next" type="button" class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-slate-200 hover:bg-slate-50">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+        <button id="btn-today" type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50">Hoy</button>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex gap-1 rounded-lg bg-slate-100 p-1">
+          ${viewBtn('dia', 'Día')}${viewBtn('semana', 'Semana')}${viewBtn('mes', 'Mes')}
+        </div>
+        <button id="btn-new" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+          ${icon('plus', 'h-4 w-4')} Nueva cita
+        </button>
+      </div>
+    </div>`;
+}
 
-  // Las tareas con fecha límite se muestran aquí de solo lectura (Tareas sigue
-  // siendo la única fuente de verdad); se omiten en silencio si el usuario no
-  // tiene acceso a ese módulo, en vez de tronar todo el Calendario.
+function wireToolbar(root, { onPrev, onNext, onToday, onSwitchView, onNewAppt }) {
+  root.querySelector('#btn-prev').addEventListener('click', onPrev);
+  root.querySelector('#btn-next').addEventListener('click', onNext);
+  root.querySelector('#btn-today').addEventListener('click', onToday);
+  root.querySelector('#btn-new').addEventListener('click', onNewAppt);
+  root.querySelectorAll('[data-view-btn]').forEach((b) => b.addEventListener('click', () => onSwitchView(b.dataset.viewBtn)));
+}
+
+/** [data-new-appt] y [data-open-appt] se repiten igual en las tres vistas (celda de mes, fila de agenda). */
+function wireAgendaEvents(root, { assignableUsers, canManage, meId, reload }) {
+  root.querySelectorAll('[data-new-appt]').forEach((btn) => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openApptModal({ assignableUsers, canManage, meId, reload, prefillDate: btn.dataset.newAppt });
+    });
+  });
+  root.querySelectorAll('[data-open-appt]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        const { appointment } = await apiGet('appointments/get', { id: btn.dataset.openAppt });
+        openApptModal({ appt: appointment, assignableUsers, canManage, meId, reload });
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    });
+  });
+}
+
+/** Fila de una cita dentro de una tarjeta de día — corta (Semana) o con detalle (Día). */
+function agendaApptRowHtml(a, compact) {
+  if (compact) {
+    return `
+      <button type="button" data-open-appt="${a.id}" class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-indigo-50">
+        <span class="h-2 w-2 shrink-0 rounded-full ${SERVICE_DOT[a.service] || SERVICE_DOT.otro}"></span>
+        <span class="w-11 shrink-0 text-xs font-semibold text-slate-500">${a.start_at.slice(11, 16)}</span>
+        <span class="truncate font-medium text-slate-700">${escapeHtml(a.title)}</span>
+      </button>`;
+  }
+  const details = [SERVICE_LABELS[a.service] || a.service, a.assigned_name, a.location].filter(Boolean).map(escapeHtml).join(' · ');
+  return `
+    <button type="button" data-open-appt="${a.id}" class="flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-indigo-50">
+      <span class="mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${SERVICE_DOT[a.service] || SERVICE_DOT.otro}"></span>
+      <div class="min-w-0 flex-1">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-2">
+          <span class="font-semibold text-slate-800">${escapeHtml(a.title)}</span>
+          <span class="shrink-0 text-xs font-semibold text-slate-500">${a.start_at.slice(11, 16)}–${a.end_at.slice(11, 16)}</span>
+        </div>
+        ${details ? `<p class="truncate text-xs text-slate-500">${details}</p>` : ''}
+      </div>
+    </button>`;
+}
+
+function agendaTaskRowHtml(t) {
+  const done = t.status === 'completada';
+  return `
+    <a href="#/tareas" data-task-chip class="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-sm hover:bg-slate-100">
+      ${icon('check-square', `h-3.5 w-3.5 shrink-0 ${done ? 'text-emerald-500' : 'text-slate-400'}`)}
+      <span class="truncate ${done ? 'text-slate-400 line-through' : 'text-slate-600'}">${escapeHtml(t.title)}</span>
+    </a>`;
+}
+
+/** Tarjeta de un día para Semana/Día: encabezado + lista de citas/tareas de ese día. */
+function agendaSection(dateStr, appts, tasks, { compact }) {
+  const rows = [...appts.map((a) => agendaApptRowHtml(a, compact)), ...tasks.map(agendaTaskRowHtml)];
+  const d = parseDate(dateStr);
+  const isToday = dateStr === todayStr();
+  return `
+    <div class="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:p-4">
+      <div class="mb-2 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full text-sm font-bold ${isToday ? 'bg-indigo-600 text-white' : 'text-slate-700'}">${d.getDate()}</span>
+          <span class="text-sm font-semibold text-slate-700">${WEEKDAY_FULL[d.getDay()]}</span>
+        </div>
+        <button type="button" data-new-appt="${dateStr}" class="flex h-7 w-7 items-center justify-center rounded-lg text-indigo-500 hover:bg-indigo-50">${icon('plus', 'h-4 w-4')}</button>
+      </div>
+      <div class="space-y-0.5">
+        ${rows.length ? rows.join('') : '<p class="px-2 py-1.5 text-xs text-slate-400">Sin citas.</p>'}
+      </div>
+    </div>`;
+}
+
+/** Trae citas + tareas con fecha límite (solo lectura, Tareas sigue siendo la única fuente de verdad;
+ *  se omiten en silencio si el usuario no tiene acceso a ese módulo, en vez de tronar el Calendario). */
+async function fetchAgendaData(ctx, from, to) {
   const hasTareas = ctx.modules.some((m) => m.key === 'tareas');
   const [{ appointments, can_manage }, { users: assignableUsers }, dueTasks] = await Promise.all([
     apiGet('appointments/list', { from, to }),
     apiGet('episodes/assignable_users'),
     hasTareas ? apiGet('tasks/due_in_range', { from, to }).then((r) => r.tasks) : Promise.resolve([]),
   ]);
+  return { appointments, can_manage, assignableUsers, dueTasks };
+}
+
+async function renderMonth(root, ctx, refDate) {
+  root.innerHTML = spinner();
+  const [year, month] = refDate.slice(0, 7).split('-').map(Number);
+  const from = `${year}-${pad2(month)}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const to = `${year}-${pad2(month)}-${pad2(lastDay)}`;
+
+  const { appointments, can_manage, assignableUsers, dueTasks } = await fetchAgendaData(ctx, from, to);
 
   const byDay = {};
   for (const a of appointments) {
@@ -84,11 +227,6 @@ async function renderMonth(root, ctx, year, month) {
   for (let i = 0; i < firstWeekday; i++) cells.push(null);
   for (let d = 1; d <= lastDay; d++) cells.push(d);
   while (cells.length % 7 !== 0) cells.push(null);
-
-  const isToday = (d) => {
-    const t = new Date();
-    return d === t.getDate() && month === t.getMonth() + 1 && year === t.getFullYear();
-  };
 
   const dayCellHtml = (d) => {
     if (!d) return `<div class="min-h-[100px] rounded-lg bg-slate-50/60 sm:min-h-[110px]"></div>`;
@@ -111,7 +249,7 @@ async function renderMonth(root, ctx, year, month) {
     return `
       <div data-day-cell="${dateStr}" class="group flex min-h-[100px] flex-col gap-0.5 rounded-lg p-1 ring-1 ring-slate-100 hover:ring-indigo-200 sm:min-h-[110px]">
         <div class="flex items-center justify-between px-0.5">
-          <span class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${isToday(d) ? 'bg-indigo-600 text-white' : 'text-slate-500'}">${d}</span>
+          <span class="flex h-6 w-6 items-center justify-center rounded-full text-xs font-semibold ${dateStr === todayStr() ? 'bg-indigo-600 text-white' : 'text-slate-500'}">${d}</span>
           <button type="button" data-new-appt="${dateStr}" class="hidden h-5 w-5 items-center justify-center rounded text-indigo-500 hover:bg-indigo-100 group-hover:flex">${icon('plus', 'h-3.5 w-3.5')}</button>
         </div>
         <div class="flex-1 space-y-0.5 overflow-y-auto">${chips}${overflow}</div>
@@ -120,20 +258,7 @@ async function renderMonth(root, ctx, year, month) {
 
   root.innerHTML = `
     <div class="mx-auto max-w-6xl space-y-4">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div class="flex items-center gap-2">
-          <button id="btn-prev" type="button" class="flex h-9 w-9 items-center justify-center rounded-lg ring-1 ring-slate-200 hover:bg-slate-50">${icon('chevron-left', 'h-4 w-4')}</button>
-          <h3 class="w-48 text-center text-lg font-bold text-slate-900 sm:w-56">${MONTH_NAMES[month - 1]} ${year}</h3>
-          <button id="btn-next" type="button" class="flex h-9 w-9 items-center justify-center rounded-lg ring-1 ring-slate-200 hover:bg-slate-50">
-            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
-          <button id="btn-today" type="button" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50">Hoy</button>
-        </div>
-        <button id="btn-new" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-          ${icon('plus', 'h-4 w-4')} Nueva cita
-        </button>
-      </div>
-
+      ${toolbarHtml({ label: `${MONTH_NAMES[month - 1]} ${year}`, view: 'mes' })}
       <div class="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:p-4">
         <div class="grid grid-cols-7 gap-1 pb-1 text-center text-xs font-semibold uppercase tracking-wide text-slate-400">
           ${WEEKDAYS.map((w) => `<div>${w}</div>`).join('')}
@@ -144,26 +269,20 @@ async function renderMonth(root, ctx, year, month) {
       </div>
     </div>`;
 
-  const goTo = (y, m) => {
+  const meId = ctx.user.id;
+  const reload = () => renderMonth(root, ctx, refDate);
+  const goMonth = (delta) => {
+    let y = year, m = month + delta;
     while (m < 1) { m += 12; y--; }
     while (m > 12) { m -= 12; y++; }
-    ctx.navigate(`calendario/${y}-${pad2(m)}`);
+    goToView(ctx, 'mes', `${y}-${pad2(m)}-01`);
   };
-  root.querySelector('#btn-prev').addEventListener('click', () => goTo(year, month - 1));
-  root.querySelector('#btn-next').addEventListener('click', () => goTo(year, month + 1));
-  root.querySelector('#btn-today').addEventListener('click', () => {
-    const t = new Date();
-    goTo(t.getFullYear(), t.getMonth() + 1);
-  });
-
-  const reload = () => renderMonth(root, ctx, year, month);
-  const meId = ctx.user.id;
-  root.querySelector('#btn-new').addEventListener('click', () => openApptModal({ assignableUsers, canManage: can_manage, meId, reload }));
-  root.querySelectorAll('[data-new-appt]').forEach((btn) => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      openApptModal({ assignableUsers, canManage: can_manage, meId, reload, prefillDate: btn.dataset.newAppt });
-    });
+  wireToolbar(root, {
+    onPrev: () => goMonth(-1),
+    onNext: () => goMonth(1),
+    onToday: () => goToView(ctx, 'mes', todayStr()),
+    onSwitchView: (v) => goToView(ctx, v, refDate),
+    onNewAppt: () => openApptModal({ assignableUsers, canManage: can_manage, meId, reload }),
   });
   root.querySelectorAll('[data-day-cell]').forEach((cellEl) => {
     cellEl.addEventListener('click', (e) => {
@@ -171,17 +290,65 @@ async function renderMonth(root, ctx, year, month) {
       openApptModal({ assignableUsers, canManage: can_manage, meId, reload, prefillDate: cellEl.dataset.dayCell });
     });
   });
-  root.querySelectorAll('[data-open-appt]').forEach((btn) => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      try {
-        const { appointment } = await apiGet('appointments/get', { id: btn.dataset.openAppt });
-        openApptModal({ appt: appointment, assignableUsers, canManage: can_manage, meId, reload });
-      } catch (err) {
-        toast(err.message, 'error');
-      }
-    });
+  wireAgendaEvents(root, { assignableUsers, canManage: can_manage, meId, reload });
+}
+
+async function renderWeek(root, ctx, refDate) {
+  root.innerHTML = spinner();
+  const from = startOfWeek(refDate);
+  const to = addDays(from, 6);
+
+  const { appointments, can_manage, assignableUsers, dueTasks } = await fetchAgendaData(ctx, from, to);
+
+  const byDay = {};
+  for (const a of appointments) (byDay[a.start_at.slice(0, 10)] ||= []).push(a);
+  for (const day in byDay) byDay[day].sort((a, b) => a.start_at.localeCompare(b.start_at));
+  const tasksByDay = {};
+  for (const t of dueTasks) (tasksByDay[t.due_date.slice(0, 10)] ||= []).push(t);
+
+  const days = Array.from({ length: 7 }, (_, i) => addDays(from, i));
+
+  root.innerHTML = `
+    <div class="mx-auto max-w-3xl space-y-4">
+      ${toolbarHtml({ label: weekLabel(from, to), view: 'semana' })}
+      <div class="space-y-3">
+        ${days.map((d) => agendaSection(d, byDay[d] || [], tasksByDay[d] || [], { compact: true })).join('')}
+      </div>
+    </div>`;
+
+  const meId = ctx.user.id;
+  const reload = () => renderWeek(root, ctx, refDate);
+  wireToolbar(root, {
+    onPrev: () => goToView(ctx, 'semana', addDays(from, -7)),
+    onNext: () => goToView(ctx, 'semana', addDays(from, 7)),
+    onToday: () => goToView(ctx, 'semana', todayStr()),
+    onSwitchView: (v) => goToView(ctx, v, refDate),
+    onNewAppt: () => openApptModal({ assignableUsers, canManage: can_manage, meId, reload, prefillDate: refDate }),
   });
+  wireAgendaEvents(root, { assignableUsers, canManage: can_manage, meId, reload });
+}
+
+async function renderDay(root, ctx, refDate) {
+  root.innerHTML = spinner();
+  const { appointments, can_manage, assignableUsers, dueTasks } = await fetchAgendaData(ctx, refDate, refDate);
+  const appts = appointments.slice().sort((a, b) => a.start_at.localeCompare(b.start_at));
+
+  root.innerHTML = `
+    <div class="mx-auto max-w-2xl space-y-4">
+      ${toolbarHtml({ label: dayLabel(refDate), view: 'dia' })}
+      ${agendaSection(refDate, appts, dueTasks, { compact: false })}
+    </div>`;
+
+  const meId = ctx.user.id;
+  const reload = () => renderDay(root, ctx, refDate);
+  wireToolbar(root, {
+    onPrev: () => goToView(ctx, 'dia', addDays(refDate, -1)),
+    onNext: () => goToView(ctx, 'dia', addDays(refDate, 1)),
+    onToday: () => goToView(ctx, 'dia', todayStr()),
+    onSwitchView: (v) => goToView(ctx, v, refDate),
+    onNewAppt: () => openApptModal({ assignableUsers, canManage: can_manage, meId, reload, prefillDate: refDate }),
+  });
+  wireAgendaEvents(root, { assignableUsers, canManage: can_manage, meId, reload });
 }
 
 function openApptModal({ appt = null, assignableUsers, canManage, meId, reload, prefillDate = null }) {
