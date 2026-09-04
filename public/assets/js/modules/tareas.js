@@ -18,6 +18,21 @@ const STATUS = {
   completada:  { label: 'Completada',  cls: 'bg-emerald-100 text-emerald-700', next: 'pendiente' },
 };
 const PRIORITY_ORDER = { urgente: 0, alta: 1, media: 2, baja: 3 };
+// Mismo lenguaje de color que ya usa Resultados: tinte claro en el fondo, cenefa más
+// saturada detrás del título. "Prioridad alta" no tiene un color de sección fijo —
+// se saca justo por no depender de la fecha, así que usa el color de su propia
+// prioridad (PRIORITY_CARD_COLORS) en vez de esta tabla.
+const SECTION_COLORS = {
+  completadas: { tint: 'bg-emerald-50', band: 'bg-emerald-100 text-emerald-900' },
+  hoy:         { tint: 'bg-red-50',     band: 'bg-red-100 text-red-900' },
+  manana:      { tint: 'bg-amber-50',   band: 'bg-amber-100 text-amber-900' },
+  semana:      { tint: 'bg-blue-50',    band: 'bg-blue-100 text-blue-900' },
+  posterior:   { tint: 'bg-white',      band: '' },
+};
+const PRIORITY_CARD_COLORS = {
+  urgente: { tint: 'bg-red-50',   band: 'bg-red-100 text-red-900' },
+  alta:    { tint: 'bg-amber-50', band: 'bg-amber-100 text-amber-900' },
+};
 
 let ctx;
 let data = null;
@@ -27,6 +42,9 @@ let resultsData = null;
 // '' en 'user' significa "yo mismo"; solo un gestor puede cambiarlo a otra persona.
 let misFilters = { status: '', project: '', user: '' };
 let resultFilters = { q: '', sample_date: '', due_date: '', status: '' };
+// Filtro de fecha de entrega exclusivo de la sección "Completadas", independiente
+// del filtro "Entrega" de arriba (ese solo agrupa hoy/mañana/posteriores).
+let completedDueFilter = '';
 let pollTimer = null;
 
 export async function render(root, context) {
@@ -128,36 +146,64 @@ function sortTasks(list) {
   });
 }
 
-/** Para "Mis tareas": primero fecha límite, urgencia como desempate (a diferencia de
- *  sortTasks(), que usa prioridad primero — ese orden sigue rigiendo Proyectos y Equipo). */
-function sortByDueThenPriority(list) {
+/* ---------- vistas ---------- */
+/** 0=domingo…6=sábado, evitando el desfase de zona horaria de `new Date('YYYY-MM-DD')`. */
+function weekdayOf(dateStr) {
+  return new Date(dateStr + 'T00:00:00').getDay();
+}
+
+/**
+ * Agrupa por vencimiento en vez de por tipo de recurrencia: completadas siempre al
+ * final; alta/urgente siempre arriba sin importar su fecha; una diaria vive en "hoy";
+ * una semanal vive en "esta semana" salvo que el día de la semana de su `due_date`
+ * (su "ancla" recurrente, ver el plan) caiga hoy o mañana, entonces se mueve a esa
+ * sección puntual — no existe un campo de "día de la semana" en el esquema, así que
+ * el día de `due_date` es el único dato de calendario disponible para una recurrente.
+ */
+function bucketMisTasks(list) {
+  const buckets = { completadas: [], prioridad: [], hoy: [], manana: [], semana: [], posterior: [] };
+  const t0 = today();
+  const tm = tomorrow();
+  const todayWd = new Date().getDay();
+  const tomorrowWd = (todayWd + 1) % 7;
+  const weekEnd = new Date();
+  weekEnd.setDate(weekEnd.getDate() + ((7 - todayWd) % 7)); // próximo domingo (hoy si ya es domingo)
+  const weekEndStr = weekEnd.toISOString().slice(0, 10);
+
+  for (const t of list) {
+    const isRecurring = !!t.recurrence;
+    const isDone = isRecurring ? t.done_now : t.status === 'completada';
+    if (isDone) { buckets.completadas.push(t); continue; }
+    if (t.priority === 'alta' || t.priority === 'urgente') { buckets.prioridad.push(t); continue; }
+    if (t.recurrence === 'diaria') { buckets.hoy.push(t); continue; }
+    if (t.recurrence === 'semanal') {
+      if (!t.due_date) { buckets.semana.push(t); continue; }
+      const wd = weekdayOf(t.due_date);
+      buckets[wd === todayWd ? 'hoy' : wd === tomorrowWd ? 'manana' : 'semana'].push(t);
+      continue;
+    }
+    if (t.due_date && t.due_date <= t0) buckets.hoy.push(t);
+    else if (t.due_date === tm) buckets.manana.push(t);
+    else if (t.due_date && t.due_date <= weekEndStr) buckets.semana.push(t);
+    else buckets.posterior.push(t); // incluye sin fecha
+  }
+  return buckets;
+}
+
+function sortByDueDate(list) {
   return [...list].sort((a, b) => {
-    const doneA = a.status === 'completada' ? 1 : 0;
-    const doneB = b.status === 'completada' ? 1 : 0;
-    if (doneA !== doneB) return doneA - doneB;
     const dueA = a.due_date || '9999';
     const dueB = b.due_date || '9999';
-    if (dueA !== dueB) return dueA < dueB ? -1 : 1;
-    return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
+    return dueA !== dueB ? (dueA < dueB ? -1 : 1) : a.title.localeCompare(b.title);
   });
 }
 
-/** Mismo criterio de "al día" que las tarjetas de tareas frecuentes de antes. */
-function sortRecurring(list) {
-  return [...list].sort((a, b) => {
-    const doneA = a.done_now ? 1 : 0;
-    const doneB = b.done_now ? 1 : 0;
-    if (doneA !== doneB) return doneA - doneB;
-    return PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority];
-  });
-}
-
-/* ---------- vistas ---------- */
 /**
- * "Mis tareas" unifica lo que antes eran dos pestañas (Mis tareas + Frecuentes) en
- * una sola lista ordenada: diarias primero, luego semanales, luego el resto por
- * fecha límite y urgencia. Un gestor puede además "ver como" a otra persona del
- * equipo con el filtro de usuario, en vez de tener que ir a la pestaña Equipo.
+ * "Mis tareas": agrupada por vencimiento (hoy/mañana/esta semana/posterior), con
+ * alta/urgente destacadas arriba en tarjetas cuadradas sin importar su fecha, y
+ * completadas al final — mismo lenguaje visual que ya usa Tareas > Resultados. Un
+ * gestor puede además "ver como" a otra persona del equipo con el filtro de usuario,
+ * en vez de tener que ir a la pestaña Equipo.
  */
 function paintMis(view) {
   const targetUser = data.can_manage && misFilters.user ? +misFilters.user : data.me;
@@ -165,24 +211,31 @@ function paintMis(view) {
   if (misFilters.status) list = list.filter((t) => t.status === misFilters.status);
   if (misFilters.project) list = list.filter((t) => t.project_id === +misFilters.project);
 
-  const daily = sortRecurring(list.filter((t) => t.recurrence === 'diaria'));
-  const weekly = sortRecurring(list.filter((t) => t.recurrence === 'semanal'));
-  const rest = sortByDueThenPriority(list.filter((t) => !t.recurrence));
+  const b = bucketMisTasks(list);
+  const prioridad = [...b.prioridad].sort((x, y) => {
+    const p = PRIORITY_ORDER[x.priority] - PRIORITY_ORDER[y.priority];
+    return p !== 0 ? p : (x.due_date || '9999').localeCompare(y.due_date || '9999');
+  });
+  const completadas = [...b.completadas].sort((x, y) => (y.completed_at || y.due_date || '').localeCompare(x.completed_at || x.due_date || ''));
 
   const group = (title, items, render) => !items.length ? '' : `
     <div>
-      <h4 class="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-500">${title}</h4>
+      <div class="mb-2 flex items-center justify-between">
+        <h4 class="text-sm font-semibold text-slate-700">${title}</h4>
+        <span class="text-xs text-slate-400">${items.length}</span>
+      </div>
       ${render(items)}
     </div>`;
-  const recurringCard = (items) => `
-    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-      ${items.map((t) => recurringRowHtml(t)).join('')}
-    </div>`;
+  const stack = (sectionKey) => (items) => `<div class="space-y-2.5">${items.map((t) => misTaskCard(t, { sectionKey })).join('')}</div>`;
+  const squareGrid = (sectionKey) => (items) => `<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">${items.map((t) => misTaskCard(t, { square: true, sectionKey })).join('')}</div>`;
 
   const sections = [
-    group('Diarias', daily, recurringCard),
-    group('Semanales', weekly, recurringCard),
-    group((daily.length || weekly.length) ? 'Otras tareas' : '', rest, (items) => `<div class="space-y-2.5">${items.map((t) => taskCard(t)).join('')}</div>`),
+    group('Prioridad alta', prioridad, squareGrid('prioridad')),
+    group('Con deadline para hoy', sortByDueDate(b.hoy), stack('hoy')),
+    group('Con deadline para mañana', sortByDueDate(b.manana), stack('manana')),
+    group('Con deadline para esta semana', sortByDueDate(b.semana), stack('semana')),
+    group('Con deadline posterior', sortByDueDate(b.posterior), stack('posterior')),
+    group('Completadas', completadas, stack('completadas')),
   ].filter(Boolean);
 
   view.innerHTML = `
@@ -222,24 +275,68 @@ function wireFilterBar(view) {
   view.querySelector('#f-user')?.addEventListener('change', (e) => { misFilters.user = e.target.value; paintMis(view); });
 }
 
-/** Renglón de una tarea frecuente: la interacción es "marcar hecho hoy/esta semana",
- *  distinta del ciclo de estado pendiente → en progreso → completada de una tarea
- *  normal, así que no reutiliza taskCard(). */
-function recurringRowHtml(t) {
+/**
+ * Tarjeta de "Mis tareas": título con cenefa de color según la sección donde cayó
+ * (hoy/mañana/semana/posterior/completadas — ver SECTION_COLORS), o según su propia
+ * prioridad en la sección "Prioridad alta" (ver PRIORITY_CARD_COLORS, esa sección se
+ * saca justo por no depender de la fecha). A diferencia de taskCard() (que comparten
+ * Proyectos y Equipo, sin tocar), aquí el creador y el asignado se muestran siempre,
+ * no solo a gestores. Las tareas recurrentes (diaria/semanal) usan el check binario
+ * data-recurring en vez del ciclo de estado pendiente→en progreso→completada.
+ */
+function misTaskCard(t, { square = false, sectionKey } = {}) {
+  const isRecurring = !!t.recurrence;
+  const isDone = isRecurring ? t.done_now : t.status === 'completada';
+  const colors = sectionKey === 'prioridad' ? PRIORITY_CARD_COLORS[t.priority] : SECTION_COLORS[sectionKey];
+  const cardTint = colors?.tint || 'bg-white';
+  const proj = t.project_id ? data.projects.find((p) => p.id === t.project_id) : null;
+  const subs = !isRecurring ? children(t) : [];
+  const subsDone = subs.filter((s) => s.status === 'completada').length;
+
   return `
-    <div class="flex items-center gap-3 border-b border-slate-100 px-4 py-3 last:border-0">
-      <button type="button" data-recurring="${t.id}"
-              class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${t.done_now ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
-        <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium ${t.done_now ? 'text-slate-400 line-through' : 'text-slate-800'}">${escapeHtml(t.title)}</p>
-        ${data.can_manage && assigneeNames(t) ? `<p class="text-xs text-slate-400">${escapeHtml(assigneeNames(t))}</p>` : ''}
+    <div class="rounded-2xl ${cardTint} p-4 shadow-sm ring-1 ring-slate-200 ${square ? 'flex flex-col aspect-square overflow-hidden' : ''}">
+      <div class="flex items-start gap-2.5">
+        <button type="button" ${isRecurring ? `data-recurring="${t.id}"` : `data-toggle="${t.id}"`} title="Completar"
+                class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
+          <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </button>
+        <div class="min-w-0 flex-1">
+          <p class="truncate rounded-md px-2 py-1 text-sm font-bold ${colors?.band || 'text-slate-900'} ${isDone ? 'line-through opacity-70' : ''}">${escapeHtml(t.title)}</p>
+          <div class="mt-2 flex flex-wrap items-center gap-1.5">
+            ${isRecurring
+              ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${isDone ? 'Al día' : 'Pendiente'}</span>`
+              : `<button type="button" data-status="${t.id}" class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS[t.status].cls}" title="Cambiar estado">${STATUS[t.status].label}</button>`}
+            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
+            ${proj
+              ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>`
+              : `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">Tarea suelta</span>`}
+            ${t.due_date ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${fmtDate(t.due_date)}</span>` : ''}
+          </div>
+          <div class="mt-1.5 space-y-0.5 text-[11px] text-slate-400">
+            ${t.creator_name ? `<p class="truncate">Creó: ${escapeHtml(t.creator_name)}</p>` : ''}
+            ${assigneeNames(t) ? `<p class="truncate">Asignado: ${escapeHtml(assigneeNames(t))}</p>` : ''}
+          </div>
+        </div>
+        <div class="flex shrink-0 gap-1">
+          ${!square && !t.parent_id && !isRecurring ? `<button type="button" data-subtask="${t.id}" title="Agregar subtarea" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('plus', 'h-4 w-4')}</button>` : ''}
+          ${canEdit(t) ? `
+          <button type="button" data-edit="${t.id}" title="Editar" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
+          <button type="button" data-del="${t.id}" title="Eliminar" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
+        </div>
       </div>
-      <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
-      ${canEdit(t) ? `
-      <button type="button" data-edit="${t.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
-      <button type="button" data-del="${t.id}" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
+      ${!square && subs.length ? `
+      <div class="ml-9 mt-3 space-y-1.5 border-l-2 border-slate-100 pl-3">
+        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Subtareas ${subsDone}/${subs.length}</p>
+        ${subs.map((s) => `
+          <div class="flex items-center gap-2">
+            <button type="button" data-toggle="${s.id}"
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${s.status === 'completada' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
+              <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </button>
+            <span class="min-w-0 flex-1 truncate text-sm ${s.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(s.title)}</span>
+            ${canEdit(s) ? `<button type="button" data-del="${s.id}" class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-300 hover:text-red-500">${icon('x', 'h-3.5 w-3.5')}</button>` : ''}
+          </div>`).join('')}
+      </div>` : ''}
     </div>`;
 }
 
@@ -419,13 +516,15 @@ function wireResultToolbar(view) {
   });
 }
 
-/** Filtra la lista ya cargada (sin volver a pedirla al servidor) por búsqueda/fechas/estado. */
-function applyResultFilters(items) {
+/** Filtra la lista ya cargada (sin volver a pedirla al servidor) por búsqueda/fechas/estado.
+ *  skipDueDate: la sección Completadas tiene su propio filtro de fecha de entrega,
+ *  independiente del de arriba (ver completedDueFilter). */
+function applyResultFilters(items, { skipDueDate = false } = {}) {
   let out = items;
   const q = resultFilters.q.trim().toLowerCase();
   if (q) out = out.filter((r) => r.patient_name.toLowerCase().includes(q));
   if (resultFilters.sample_date) out = out.filter((r) => r.sample_date === resultFilters.sample_date);
-  if (resultFilters.due_date) out = out.filter((r) => r.due_date === resultFilters.due_date);
+  if (!skipDueDate && resultFilters.due_date) out = out.filter((r) => r.due_date === resultFilters.due_date);
   if (resultFilters.status) {
     out = out.filter((r) => resultIsComplete(r) === (resultFilters.status === 'completado'));
   }
@@ -444,21 +543,43 @@ function paintResultSections(view) {
     box.innerHTML = emptyState('Sin resultados pendientes', 'Registra un paciente con "Nuevos resultados" para darle seguimiento.');
     return;
   }
-  const filtered = applyResultFilters(resultsData.items);
-  if (!filtered.length) {
-    box.innerHTML = emptyState('Sin coincidencias', 'Ajusta la búsqueda o los filtros.');
-    return;
-  }
-
+  // Las completadas ya no se mezclan arriba de cada grupo por fecha — se van
+  // todas a su propia sección al final, con su propio filtro de fecha (por
+  // eso el filtro "Entrega" de arriba no debe descartarlas de antemano: se
+  // filtran por separado más abajo, no a partir de este `filtered`).
   const t = today();
   const tm = tomorrow();
+  const pending = applyResultFilters(resultsData.items).filter((r) => !resultIsComplete(r));
   const groups = [
-    { title: 'Entrega de resultados hoy', items: filtered.filter((r) => r.due_date && r.due_date <= t) },
-    { title: 'Entrega de resultados mañana', items: filtered.filter((r) => r.due_date === tm) },
-    { title: 'Entrega de resultados posteriores', items: filtered.filter((r) => !r.due_date || r.due_date > tm) },
+    { title: 'Entrega de resultados hoy', items: pending.filter((r) => r.due_date && r.due_date <= t) },
+    { title: 'Entrega de resultados mañana', items: pending.filter((r) => r.due_date === tm) },
+    { title: 'Entrega de resultados posteriores', items: pending.filter((r) => !r.due_date || r.due_date > tm) },
   ];
 
-  box.innerHTML = groups.filter((g) => g.items.length).map((g) => `
+  const hasAnyCompleted = resultsData.items.some((r) => resultIsComplete(r));
+  let completedHtml = '';
+  if (hasAnyCompleted && resultFilters.status !== 'pendiente') {
+    let completed = applyResultFilters(resultsData.items.filter((r) => resultIsComplete(r)), { skipDueDate: true });
+    if (completedDueFilter) completed = completed.filter((r) => r.due_date === completedDueFilter);
+    completed = [...completed].sort((a, b) => (b.due_date || '').localeCompare(a.due_date || ''));
+    completedHtml = `
+      <div class="mb-6 last:mb-0">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h4 class="text-sm font-semibold text-slate-700">Completadas</h4>
+          <div class="flex items-center gap-2">
+            <input id="rf-completed-due" type="date" value="${completedDueFilter}" title="Filtrar por fecha de entrega"
+                   class="rounded-lg border-0 bg-slate-50 px-2 py-1 text-xs ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+            ${completedDueFilter ? `<button id="rf-completed-clear" type="button" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">Quitar</button>` : ''}
+            <span class="text-xs text-slate-400">${completed.length}</span>
+          </div>
+        </div>
+        ${completed.length
+          ? `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${completed.map((r) => resultCard(r)).join('')}</div>`
+          : `<p class="text-xs text-slate-400">Sin resultados completados con esa fecha de entrega.</p>`}
+      </div>`;
+  }
+
+  const pendingHtml = groups.filter((g) => g.items.length).map((g) => `
     <div class="mb-6 last:mb-0">
       <div class="mb-2 flex items-center justify-between">
         <h4 class="text-sm font-semibold text-slate-700">${g.title}</h4>
@@ -467,6 +588,16 @@ function paintResultSections(view) {
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${g.items.map((r) => resultCard(r)).join('')}</div>
     </div>`).join('');
 
+  box.innerHTML = pendingHtml + completedHtml || emptyState('Sin coincidencias', 'Ajusta la búsqueda o los filtros.');
+
+  view.querySelector('#rf-completed-due')?.addEventListener('change', (e) => {
+    completedDueFilter = e.target.value;
+    paintResultSections(view);
+  });
+  view.querySelector('#rf-completed-clear')?.addEventListener('click', () => {
+    completedDueFilter = '';
+    paintResultSections(view);
+  });
   wireResultEvents(view);
 }
 
