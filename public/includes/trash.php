@@ -7,7 +7,7 @@
 require_once __DIR__ . '/db.php';
 
 const TRASH_TASK_COLUMNS = ['id', 'project_id', 'parent_id', 'title', 'description', 'assigned_to',
-    'priority', 'due_date', 'recurrence', 'status', 'completed_at', 'created_by', 'created_at', 'updated_at'];
+    'priority', 'due_date', 'recurrence', 'weekday', 'status', 'completed_at', 'created_by', 'created_at', 'updated_at'];
 const TRASH_PROJECT_COLUMNS = ['id', 'name', 'description', 'due_date', 'status', 'created_by', 'created_at', 'updated_at'];
 const TRASH_RESULT_COLUMNS = ['id', 'patient_name', 'sample_date', 'due_date', 'studies',
     'needs_invoice', 'invoice_sent', 'observations', 'created_by', 'created_at'];

@@ -5,6 +5,8 @@
  * los demás ven solo tareas asignadas a ellos o creadas por ellos (personales).
  */
 
+require_once __DIR__ . '/../../includes/task_recurrence.php';
+
 const TASK_PRIORITIES = ['baja', 'media', 'alta', 'urgente'];
 const TASK_STATUSES = ['pendiente', 'en_progreso', 'completada'];
 const TASK_RECURRENCES = ['diaria', 'semanal'];
@@ -60,15 +62,24 @@ function handle_tasks(string $action): void
                 $users = [];
             }
 
-            // Estado de completado del periodo actual para tareas frecuentes
-            $recurringIds = array_column(array_filter($tasks, fn($t) => !empty($t['recurrence'])), 'id');
+            // Estado de completado del periodo actual para tareas frecuentes: cada una
+            // con su propio día de corte (t.weekday), no una clave de semana compartida.
+            $recurringTasks = array_filter($tasks, fn($t) => !empty($t['recurrence']));
+            $recurringIds = array_column($recurringTasks, 'id');
             $doneNow = [];
             if ($recurringIds) {
                 $marks = implode(',', array_fill(0, count($recurringIds), '?'));
-                $st = $pdo->prepare("SELECT task_id, period_key FROM task_completions WHERE task_id IN ($marks) AND period_key IN (?, ?)");
-                $st->execute([...$recurringIds, period_key('diaria'), period_key('semanal')]);
+                $st = $pdo->prepare("SELECT task_id, period_key FROM task_completions WHERE task_id IN ($marks)");
+                $st->execute($recurringIds);
+                $completed = [];
                 foreach ($st->fetchAll() as $row) {
-                    $doneNow[$row['task_id']] = true;
+                    $completed[$row['task_id']][$row['period_key']] = true;
+                }
+                foreach ($recurringTasks as $t) {
+                    $wd = $t['weekday'] !== null ? (int)$t['weekday'] : null;
+                    if (isset($completed[$t['id']][period_key($t['recurrence'], $wd)])) {
+                        $doneNow[$t['id']] = true;
+                    }
                 }
             }
 
@@ -82,6 +93,7 @@ function handle_tasks(string $action): void
                 $t['project_id'] = $t['project_id'] !== null ? (int)$t['project_id'] : null;
                 $t['parent_id'] = $t['parent_id'] !== null ? (int)$t['parent_id'] : null;
                 $t['created_by'] = $t['created_by'] !== null ? (int)$t['created_by'] : null;
+                $t['weekday'] = $t['weekday'] !== null ? (int)$t['weekday'] : null;
                 $t['done_now'] = !empty($t['recurrence']) ? isset($doneNow[$t['id']]) : null;
                 $assignees = $assigneesByTask[$t['id']] ?? [];
                 $t['assigned_to'] = array_column($assignees, 'id');
@@ -195,6 +207,16 @@ function handle_tasks(string $action): void
             }
             $priority = in_array($b['priority'] ?? '', TASK_PRIORITIES, true) ? $b['priority'] : 'media';
             $recurrence = in_array($b['recurrence'] ?? '', TASK_RECURRENCES, true) ? $b['recurrence'] : null;
+            $weekday = null;
+            if ($recurrence === 'semanal') {
+                // El día de corte es obligatorio: define tanto en qué sección de "Mis
+                // tareas" cae como cuándo se resetea done_now (ver period_key()).
+                if (!isset($b['weekday']) || $b['weekday'] === '' || !is_numeric($b['weekday'])
+                    || (int)$b['weekday'] < 0 || (int)$b['weekday'] > 6) {
+                    json_error('Selecciona el día de corte de la tarea semanal', 422);
+                }
+                $weekday = (int)$b['weekday'];
+            }
             $due = valid_date($b['due_date'] ?? '');
             $desc = trim((string)($b['description'] ?? '')) ?: null;
             $projectId = isset($b['project_id']) && $b['project_id'] !== '' ? (int)$b['project_id'] : null;
@@ -221,14 +243,14 @@ function handle_tasks(string $action): void
                     json_error('Solo puedes editar tus propias tareas', 403);
                 }
                 db()->prepare(
-                    'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ?, recurrence = ?, project_id = ?, parent_id = ? WHERE id = ?'
-                )->execute([$title, $desc, $priority, $due, $recurrence, $projectId, $parentId, $id]);
+                    'UPDATE tasks SET title = ?, description = ?, priority = ?, due_date = ?, recurrence = ?, weekday = ?, project_id = ?, parent_id = ? WHERE id = ?'
+                )->execute([$title, $desc, $priority, $due, $recurrence, $weekday, $projectId, $parentId, $id]);
                 log_activity('tareas', 'task_update', "Editó tarea \"$title\"", 'task', $id);
             } else {
                 db()->prepare(
-                    'INSERT INTO tasks (project_id, parent_id, title, description, priority, due_date, recurrence, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-                )->execute([$projectId, $parentId, $title, $desc, $priority, $due, $recurrence, (int)$me['id']]);
+                    'INSERT INTO tasks (project_id, parent_id, title, description, priority, due_date, recurrence, weekday, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$projectId, $parentId, $title, $desc, $priority, $due, $recurrence, $weekday, (int)$me['id']]);
                 $id = (int)db()->lastInsertId();
                 log_activity('tareas', 'task_create', "Creó tarea \"$title\"", 'task', $id);
             }
@@ -269,7 +291,7 @@ function handle_tasks(string $action): void
                 json_error('La tarea no es frecuente', 422);
             }
             require_task_access($task, $me, $canManage);
-            $key = period_key($task['recurrence']);
+            $key = period_key($task['recurrence'], $task['weekday'] !== null ? (int)$task['weekday'] : null);
             $pdo = db();
             $st = $pdo->prepare('SELECT id FROM task_completions WHERE task_id = ? AND period_key = ?');
             $st->execute([$id, $key]);
@@ -634,12 +656,6 @@ function notify_new_assignees(array $oldIds, array $newIds, int $actingUserId, s
             error_log('notify_new_assignees: ' . $e->getMessage());
         }
     }
-}
-
-/** Llave del periodo actual: diaria = fecha, semanal = año-semana ISO. */
-function period_key(string $recurrence): string
-{
-    return $recurrence === 'semanal' ? date('o-\WW') : date('Y-m-d');
 }
 
 function valid_date($v): ?string

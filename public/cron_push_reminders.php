@@ -16,6 +16,7 @@
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/permissions.php';
 require_once __DIR__ . '/includes/webpush.php';
+require_once __DIR__ . '/includes/task_recurrence.php';
 
 header('Content-Type: text/plain; charset=utf-8');
 
@@ -30,7 +31,6 @@ if (!$isCli) {
 
 $pdo = db();
 $today = date('Y-m-d');
-$weekKey = date('o-\WW');
 
 // Resultados por entregar (compartidos, no por persona): un solo conteo para
 // todo el equipo con acceso a Tareas, igual criterio que dash_agenda().
@@ -60,18 +60,8 @@ foreach ($users as $user) {
         $st->execute([$userId, $today]);
         $taskCount = (int)$st->fetch()['c'];
 
-        $st = $pdo->prepare(
-            "SELECT COUNT(*) c FROM tasks t
-             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
-               AND t.recurrence IS NOT NULL
-               AND NOT EXISTS (
-                 SELECT 1 FROM task_completions tc
-                 WHERE tc.task_id = t.id
-                   AND tc.period_key = CASE WHEN t.recurrence = 'semanal' THEN ? ELSE ? END
-               )"
-        );
-        $st->execute([$userId, $weekKey, $today]);
-        $taskCount += (int)$st->fetch()['c'];
+        // Cada recurrente evaluada con su propio día de corte (ver task_recurrence.php).
+        $taskCount += count(pending_recurring_tasks($pdo, $userId));
 
         if ($taskCount > 0) {
             $parts[] = $taskCount . ' tarea' . ($taskCount === 1 ? '' : 's');
