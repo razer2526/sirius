@@ -27,6 +27,9 @@ let resultsData = null;
 // '' en 'user' significa "yo mismo"; solo un gestor puede cambiarlo a otra persona.
 let misFilters = { status: '', project: '', user: '' };
 let resultFilters = { q: '', sample_date: '', due_date: '', status: '' };
+// Filtro de fecha de entrega exclusivo de la sección "Completadas", independiente
+// del filtro "Entrega" de arriba (ese solo agrupa hoy/mañana/posteriores).
+let completedDueFilter = '';
 let pollTimer = null;
 
 export async function render(root, context) {
@@ -419,13 +422,15 @@ function wireResultToolbar(view) {
   });
 }
 
-/** Filtra la lista ya cargada (sin volver a pedirla al servidor) por búsqueda/fechas/estado. */
-function applyResultFilters(items) {
+/** Filtra la lista ya cargada (sin volver a pedirla al servidor) por búsqueda/fechas/estado.
+ *  skipDueDate: la sección Completadas tiene su propio filtro de fecha de entrega,
+ *  independiente del de arriba (ver completedDueFilter). */
+function applyResultFilters(items, { skipDueDate = false } = {}) {
   let out = items;
   const q = resultFilters.q.trim().toLowerCase();
   if (q) out = out.filter((r) => r.patient_name.toLowerCase().includes(q));
   if (resultFilters.sample_date) out = out.filter((r) => r.sample_date === resultFilters.sample_date);
-  if (resultFilters.due_date) out = out.filter((r) => r.due_date === resultFilters.due_date);
+  if (!skipDueDate && resultFilters.due_date) out = out.filter((r) => r.due_date === resultFilters.due_date);
   if (resultFilters.status) {
     out = out.filter((r) => resultIsComplete(r) === (resultFilters.status === 'completado'));
   }
@@ -444,21 +449,43 @@ function paintResultSections(view) {
     box.innerHTML = emptyState('Sin resultados pendientes', 'Registra un paciente con "Nuevos resultados" para darle seguimiento.');
     return;
   }
-  const filtered = applyResultFilters(resultsData.items);
-  if (!filtered.length) {
-    box.innerHTML = emptyState('Sin coincidencias', 'Ajusta la búsqueda o los filtros.');
-    return;
-  }
-
+  // Las completadas ya no se mezclan arriba de cada grupo por fecha — se van
+  // todas a su propia sección al final, con su propio filtro de fecha (por
+  // eso el filtro "Entrega" de arriba no debe descartarlas de antemano: se
+  // filtran por separado más abajo, no a partir de este `filtered`).
   const t = today();
   const tm = tomorrow();
+  const pending = applyResultFilters(resultsData.items).filter((r) => !resultIsComplete(r));
   const groups = [
-    { title: 'Entrega de resultados hoy', items: filtered.filter((r) => r.due_date && r.due_date <= t) },
-    { title: 'Entrega de resultados mañana', items: filtered.filter((r) => r.due_date === tm) },
-    { title: 'Entrega de resultados posteriores', items: filtered.filter((r) => !r.due_date || r.due_date > tm) },
+    { title: 'Entrega de resultados hoy', items: pending.filter((r) => r.due_date && r.due_date <= t) },
+    { title: 'Entrega de resultados mañana', items: pending.filter((r) => r.due_date === tm) },
+    { title: 'Entrega de resultados posteriores', items: pending.filter((r) => !r.due_date || r.due_date > tm) },
   ];
 
-  box.innerHTML = groups.filter((g) => g.items.length).map((g) => `
+  const hasAnyCompleted = resultsData.items.some((r) => resultIsComplete(r));
+  let completedHtml = '';
+  if (hasAnyCompleted && resultFilters.status !== 'pendiente') {
+    let completed = applyResultFilters(resultsData.items.filter((r) => resultIsComplete(r)), { skipDueDate: true });
+    if (completedDueFilter) completed = completed.filter((r) => r.due_date === completedDueFilter);
+    completed = [...completed].sort((a, b) => (b.due_date || '').localeCompare(a.due_date || ''));
+    completedHtml = `
+      <div class="mb-6 last:mb-0">
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h4 class="text-sm font-semibold text-slate-700">Completadas</h4>
+          <div class="flex items-center gap-2">
+            <input id="rf-completed-due" type="date" value="${completedDueFilter}" title="Filtrar por fecha de entrega"
+                   class="rounded-lg border-0 bg-slate-50 px-2 py-1 text-xs ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
+            ${completedDueFilter ? `<button id="rf-completed-clear" type="button" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">Quitar</button>` : ''}
+            <span class="text-xs text-slate-400">${completed.length}</span>
+          </div>
+        </div>
+        ${completed.length
+          ? `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${completed.map((r) => resultCard(r)).join('')}</div>`
+          : `<p class="text-xs text-slate-400">Sin resultados completados con esa fecha de entrega.</p>`}
+      </div>`;
+  }
+
+  const pendingHtml = groups.filter((g) => g.items.length).map((g) => `
     <div class="mb-6 last:mb-0">
       <div class="mb-2 flex items-center justify-between">
         <h4 class="text-sm font-semibold text-slate-700">${g.title}</h4>
@@ -467,6 +494,16 @@ function paintResultSections(view) {
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${g.items.map((r) => resultCard(r)).join('')}</div>
     </div>`).join('');
 
+  box.innerHTML = pendingHtml + completedHtml || emptyState('Sin coincidencias', 'Ajusta la búsqueda o los filtros.');
+
+  view.querySelector('#rf-completed-due')?.addEventListener('change', (e) => {
+    completedDueFilter = e.target.value;
+    paintResultSections(view);
+  });
+  view.querySelector('#rf-completed-clear')?.addEventListener('click', () => {
+    completedDueFilter = '';
+    paintResultSections(view);
+  });
   wireResultEvents(view);
 }
 
