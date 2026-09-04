@@ -5,7 +5,9 @@
  */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, confirmDialog, debounce, spinner } from '../ui.js';
+import { icon, escapeHtml, toast, confirmDialog, debounce, spinner, isUserBusy } from '../ui.js';
+
+const POLL_MS = 20000;
 
 const COLOR_KEYS = ['amber', 'pink', 'sky', 'emerald', 'violet', 'slate'];
 const PALETTE = {
@@ -22,9 +24,29 @@ const MIN_H = 140;
 let scope = 'private';
 let boardData = null;
 let maxZ = 1;
+let pollTimer = null;
+// A diferencia de un modal o un input con foco, arrastrar/redimensionar una
+// nota o dibujar un trazo no pasa por ningún elemento "enfocable" — sin esta
+// bandera un repintado de fondo destruiría la tarjeta en pleno arrastre.
+let boardBusy = false;
 
 export async function render(root, context) {
   await load(root);
+
+  const tick = async () => {
+    // #board-canvas se recrea en cada paint(); si ya no está en el DOM es que
+    // el router navegó a otro módulo (mismo criterio que whatsapp.js/tareas.js).
+    if (!document.getElementById('board-canvas')?.isConnected) { clearInterval(pollTimer); return; }
+    if (isUserBusy() || boardBusy) return; // se reintenta en el siguiente tick
+    try {
+      const fresh = await apiGet('board/list', { scope });
+      if (isUserBusy() || boardBusy) return; // pudo empezar a interactuar mientras la petición estaba en vuelo
+      boardData = fresh;
+      paint(document.getElementById('module-root'));
+    } catch { /* red intermitente: se reintenta en el próximo tick */ }
+  };
+  clearInterval(pollTimer);
+  pollTimer = setInterval(tick, POLL_MS);
 }
 
 async function load(root) {
@@ -342,6 +364,7 @@ function buildDrawingBody(body, item, canEdit) {
     strokes.push(current);
     renderStrokes();
     svg.setPointerCapture(e.pointerId);
+    boardBusy = true;
     e.preventDefault();
   });
   svg.addEventListener('pointermove', (e) => {
@@ -352,6 +375,7 @@ function buildDrawingBody(body, item, canEdit) {
   const endStroke = () => {
     if (!current) return;
     current = null;
+    boardBusy = false;
     saveField(item, { content: { strokes } });
   };
   svg.addEventListener('pointerup', endStroke);
@@ -376,6 +400,7 @@ function wireDrag(el, header, item) {
   const onUp = () => {
     if (!dragging) return;
     dragging = false;
+    boardBusy = false;
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     saveField(item, { pos_x: parseInt(el.style.left, 10), pos_y: parseInt(el.style.top, 10), z_index: item.z_index });
@@ -383,6 +408,7 @@ function wireDrag(el, header, item) {
   header.addEventListener('pointerdown', (e) => {
     if (e.target.closest('input, button')) return;
     dragging = true;
+    boardBusy = true;
     bringToFront(el, item);
     startX = e.clientX;
     startY = e.clientY;
@@ -406,12 +432,14 @@ function wireResize(el, handle, item) {
   const onUp = () => {
     if (!resizing) return;
     resizing = false;
+    boardBusy = false;
     document.removeEventListener('pointermove', onMove);
     document.removeEventListener('pointerup', onUp);
     saveField(item, { width: parseInt(el.style.width, 10), height: parseInt(el.style.height, 10) });
   };
   handle.addEventListener('pointerdown', (e) => {
     resizing = true;
+    boardBusy = true;
     startX = e.clientX;
     startY = e.clientY;
     startW = el.offsetWidth;

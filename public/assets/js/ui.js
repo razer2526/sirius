@@ -155,6 +155,14 @@ export function confirmDialog(title, message, { danger = false, confirmLabel = '
   });
 }
 
+/** Para pausar un refresco de fondo (polling): hay un modal abierto, o el foco
+ *  está en un campo editable (no queremos resetear texto/foco a media escritura). */
+export function isUserBusy() {
+  if (document.getElementById('modal-root')?.children.length) return true;
+  const el = document.activeElement;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+}
+
 /* ---- Formularios ---- */
 export const inputCls = 'w-full rounded-lg border-0 bg-slate-50 px-3 py-2 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none';
 export const labelCls = 'mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500';
