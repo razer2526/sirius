@@ -33,6 +33,9 @@ const PRIORITY_CARD_COLORS = {
   urgente: { tint: 'bg-red-50',   band: 'bg-red-100 text-red-900' },
   alta:    { tint: 'bg-amber-50', band: 'bg-amber-100 text-amber-900' },
 };
+// Índice 0=domingo…6=sábado, igual que Date.getDay() — mismo día que se guarda en
+// tasks.weekday para el corte de una tarea semanal.
+const WEEKDAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
 
 let ctx;
 let data = null;
@@ -147,18 +150,11 @@ function sortTasks(list) {
 }
 
 /* ---------- vistas ---------- */
-/** 0=domingo…6=sábado, evitando el desfase de zona horaria de `new Date('YYYY-MM-DD')`. */
-function weekdayOf(dateStr) {
-  return new Date(dateStr + 'T00:00:00').getDay();
-}
-
 /**
  * Agrupa por vencimiento en vez de por tipo de recurrencia: completadas siempre al
  * final; alta/urgente siempre arriba sin importar su fecha; una diaria vive en "hoy";
- * una semanal vive en "esta semana" salvo que el día de la semana de su `due_date`
- * (su "ancla" recurrente, ver el plan) caiga hoy o mañana, entonces se mueve a esa
- * sección puntual — no existe un campo de "día de la semana" en el esquema, así que
- * el día de `due_date` es el único dato de calendario disponible para una recurrente.
+ * una semanal vive en "esta semana" salvo que su día de corte (`t.weekday`, elegido al
+ * crearla) caiga hoy o mañana, entonces se mueve a esa sección puntual.
  */
 function bucketMisTasks(list) {
   const buckets = { completadas: [], prioridad: [], hoy: [], manana: [], semana: [], posterior: [] };
@@ -177,9 +173,8 @@ function bucketMisTasks(list) {
     if (t.priority === 'alta' || t.priority === 'urgente') { buckets.prioridad.push(t); continue; }
     if (t.recurrence === 'diaria') { buckets.hoy.push(t); continue; }
     if (t.recurrence === 'semanal') {
-      if (!t.due_date) { buckets.semana.push(t); continue; }
-      const wd = weekdayOf(t.due_date);
-      buckets[wd === todayWd ? 'hoy' : wd === tomorrowWd ? 'manana' : 'semana'].push(t);
+      if (t.weekday === null || t.weekday === undefined) { buckets.semana.push(t); continue; }
+      buckets[t.weekday === todayWd ? 'hoy' : t.weekday === tomorrowWd ? 'manana' : 'semana'].push(t);
       continue;
     }
     if (t.due_date && t.due_date <= t0) buckets.hoy.push(t);
@@ -310,6 +305,8 @@ function misTaskCard(t, { square = false, sectionKey } = {}) {
             ${proj
               ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>`
               : `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">Tarea suelta</span>`}
+            ${t.recurrence === 'semanal' && t.weekday !== null && t.weekday !== undefined
+              ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Cada ${WEEKDAY_NAMES[t.weekday].toLowerCase()}</span>` : ''}
             ${t.due_date ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${fmtDate(t.due_date)}</span>` : ''}
           </div>
           <div class="mt-1.5 space-y-0.5 text-[11px] text-slate-400">
@@ -1026,12 +1023,19 @@ function openTaskModal(task, presets) {
       ${field({ key: 'due_date', label: 'Fecha límite', type: 'date' }, task?.due_date || '')}
       ${!isSub ? `
       ${field({ key: 'recurrence', label: 'Frecuencia', type: 'select', options: [['', 'Única (no se repite)'], ['diaria', 'Diaria'], ['semanal', 'Semanal']] }, task?.recurrence || '')}
+      <div id="f-weekday-wrap" class="${task?.recurrence === 'semanal' ? '' : 'hidden'}">
+        ${field({ key: 'weekday', label: 'Día de corte', type: 'select', options: [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [5, 'Viernes'], [6, 'Sábado'], [0, 'Domingo']] }, task?.weekday ?? '')}
+      </div>
       <div><label class="${labelCls}">Proyecto</label>
         <select name="project_id" class="${inputCls}">
           <option value="">— Sin proyecto —</option>
           ${data.projects.filter((p) => p.status === 'activo').map((p) => `<option value="${p.id}" ${(task?.project_id || presets.project_id) === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
         </select></div>` : ''}
     </div>`;
+
+  form.querySelector('[name="recurrence"]')?.addEventListener('change', (e) => {
+    form.querySelector('#f-weekday-wrap')?.classList.toggle('hidden', e.target.value !== 'semanal');
+  });
 
   modal({
     title: task ? 'Editar tarea' : (isSub ? 'Nueva subtarea' : 'Nueva tarea'),
@@ -1043,14 +1047,22 @@ function openTaskModal(task, presets) {
         label: task ? 'Guardar cambios' : 'Crear tarea', primary: true,
         onClick: async (close, btn) => {
           if (!form.reportValidity()) return;
-          btn.disabled = true;
           const v = formValues(form);
+          // El campo puede estar oculto (frecuencia distinta a "Semanal"), así que no
+          // se usa `required` nativo aquí — se valida a mano, igual criterio pero sin
+          // depender de si el navegador constraint-valida campos no visibles.
+          if (v.recurrence === 'semanal' && v.weekday === '') {
+            toast('Selecciona el día de corte de la tarea semanal', 'error');
+            return;
+          }
+          btn.disabled = true;
           try {
             await apiPost('tasks/save', {
               ...(task ? { id: task.id } : {}),
               title: v.title, description: v.description,
               assigned_to: checkedAssignees(form), priority: v.priority,
               due_date: v.due_date, recurrence: v.recurrence ?? '',
+              weekday: v.recurrence === 'semanal' ? v.weekday : '',
               project_id: v.project_id ?? '', parent_id: parentId,
             });
             toast(task ? 'Tarea actualizada' : 'Tarea creada');

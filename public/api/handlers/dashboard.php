@@ -11,6 +11,7 @@
  */
 
 require_once __DIR__ . '/inventory.php';
+require_once __DIR__ . '/../../includes/task_recurrence.php';
 
 const DASH_DEADLINE_SOON_DAYS = 7;   // ventana de "deadline próximo" en Alertas (más allá de mañana)
 const DASH_NEW_CONTENT_DAYS = 3;     // ventana de "nuevo" para pizarrón/archivos públicos
@@ -70,20 +71,9 @@ function dash_alerts(array $me): array
     }
 
     if (user_can('tareas')) {
-        // Tareas recurrentes (diaria/semanal) aún no completadas en el periodo actual
-        $st = $pdo->prepare(
-            "SELECT t.id, t.title, t.recurrence FROM tasks t
-             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
-               AND t.recurrence IS NOT NULL
-               AND NOT EXISTS (
-                 SELECT 1 FROM task_completions tc
-                 WHERE tc.task_id = t.id
-                   AND tc.period_key = CASE WHEN t.recurrence = 'semanal' THEN ? ELSE ? END
-               )
-             ORDER BY t.title"
-        );
-        $st->execute([$meId, date('o-\WW'), date('Y-m-d')]);
-        $out['tasks_recurring'] = $st->fetchAll();
+        // Tareas recurrentes (diaria/semanal) aún no completadas en el periodo actual,
+        // cada una con su propio día de corte (ver pending_recurring_tasks()).
+        $out['tasks_recurring'] = pending_recurring_tasks($pdo, $meId);
 
         // Deadlines próximos, más allá de mañana (hoy/mañana ya se ven en su propia sección)
         $from = date('Y-m-d', strtotime('+2 days'));
@@ -251,20 +241,9 @@ function dash_agenda(array $me, string $date): array
         $st->execute([$meId, $date]);
         $tasks = $st->fetchAll();
 
-        // + recurrentes aún no completadas en su periodo actual (se repiten en hoy y mañana)
-        $st = $pdo->prepare(
-            "SELECT t.id, t.title, t.recurrence FROM tasks t
-             WHERE EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = ?)
-               AND t.recurrence IS NOT NULL
-               AND NOT EXISTS (
-                 SELECT 1 FROM task_completions tc
-                 WHERE tc.task_id = t.id
-                   AND tc.period_key = CASE WHEN t.recurrence = 'semanal' THEN ? ELSE ? END
-               )
-             ORDER BY t.title"
-        );
-        $st->execute([$meId, date('o-\WW'), date('Y-m-d')]);
-        $out['tasks'] = array_merge($tasks, $st->fetchAll());
+        // + recurrentes aún no completadas en su periodo actual (se repiten en hoy y
+        // mañana), cada una con su propio día de corte (ver pending_recurring_tasks()).
+        $out['tasks'] = array_merge($tasks, pending_recurring_tasks($pdo, $meId));
 
         // Resultados que deben salir este día, sin contar los ya completados (checklist
         // marcado por completo): la pestaña Resultados de Tareas es la fuente.

@@ -192,6 +192,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 priority ENUM('baja','media','alta','urgente') NOT NULL DEFAULT 'media',
                 due_date DATE NULL,
                 recurrence ENUM('diaria','semanal') NULL,
+                weekday TINYINT UNSIGNED NULL,
                 status ENUM('pendiente','en_progreso','completada') NOT NULL DEFAULT 'pendiente',
                 completed_at DATETIME NULL,
                 created_by INT UNSIGNED NULL,
@@ -829,6 +830,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 priority TEXT NOT NULL DEFAULT 'media',
                 due_date TEXT NULL,
                 recurrence TEXT NULL,
+                weekday INTEGER NULL,
                 status TEXT NOT NULL DEFAULT 'pendiente',
                 completed_at TEXT NULL,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -1319,6 +1321,9 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE coverage_zones ADD COLUMN extra_cost " . ($isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0'),
         "ALTER TABLE postal_codes ADD COLUMN extra_cost " . ($isMysql ? 'TINYINT(1) NULL' : 'INTEGER NULL'),
         "ALTER TABLE result_deliveries ADD COLUMN invoice_sent " . ($isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0'),
+        // Día de corte de una tarea semanal (0=domingo…6=sábado, igual que Date.getDay()
+        // de JS) — NULL en tareas no semanales o semanales creadas antes de este campo.
+        "ALTER TABLE tasks ADD COLUMN weekday " . ($isMysql ? 'TINYINT UNSIGNED NULL' : 'INTEGER NULL'),
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
