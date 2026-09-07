@@ -42,8 +42,8 @@ $theme = in_array($user['theme'] ?? null, BRANDING_THEMES, true) ? $user['theme'
          style="background:var(--theme-sidebar-bg)"
          class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col text-slate-300 transition-transform duration-200 lg:static lg:translate-x-0">
     <div class="flex h-16 shrink-0 items-center gap-3 px-5">
-      <?php if ($brand['logo']): ?>
-      <img src="<?= htmlspecialchars($brand['logo']) ?>" alt="Logotipo" class="h-9 w-9 shrink-0 rounded-xl object-contain">
+      <?php if ($brand['sidebar']): ?>
+      <img src="<?= htmlspecialchars($brand['sidebar']) ?>" alt="Logotipo" class="h-9 w-9 shrink-0 rounded-xl object-contain">
       <?php else: ?>
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600">
         <svg viewBox="0 0 24 24" class="h-5 w-5 text-white" fill="currentColor"><path d="M12 1l2.4 6.9L21 9l-5.2 4.4L17.5 21 12 17.2 6.5 21l1.7-7.6L3 9l6.6-1.1z"/></svg>
