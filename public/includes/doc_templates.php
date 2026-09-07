@@ -100,7 +100,9 @@ function lab_filter_studies($studies): array
                 'value'      => mb_substr(trim((string)($it['value'] ?? '')), 0, 80),
                 'unit'       => mb_substr(trim((string)($it['unit'] ?? '')), 0, 40),
                 'technique'  => mb_substr(trim((string)($it['technique'] ?? '')), 0, 80),
-                'reference'  => mb_substr(trim((string)($it['reference'] ?? '')), 0, 300),
+                // 1500 en vez de 300: una "referencia larga" (ver lab_catalog.php) puede
+                // ser un bloque de varias líneas, no solo un intervalo corto.
+                'reference'  => mb_substr(trim((string)($it['reference'] ?? '')), 0, 1500),
                 'flag'       => in_array($it['flag'] ?? null, ['alto', 'bajo', 'revisar'], true) ? $it['flag'] : null,
             ];
         }
