@@ -285,6 +285,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 text_value VARCHAR(120) NULL,
                 unit VARCHAR(40) NULL,
                 sort_order INT NOT NULL DEFAULT 0,
+                long_reference TEXT NULL,
                 INDEX idx_range_test (test_id, sort_order),
                 CONSTRAINT fk_range_test FOREIGN KEY (test_id) REFERENCES lab_tests(id) ON DELETE CASCADE
             )$suffix",
@@ -687,6 +688,16 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 UNIQUE KEY uq_dismissed_alert (user_id, alert_key),
                 CONSTRAINT fk_dismissed_alert_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )$suffix",
+            'remember_tokens' => "CREATE TABLE IF NOT EXISTS remember_tokens (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                selector VARCHAR(24) NOT NULL,
+                validator_hash CHAR(64) NOT NULL,
+                expires_at DATETIME NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_remember_selector (selector),
+                CONSTRAINT fk_remember_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -909,7 +920,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 max_value REAL NULL,
                 text_value TEXT NULL,
                 unit TEXT NULL,
-                sort_order INTEGER NOT NULL DEFAULT 0
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                long_reference TEXT NULL
             )",
             // Plantillas: agrupan y ordenan determinaciones ya catalogadas. No copian los
             // rangos —viven solo en lab_reference_ranges— para no tener dos fuentes de verdad.
@@ -1228,6 +1240,14 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 dismissed_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 UNIQUE (user_id, alert_key)
             )",
+            'remember_tokens' => "CREATE TABLE IF NOT EXISTS remember_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                selector TEXT NOT NULL UNIQUE,
+                validator_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
         ];
     }
 
@@ -1343,6 +1363,10 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE tasks ADD COLUMN weekday " . ($isMysql ? 'TINYINT UNSIGNED NULL' : 'INTEGER NULL'),
         // Tema de color elegido por el usuario para su sidebar y Dashboard (NULL = índigo por defecto).
         "ALTER TABLE users ADD COLUMN theme " . ($isMysql ? 'VARCHAR(20) NULL' : 'TEXT NULL'),
+        // Referencia larga: bloque de texto libre con saltos de línea (ej. categorías
+        // de hemoglobina glicosilada) para cuando el criterio no es sexo/edad/condición
+        // filtrable — alternativa al sistema estructurado, no lo reemplaza.
+        "ALTER TABLE lab_reference_ranges ADD COLUMN long_reference TEXT NULL",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {

@@ -422,6 +422,8 @@ function openTestModal(test, onSave) {
           <p class="mt-2 text-xs text-slate-400">
             Deja mínimo o máximo vacío para "mayor a" / "menor a". Usa la condición para fases
             (folicular, lútea, posmenopáusica…) y sexo/edad para los intervalos que dependen del paciente.
+            Para valores que no dependen de sexo/edad y necesitan varias líneas de texto (ej. categorías
+            de hemoglobina glicosilada), usa "Referencia larga" en vez del rango estructurado.
           </p>
         </div>
       </div>`,
@@ -452,8 +454,23 @@ function openTestModal(test, onSave) {
       box.innerHTML = '<p class="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800 ring-1 ring-amber-200">Sin rangos: el reporte saldrá con la referencia vacía.</p>';
       return;
     }
-    box.innerHTML = draft.ranges.map((r, i) => `
+    const isLong = (r) => r.long_reference !== null && r.long_reference !== undefined;
+    const toggleBtn = (i, on) => `
+      <button type="button" data-rtoggle="${i}"
+        title="${on ? 'Volver al rango estructurado (sexo/edad/condición)' : 'Usar referencia larga: un bloque de texto libre con varias líneas'}"
+        class="col-span-12 -mb-0.5 flex items-center gap-1 text-[11px] font-semibold ${on ? 'text-indigo-600' : 'text-slate-400 hover:text-indigo-600'}">
+        ${icon('file-text', 'h-3 w-3')} ${on ? 'Referencia larga' : 'Usar referencia larga'}
+      </button>`;
+
+    box.innerHTML = draft.ranges.map((r, i) => isLong(r) ? `
       <div class="grid grid-cols-12 gap-1.5 rounded-lg bg-slate-50 p-2 ring-1 ring-slate-200">
+        ${toggleBtn(i, true)}
+        <textarea data-r="${i}.long_reference" rows="5" placeholder="Ej.:&#10;Sin diabetes: menor a 5.7%&#10;Sospecha de diabetes: 5.7 - 6.4%&#10;Diabetes: mayor o igual a 6.5%"
+                  class="col-span-11 rounded border-0 px-2 py-1 text-xs leading-relaxed ring-1 ring-slate-300 focus:ring-2 focus:ring-indigo-400">${escapeHtml(r.long_reference)}</textarea>
+        <button type="button" data-rdel="${i}" class="col-span-1 rounded text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('x', 'h-4 w-4 mx-auto')}</button>
+      </div>` : `
+      <div class="grid grid-cols-12 gap-1.5 rounded-lg bg-slate-50 p-2 ring-1 ring-slate-200">
+        ${toggleBtn(i, false)}
         <select data-r="${i}.sex" class="col-span-3 rounded border-0 px-2 py-1 text-xs ring-1 ring-slate-300 focus:ring-2 focus:ring-indigo-400 sm:col-span-2">
           ${Object.entries(SEX_LABELS).map(([k, l]) => `<option value="${k}" ${(r.sex || 'A') === k ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
@@ -476,6 +493,11 @@ function openTestModal(test, onSave) {
         draft.ranges[i][field] = el.value === '' ? null : el.value;
       });
     });
+    box.querySelectorAll('[data-rtoggle]').forEach((b) => b.addEventListener('click', () => {
+      const r = draft.ranges[+b.dataset.rtoggle];
+      r.long_reference = isLong(r) ? null : '';
+      paintRanges();
+    }));
     box.querySelectorAll('[data-rdel]').forEach((b) => b.addEventListener('click', () => {
       draft.ranges.splice(+b.dataset.rdel, 1);
       paintRanges();
@@ -483,7 +505,7 @@ function openTestModal(test, onSave) {
   };
 
   m.el.querySelector('#r-add').addEventListener('click', () => {
-    draft.ranges.push({ sex: 'A', age_min: null, age_max: null, condition_label: null, min_value: null, max_value: null, text_value: null, unit: null });
+    draft.ranges.push({ sex: 'A', age_min: null, age_max: null, condition_label: null, min_value: null, max_value: null, text_value: null, unit: null, long_reference: null });
     paintRanges();
   });
   paintRanges();
@@ -561,6 +583,7 @@ function openProposalModal(studies, onAccept) {
 
 /* Mismo formato que usa el PDF, para que lo que se ve aquí sea lo que se imprime. */
 function rangeLabel(r) {
+  if (r.long_reference) return r.long_reference;
   const fmt = (n) => String(parseFloat(n)).replace(/\.0+$/, '');
   let label = '';
   if (r.text_value) label = r.text_value;
