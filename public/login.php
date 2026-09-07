@@ -20,6 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = attempt_login($username, $password);
         if ($result['ok']) {
             log_activity('auth', 'login', 'Inicio de sesión', 'user', (int)$result['user']['id'], $result['user']);
+            if (!empty($_POST['remember'])) {
+                remember_login((int)$result['user']['id']);
+            }
             header('Location: index.php');
             exit;
         }
@@ -61,6 +64,10 @@ $csrf = csrf_token();
       <label class="mb-1 block text-sm font-medium text-slate-700" for="password">Contraseña</label>
       <input id="password" name="password" type="password" required autocomplete="current-password"
              class="mb-6 w-full rounded-lg border-0 bg-slate-50 px-3 py-2.5 text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+      <label class="mb-6 flex items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="remember" value="1" class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+        Recuérdame en este dispositivo
+      </label>
       <button type="submit"
               class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2">
         Iniciar sesión
