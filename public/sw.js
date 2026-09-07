@@ -9,7 +9,6 @@ const CACHE = 'sirius-shell-f8b3499';
 
 const SHELL = [
   'offline.html',
-  'manifest.webmanifest',
   'assets/css/app.css',
   'assets/fonts/fonts.css',
   'assets/fonts/inter-v20-latin-regular.woff2',
@@ -84,6 +83,7 @@ self.addEventListener('fetch', (e) => {
       || path.endsWith('documento_expediente.php') || path.endsWith('membrete_prueba.php')
       || path.endsWith('respaldo.php') || path.endsWith('archivo.php')
       || path.endsWith('whatsapp_webhook.php') || path.endsWith('whatsapp_media.php')
+      || path.endsWith('manifest.php')
       || path.includes('/install/') || path.includes('/uploads/')) {
     return;
   }

@@ -1,24 +1,33 @@
 <?php
 require_once __DIR__ . '/includes/auth.php';
+require_once __DIR__ . '/includes/branding.php';
 
 session_boot();
-if (!current_user()) {
+$user = current_user();
+if (!$user) {
     header('Location: login.php');
     exit;
 }
 $appVersion = trim((string)@file_get_contents(__DIR__ . '/BUILD_VERSION')) ?: 'dev';
+$brand = branding_urls();
+$theme = in_array($user['theme'] ?? null, BRANDING_THEMES, true) ? $user['theme'] : '';
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" data-theme="<?= htmlspecialchars($theme) ?>">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#4f46e5">
 <meta name="app-version" content="<?= htmlspecialchars($appVersion) ?>">
 <title>Sirius</title>
+<?php if ($brand['icon_192']): ?>
+<link rel="icon" href="<?= htmlspecialchars($brand['icon_192']) ?>" type="image/png">
+<link rel="apple-touch-icon" href="<?= htmlspecialchars($brand['icon_192']) ?>">
+<?php else: ?>
 <link rel="icon" href="assets/img/icons/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="assets/img/icons/icon-192.png">
-<link rel="manifest" href="manifest.webmanifest">
+<?php endif; ?>
+<link rel="manifest" href="manifest.php">
 <link rel="stylesheet" href="assets/fonts/fonts.css">
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
@@ -30,11 +39,16 @@ $appVersion = trim((string)@file_get_contents(__DIR__ . '/BUILD_VERSION')) ?: 'd
 
   <!-- Sidebar -->
   <aside id="sidebar"
-         class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col bg-slate-900 text-slate-300 transition-transform duration-200 lg:static lg:translate-x-0">
+         style="background:var(--theme-sidebar-bg)"
+         class="fixed inset-y-0 left-0 z-40 flex w-64 -translate-x-full flex-col text-slate-300 transition-transform duration-200 lg:static lg:translate-x-0">
     <div class="flex h-16 shrink-0 items-center gap-3 px-5">
+      <?php if ($brand['logo']): ?>
+      <img src="<?= htmlspecialchars($brand['logo']) ?>" alt="Logotipo" class="h-9 w-9 shrink-0 rounded-xl object-contain">
+      <?php else: ?>
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-600">
         <svg viewBox="0 0 24 24" class="h-5 w-5 text-white" fill="currentColor"><path d="M12 1l2.4 6.9L21 9l-5.2 4.4L17.5 21 12 17.2 6.5 21l1.7-7.6L3 9l6.6-1.1z"/></svg>
       </div>
+      <?php endif; ?>
       <span class="sidebar-label text-lg font-bold tracking-tight text-white">Sirius</span>
     </div>
     <nav id="sidebar-nav" class="flex-1 overflow-y-auto px-3 py-4"></nav>

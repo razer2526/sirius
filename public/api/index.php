@@ -54,6 +54,7 @@ $routes = [
     'coverage'      => ['cobertura.php', 'apps'],
     'papelera'      => ['papelera.php', 'papelera'],
     'push'          => ['push.php', null],
+    'branding'      => ['branding.php', 'configuracion'],
 ];
 
 $r = (string)($_GET['r'] ?? '');

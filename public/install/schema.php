@@ -25,6 +25,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 role ENUM('estandar','administrador','developper') NOT NULL DEFAULT 'estandar',
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 assignable TINYINT(1) NOT NULL DEFAULT 0,
+                theme VARCHAR(20) NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
             )$suffix",
@@ -709,6 +710,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 role TEXT NOT NULL DEFAULT 'estandar',
                 is_active INTEGER NOT NULL DEFAULT 1,
                 assignable INTEGER NOT NULL DEFAULT 0,
+                theme TEXT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
@@ -1359,6 +1361,8 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // Día de corte de una tarea semanal (0=domingo…6=sábado, igual que Date.getDay()
         // de JS) — NULL en tareas no semanales o semanales creadas antes de este campo.
         "ALTER TABLE tasks ADD COLUMN weekday " . ($isMysql ? 'TINYINT UNSIGNED NULL' : 'INTEGER NULL'),
+        // Tema de color elegido por el usuario para su sidebar y Dashboard (NULL = índigo por defecto).
+        "ALTER TABLE users ADD COLUMN theme " . ($isMysql ? 'VARCHAR(20) NULL' : 'TEXT NULL'),
         // Referencia larga: bloque de texto libre con saltos de línea (ej. categorías
         // de hemoglobina glicosilada) para cuando el criterio no es sexo/edad/condición
         // filtrable — alternativa al sistema estructurado, no lo reemplaza.

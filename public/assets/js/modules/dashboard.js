@@ -48,7 +48,7 @@ function paintDashboard(root, ctx, stats) {
           <p class="mt-1 text-sm capitalize text-slate-500">${new Date().toLocaleDateString('es-MX', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</p>
         </div>
         <div class="text-right">
-          <p id="dash-clock" class="text-3xl font-bold tabular-nums tracking-tight text-indigo-600"></p>
+          <p id="dash-clock" style="color:var(--theme-accent)" class="text-3xl font-bold tabular-nums tracking-tight"></p>
         </div>
       </div>
 
@@ -72,8 +72,11 @@ function paintDashboard(root, ctx, stats) {
 
 /* ================= KPIs ================= */
 function kpiStrip(kpis, waUnread) {
+  // La primera tarjeta usa el acento del tema del usuario (Personalización); las
+  // demás tienen su propio color con significado (verde=admisión, naranja=consulta,
+  // teal=WhatsApp) y no cambian con el tema — solo el "de marca" sí.
   const items = [
-    ['Pacientes registrados', kpis.patients_total, 'users', 'text-indigo-600 bg-indigo-50'],
+    ['Pacientes registrados', kpis.patients_total, 'users', null],
     ['Admisiones hoy', kpis.admissions_today, 'user-plus', 'text-emerald-600 bg-emerald-50'],
     ['Consultas hoy', kpis.consults_today, 'activity', 'text-orange-600 bg-orange-50'],
   ];
@@ -84,7 +87,7 @@ function kpiStrip(kpis, waUnread) {
     <div class="grid grid-cols-2 gap-3 ${items.length > 3 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}">
       ${items.map(([label, value, iconName, cls]) => `
         <div class="flex items-center gap-2 rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200 sm:gap-3 sm:p-3.5">
-          <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${cls}">${icon(iconName, 'h-4.5 w-4.5')}</span>
+          <span ${cls ? `class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${cls}"` : `class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl" style="color:var(--theme-accent);background:var(--theme-accent-soft)"`}>${icon(iconName, 'h-4.5 w-4.5')}</span>
           <div class="min-w-0">
             <p class="text-lg font-bold leading-tight text-slate-900">${value}</p>
             <p class="text-[11px] font-medium leading-tight text-slate-500">${label}</p>

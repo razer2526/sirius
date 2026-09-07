@@ -4,3 +4,54 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
 }
+
+/**
+ * Tema de sidebar/Dashboard por usuario (Configuración > Personalización).
+ * Variables CSS, no clases de Tailwind: el color lo elige cada quien en tiempo
+ * real, y Tailwind solo puede generar utilidades de clases que ve en el código
+ * fuente al compilar — no un valor guardado en la base de datos. :root define el
+ * tema por defecto (índigo, el de siempre); [data-theme] lo pisa por usuario.
+ */
+:root {
+  --theme-sidebar-bg: #0f172a; /* slate-900 */
+  --theme-accent: #4f46e5;     /* indigo-600 */
+  --theme-accent-soft: #eef2ff; /* indigo-50 */
+}
+[data-theme="slate"] {
+  --theme-sidebar-bg: #1e293b; /* slate-800 */
+  --theme-accent: #475569;     /* slate-600 */
+  --theme-accent-soft: #f1f5f9; /* slate-100 */
+}
+[data-theme="emerald"] {
+  --theme-sidebar-bg: #022c22; /* emerald-950 */
+  --theme-accent: #059669;     /* emerald-600 */
+  --theme-accent-soft: #ecfdf5; /* emerald-50 */
+}
+[data-theme="rose"] {
+  --theme-sidebar-bg: #4c0519; /* rose-950 */
+  --theme-accent: #e11d48;     /* rose-600 */
+  --theme-accent-soft: #fff1f2; /* rose-50 */
+}
+[data-theme="amber"] {
+  --theme-sidebar-bg: #451a03; /* amber-950 */
+  --theme-accent: #d97706;     /* amber-600 */
+  --theme-accent-soft: #fffbeb; /* amber-50 */
+}
+[data-theme="sky"] {
+  --theme-sidebar-bg: #0c4a6e; /* sky-900 */
+  --theme-accent: #0284c7;     /* sky-600 */
+  --theme-accent-soft: #f0f9ff; /* sky-50 */
+}
+[data-theme="pink"] {
+  --theme-sidebar-bg: #500724; /* pink-950 */
+  --theme-accent: #db2777;     /* pink-600 */
+  --theme-accent-soft: #fdf2f8; /* pink-50 */
+}
+[data-theme="violet"] {
+  --theme-sidebar-bg: #2e1065; /* violet-950 */
+  --theme-accent: #7c3aed;     /* violet-600 */
+  --theme-accent-soft: #f5f3ff; /* violet-50 */
+}
+.sidebar-link-active {
+  background: var(--theme-accent);
+}
