@@ -175,10 +175,17 @@ function buildCard(item) {
   `;
   el.appendChild(header);
 
+  // Nota: el <textarea> ya es su propio contenedor de scroll (con ajuste de línea
+  // nativo del navegador) — envolverlo además en un div con overflow-auto duplica
+  // el scroll vertical y, por un desajuste de unos px entre ambos, aparecían dos
+  // barras de desplazamiento a la vez. Lista sí necesita el overflow del wrapper:
+  // sus renglones son divs planos, sin scroll propio.
   const body = document.createElement('div');
   body.className = item.type === 'drawing'
     ? 'flex min-h-0 flex-1 flex-col gap-1 overflow-hidden p-1.5'
-    : 'min-h-0 flex-1 overflow-auto p-2';
+    : item.type === 'note'
+      ? 'min-h-0 flex-1 p-2'
+      : 'min-h-0 flex-1 overflow-auto p-2';
   el.appendChild(body);
 
   if (item.type === 'note') buildNoteBody(body, item, canEdit);
@@ -227,7 +234,7 @@ function buildNoteBody(body, item, canEdit) {
   ta.value = item.content.text || '';
   ta.placeholder = 'Escribe aquí…';
   ta.readOnly = !canEdit;
-  ta.className = 'h-full w-full resize-none border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400';
+  ta.className = 'h-full w-full resize-none break-words border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400';
   body.appendChild(ta);
   if (canEdit) {
     ta.addEventListener('input', debounce(() => saveField(item, { content: { text: ta.value } }), 600));
