@@ -17,6 +17,26 @@ const THEMES = [
   { key: 'violet',  label: 'Morado',    hex: '#7c3aed' },
 ];
 
+const BRANDING_SLOTS = ['sidebar', 'login', 'favicon'];
+
+function brandingSlotField(slot, title, spec) {
+  return `
+    <div>
+      <p class="text-sm font-medium text-slate-700">${escapeHtml(title)}</p>
+      <p class="mt-0.5 text-xs text-slate-500">${escapeHtml(spec)}</p>
+      <div class="mt-2 flex items-center gap-3">
+        <div id="logo-preview-${slot}" class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-200"></div>
+        <div class="flex flex-wrap gap-2">
+          <label class="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
+            Subir
+            <input id="logo-file-${slot}" type="file" accept="image/png,image/jpeg,image/gif" class="hidden">
+          </label>
+          <button id="btn-remove-logo-${slot}" type="button" class="hidden rounded-lg px-3 py-2 text-sm font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-50">Quitar</button>
+        </div>
+      </div>
+    </div>`;
+}
+
 export async function render(root, ctx) {
   const isAdmin = ctx.user.role === 'administrador' || ctx.user.role === 'developper';
 
@@ -36,19 +56,12 @@ export async function render(root, ctx) {
             <div id="theme-swatches" class="mt-3 flex flex-wrap gap-2"></div>
 
             ${isAdmin ? `
-            <div class="mt-5 border-t border-slate-100 pt-4">
-              <p class="text-sm font-semibold text-slate-800">Logotipo de la aplicación</p>
-              <p class="mt-0.5 text-sm text-slate-500">Se usa en el sidebar, la pantalla de inicio de sesión y el ícono de la app — para todos los usuarios.</p>
-              <div class="mt-3 flex items-center gap-3">
-                <div id="logo-preview" class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-200"></div>
-                <div class="flex flex-wrap gap-2">
-                  <label class="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
-                    Subir logo
-                    <input id="logo-file" type="file" accept="image/png,image/jpeg,image/gif" class="hidden">
-                  </label>
-                  <button id="btn-remove-logo" type="button" class="hidden rounded-lg px-3 py-2 text-sm font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-50">Quitar</button>
-                </div>
-              </div>
+            <div class="mt-5 space-y-5 border-t border-slate-100 pt-4">
+              <p class="text-sm font-semibold text-slate-800">Logotipos de la aplicación</p>
+              <p class="-mt-3 text-sm text-slate-500">Cada uno es independiente — para todos los usuarios.</p>
+              ${brandingSlotField('sidebar', 'Logo del sidebar', 'Se muestra en miniatura (36×36 px) junto al nombre "Sirius". Usa una imagen cuadrada o con fondo transparente, de al menos 128×128 px. PNG, JPG o GIF, máx. 4 MB.')}
+              ${brandingSlotField('login', 'Logo de inicio de sesión', 'Se muestra más grande (64×64 px) arriba del formulario. Usa una imagen cuadrada o con fondo transparente, de al menos 256×256 px. PNG, JPG o GIF, máx. 4 MB.')}
+              ${brandingSlotField('favicon', 'Favicon e ícono de la app', 'Ícono de la pestaña del navegador y de la app instalada (PWA). Debe ser una imagen cuadrada (mismo ancho y alto), de al menos 512×512 px — de ahí se generan solos los tamaños 192×192 y 512×512. PNG, JPG o GIF, máx. 4 MB.')}
             </div>` : ''}
           </div>
         </div>
@@ -114,7 +127,7 @@ async function initPersonalizacion(root, isAdmin) {
   }
 
   paintSwatches(root, data.theme);
-  if (isAdmin) paintLogo(root, data.urls);
+  if (isAdmin) BRANDING_SLOTS.forEach((slot) => paintLogoSlot(root, slot, data.urls));
 }
 
 function paintSwatches(root, currentTheme) {
@@ -145,17 +158,22 @@ function paintSwatches(root, currentTheme) {
   paint();
 }
 
-function paintLogo(root, urls) {
-  const preview = root.querySelector('#logo-preview');
-  const removeBtn = root.querySelector('#btn-remove-logo');
-  const fileInput = root.querySelector('#logo-file');
+function paintLogoSlot(root, slot, urls) {
+  const preview = root.querySelector(`#logo-preview-${slot}`);
+  const removeBtn = root.querySelector(`#btn-remove-logo-${slot}`);
+  const fileInput = root.querySelector(`#logo-file-${slot}`);
   if (!preview) return;
 
+  // El favicon se guarda como imagen original + íconos derivados; su vista
+  // previa usa el ícono de 192 (ya cuadrado) en vez del archivo crudo.
+  const urlFor = (u) => (slot === 'favicon' ? u.icon_192 : u[slot]);
+
   const paintPreview = (u) => {
-    preview.innerHTML = u.logo
-      ? `<img src="${escapeHtml(u.logo)}" alt="Logotipo actual" class="h-full w-full object-contain">`
+    const url = urlFor(u);
+    preview.innerHTML = url
+      ? `<img src="${escapeHtml(url)}" alt="Logotipo actual" class="h-full w-full object-contain">`
       : icon('image', 'h-6 w-6 text-slate-300');
-    removeBtn.classList.toggle('hidden', !u.logo);
+    removeBtn.classList.toggle('hidden', !url);
   };
   paintPreview(urls);
 
@@ -164,6 +182,7 @@ function paintLogo(root, urls) {
     if (!file) return;
     const fd = new FormData();
     fd.append('file', file);
+    fd.append('slot', slot);
     try {
       const res = await fetch('api/index.php?r=branding/upload_logo', {
         method: 'POST',
@@ -183,7 +202,7 @@ function paintLogo(root, urls) {
 
   removeBtn.addEventListener('click', async () => {
     try {
-      const { urls: fresh } = await apiPost('branding/remove_logo', {});
+      const { urls: fresh } = await apiPost('branding/remove_logo', { slot });
       paintPreview(fresh);
       toast('Logotipo eliminado, volviste al de Sirius');
     } catch (e) {

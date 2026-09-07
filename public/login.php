@@ -52,8 +52,8 @@ $brand = branding_urls();
 <main class="flex min-h-screen items-center justify-center p-4">
   <div class="w-full max-w-sm">
     <div class="mb-8 text-center">
-      <?php if ($brand['logo']): ?>
-      <img src="<?= htmlspecialchars($brand['logo']) ?>" alt="Logotipo" class="mx-auto mb-4 h-16 w-16 rounded-2xl object-contain shadow-lg">
+      <?php if ($brand['login']): ?>
+      <img src="<?= htmlspecialchars($brand['login']) ?>" alt="Logotipo" class="mx-auto mb-4 h-16 w-16 rounded-2xl object-contain shadow-lg">
       <?php else: ?>
       <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/30">
         <svg viewBox="0 0 24 24" class="h-9 w-9 text-white" fill="currentColor"><path d="M12 1l2.4 6.9L21 9l-5.2 4.4L17.5 21 12 17.2 6.5 21l1.7-7.6L3 9l6.6-1.1z"/></svg>

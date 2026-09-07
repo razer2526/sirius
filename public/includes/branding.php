@@ -1,15 +1,21 @@
 <?php
 /**
- * Personalización de marca: logotipo (sidebar/login/favicon/PWA) y catálogo de
- * temas de color. El logo se guarda como JSON en settings['branding']; las
- * imágenes viven en uploads/branding/. El tema elegido por cada usuario vive en
- * users.theme (columna aparte, no aquí — es por cuenta, no una config global).
+ * Personalización de marca: tres logotipos independientes (inicio de sesión,
+ * sidebar y favicon/PWA) y catálogo de temas de color. Se guarda como JSON en
+ * settings['branding']; las imágenes viven en uploads/branding/. El tema
+ * elegido por cada usuario vive en users.theme (columna aparte, no aquí — es
+ * por cuenta, no una config global).
  */
 
 require_once __DIR__ . '/db.php';
 
 const BRANDING_DIR = __DIR__ . '/../uploads/branding/';
 const BRANDING_URL = 'uploads/branding/';
+
+/** Cada logo se ve en un tamaño y contexto distinto (sidebar en miniatura,
+ *  login más grande, favicon forzosamente cuadrado) — por eso son tres subidas
+ *  independientes en vez de derivar todo de una sola imagen. */
+const BRANDING_SLOTS = ['login', 'sidebar', 'favicon'];
 
 /** Paleta cerrada: el tema es una elección de una lista, no un color libre —
  *  Tailwind no puede "ver" un valor elegido en tiempo real, así que el color
@@ -19,10 +25,26 @@ const BRANDING_THEMES = ['indigo', 'slate', 'emerald', 'rose', 'amber', 'sky', '
 function branding_defaults(): array
 {
     return [
-        'logo_file'     => null, // imagen tal cual la subió el admin (sidebar/login, respeta su proporción)
-        'icon_192_file' => null, // generado con GD: cuadrado, fondo blanco (favicon, apple-touch-icon, PWA)
+        'login_file'    => null, // logo de la pantalla de inicio de sesión, tal cual se subió
+        'sidebar_file'  => null, // logo del sidebar, tal cual se subió
+        'favicon_file'  => null, // imagen fuente del favicon (cuadrada), no se expone directo
+        'icon_192_file' => null, // generado con GD a partir de favicon_file: favicon, apple-touch-icon, PWA
         'icon_512_file' => null,
     ];
+}
+
+/**
+ * Compatibilidad con el formato anterior (un solo `logo_file` compartido para
+ * sidebar y login): si ya existe pero aún no se migró a los slots nuevos, se
+ * usa como valor inicial de ambos para no perder lo que el admin ya subió.
+ */
+function branding_merge(array $base, array $saved): array
+{
+    if (!empty($saved['logo_file']) && empty($saved['sidebar_file']) && empty($saved['login_file'])) {
+        $base['sidebar_file'] = $saved['logo_file'];
+        $base['login_file'] = $saved['logo_file'];
+    }
+    return array_merge($base, array_intersect_key($saved, $base));
 }
 
 function branding_config(): array
@@ -39,7 +61,7 @@ function branding_config(): array
         if ($row && $row['svalue']) {
             $saved = json_decode($row['svalue'], true);
             if (is_array($saved)) {
-                $cfg = array_merge($cfg, array_intersect_key($saved, $cfg));
+                $cfg = branding_merge($cfg, $saved);
             }
         }
     } catch (Throwable $e) {
@@ -59,7 +81,7 @@ function branding_fresh(): array
     if ($row && $row['svalue']) {
         $saved = json_decode($row['svalue'], true);
         if (is_array($saved)) {
-            $cfg = array_merge($cfg, array_intersect_key($saved, $cfg));
+            $cfg = branding_merge($cfg, $saved);
         }
     }
     return $cfg;
@@ -89,20 +111,27 @@ function branding_path(?string $file): ?string
     return is_file($path) ? $path : null;
 }
 
-/** URLs listas para <img>/<link>, o null cuando no hay logo personalizado. */
+/** URLs listas para <img>/<link>, o null cuando no hay logo personalizado.
+ *  favicon_file no se expone: su vista previa es icon_192 (ya cuadrado). */
 function branding_urls(bool $fresh = false): array
 {
     $cfg = $fresh ? branding_fresh() : branding_config();
     $out = [];
-    foreach (['logo_file' => 'logo', 'icon_192_file' => 'icon_192', 'icon_512_file' => 'icon_512'] as $key => $name) {
+    foreach ([
+        'login_file'    => 'login',
+        'sidebar_file'  => 'sidebar',
+        'icon_192_file' => 'icon_192',
+        'icon_512_file' => 'icon_512',
+    ] as $key => $name) {
         $out[$name] = branding_path($cfg[$key]) ? BRANDING_URL . $cfg[$key] : null;
     }
     return $out;
 }
 
 /**
- * Genera un ícono cuadrado de $size px (fondo blanco, imagen fuente ajustada y
- * centrada sin recortarla) a partir de una imagen ya subida. Devuelve el nombre
+ * Genera un ícono cuadrado de $size px (fondo transparente, imagen fuente
+ * ajustada y centrada sin recortarla — respeta el canal alfa del PNG en vez de
+ * aplanarlo sobre blanco) a partir de una imagen ya subida. Devuelve el nombre
  * del archivo generado dentro de BRANDING_DIR, o null si GD no está disponible.
  */
 function branding_make_icon(string $srcPath, int $size, string $prefix): ?string
@@ -127,7 +156,13 @@ function branding_make_icon(string $srcPath, int $size, string $prefix): ?string
     $srcW = imagesx($src);
     $srcH = imagesy($src);
     $canvas = imagecreatetruecolor($size, $size);
-    imagefill($canvas, 0, 0, imagecolorallocate($canvas, 255, 255, 255));
+    // Sin blending al copiar: los píxeles (incluida su alfa) se copian tal
+    // cual en vez de mezclarse con el fondo, así el recorte queda transparente
+    // donde el PNG original lo era.
+    imagealphablending($canvas, false);
+    imagesavealpha($canvas, true);
+    $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+    imagefill($canvas, 0, 0, $transparent);
 
     $scale = min($size / $srcW, $size / $srcH);
     $w = max(1, (int)round($srcW * $scale));
@@ -143,10 +178,16 @@ function branding_make_icon(string $srcPath, int $size, string $prefix): ?string
     return is_file(BRANDING_DIR . $name) ? $name : null;
 }
 
-/** Borra del disco los archivos de marca que ya no se van a usar. */
-function branding_unlink_all(array $cfg): void
+/** Claves de settings['branding'] asociadas a un slot ('login'|'sidebar'|'favicon'). */
+function branding_slot_keys(string $slot): array
 {
-    foreach (['logo_file', 'icon_192_file', 'icon_512_file'] as $key) {
+    return $slot === 'favicon' ? ['favicon_file', 'icon_192_file', 'icon_512_file'] : [$slot . '_file'];
+}
+
+/** Borra del disco el/los archivo(s) de un slot antes de reemplazarlo o quitarlo. */
+function branding_unlink_slot(array $cfg, string $slot): void
+{
+    foreach (branding_slot_keys($slot) as $key) {
         $path = branding_path($cfg[$key] ?? null);
         if ($path) {
             @unlink($path);
