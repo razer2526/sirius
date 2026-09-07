@@ -284,6 +284,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 text_value VARCHAR(120) NULL,
                 unit VARCHAR(40) NULL,
                 sort_order INT NOT NULL DEFAULT 0,
+                long_reference TEXT NULL,
                 INDEX idx_range_test (test_id, sort_order),
                 CONSTRAINT fk_range_test FOREIGN KEY (test_id) REFERENCES lab_tests(id) ON DELETE CASCADE
             )$suffix",
@@ -907,7 +908,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 max_value REAL NULL,
                 text_value TEXT NULL,
                 unit TEXT NULL,
-                sort_order INTEGER NOT NULL DEFAULT 0
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                long_reference TEXT NULL
             )",
             // Plantillas: agrupan y ordenan determinaciones ya catalogadas. No copian los
             // rangos —viven solo en lab_reference_ranges— para no tener dos fuentes de verdad.
@@ -1339,6 +1341,10 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // Día de corte de una tarea semanal (0=domingo…6=sábado, igual que Date.getDay()
         // de JS) — NULL en tareas no semanales o semanales creadas antes de este campo.
         "ALTER TABLE tasks ADD COLUMN weekday " . ($isMysql ? 'TINYINT UNSIGNED NULL' : 'INTEGER NULL'),
+        // Referencia larga: bloque de texto libre con saltos de línea (ej. categorías
+        // de hemoglobina glicosilada) para cuando el criterio no es sexo/edad/condición
+        // filtrable — alternativa al sistema estructurado, no lo reemplaza.
+        "ALTER TABLE lab_reference_ranges ADD COLUMN long_reference TEXT NULL",
     ];
     $applied = 0;
     foreach ($migrations as $sql) {

@@ -241,8 +241,8 @@ function lab_save_test(array $data, array $ranges, ?int $userId = null): int
     // Los rangos se reemplazan por completo: son la versión validada por el usuario
     $pdo->prepare('DELETE FROM lab_reference_ranges WHERE test_id = ?')->execute([$id]);
     $ins = $pdo->prepare(
-        'INSERT INTO lab_reference_ranges (test_id, sex, age_min, age_max, condition_label, min_value, max_value, text_value, unit, sort_order)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+        'INSERT INTO lab_reference_ranges (test_id, sex, age_min, age_max, condition_label, min_value, max_value, text_value, unit, sort_order, long_reference)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
     );
     $order = 0;
     foreach ($ranges as $r) {
@@ -258,6 +258,7 @@ function lab_save_test(array $data, array $ranges, ?int $userId = null): int
             trim((string)($r['text_value'] ?? '')) ?: null,
             trim((string)($r['unit'] ?? '')) ?: null,
             $order++,
+            mb_substr(trim((string)($r['long_reference'] ?? '')), 0, 2000) ?: null,
         ]);
     }
     return $id;
@@ -441,6 +442,11 @@ function lab_filter_by_unit(array $ranges, string $unit): array
 /** Texto corto de un rango, para imprimir junto al resultado. */
 function lab_range_label(array $r): string
 {
+    // Referencia larga: bloque de texto libre (varias líneas), reemplaza por completo
+    // el formateo estructurado de abajo — no lleva prefijo de condición.
+    if (trim((string)($r['long_reference'] ?? '')) !== '') {
+        return trim((string)$r['long_reference']);
+    }
     $min = $r['min_value'];
     $max = $r['max_value'];
     if (trim((string)($r['text_value'] ?? '')) !== '') {

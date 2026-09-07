@@ -649,7 +649,9 @@ async function renderOrderForm(root, category, cat, docType, docId) {
                   <td class="px-3 py-1.5"><input type="text" data-cell="${si}.${ii}.value" value="${escapeHtml(it.value)}" placeholder="—" class="w-full rounded border-0 bg-transparent px-1 py-1 text-right text-sm font-semibold ${it.flag ? 'text-red-700' : ''} outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400"></td>
                   <td class="px-3 py-1.5"><input type="text" data-cell="${si}.${ii}.unit" value="${escapeHtml(it.unit || '')}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm text-slate-500 outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400"></td>
                   <td class="px-3 py-1.5">
-                    <input type="text" data-cell="${si}.${ii}.reference" value="${escapeHtml(it.reference || '')}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400">
+                    ${(it.reference || '').includes('\n')
+                      ? `<textarea data-cell="${si}.${ii}.reference" rows="3" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm leading-snug outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400">${escapeHtml(it.reference || '')}</textarea>`
+                      : `<input type="text" data-cell="${si}.${ii}.reference" value="${escapeHtml(it.reference || '')}" class="w-full rounded border-0 bg-transparent px-1 py-1 text-sm outline-none focus:bg-white focus:ring-2 focus:ring-indigo-400">`}
                     ${(it.conditions && it.conditions.length) ? `
                       <select data-cond="${si}.${ii}"
                               class="mt-1 w-full rounded border-0 bg-amber-50 px-1 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-amber-200 focus:ring-2 focus:ring-indigo-400">
@@ -725,6 +727,7 @@ async function renderOrderForm(root, category, cat, docType, docId) {
   };
 
   const rangeLabel = (r) => {
+    if (r.long_reference) return r.long_reference;
     const fmt = (n) => String(parseFloat(n)).replace(/\.0+$/, '');
     let label = '';
     if (r.text_value) label = r.text_value;
