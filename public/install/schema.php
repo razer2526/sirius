@@ -686,6 +686,16 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 UNIQUE KEY uq_dismissed_alert (user_id, alert_key),
                 CONSTRAINT fk_dismissed_alert_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )$suffix",
+            'remember_tokens' => "CREATE TABLE IF NOT EXISTS remember_tokens (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                selector VARCHAR(24) NOT NULL,
+                validator_hash CHAR(64) NOT NULL,
+                expires_at DATETIME NOT NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY uq_remember_selector (selector),
+                CONSTRAINT fk_remember_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -1225,6 +1235,14 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 alert_key TEXT NOT NULL,
                 dismissed_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
                 UNIQUE (user_id, alert_key)
+            )",
+            'remember_tokens' => "CREATE TABLE IF NOT EXISTS remember_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                selector TEXT NOT NULL UNIQUE,
+                validator_hash TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
         ];
     }
