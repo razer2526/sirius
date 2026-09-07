@@ -28,6 +28,7 @@ function handle_auth(string $action): void
                 'username'  => $user['username'],
                 'full_name' => $user['full_name'],
                 'role'      => $user['role'],
+                'theme'     => $user['theme'] ?? null,
             ],
             'modules'  => user_modules(),
             'registry' => $registry,

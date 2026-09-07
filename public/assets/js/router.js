@@ -41,7 +41,9 @@ async function renderRoute() {
   document.getElementById('topbar-title').textContent = mod.label;
   document.querySelectorAll('#sidebar-nav [data-module]').forEach((a) => {
     const active = a.dataset.module === moduleKey;
-    a.classList.toggle('bg-indigo-600', active);
+    // sidebar-link-active (no bg-indigo-600 fijo): el color de acento depende del
+    // tema elegido por el usuario, ver [data-theme] en src/tailwind.css.
+    a.classList.toggle('sidebar-link-active', active);
     a.classList.toggle('text-white', active);
     a.classList.toggle('hover:bg-slate-800', !active);
   });

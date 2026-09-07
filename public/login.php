@@ -2,6 +2,7 @@
 require_once __DIR__ . '/includes/auth.php';
 require_once __DIR__ . '/includes/csrf.php';
 require_once __DIR__ . '/includes/log.php';
+require_once __DIR__ . '/includes/branding.php';
 
 session_boot();
 
@@ -28,6 +29,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 $csrf = csrf_token();
+$brand = branding_urls();
 ?>
 <!DOCTYPE html>
 <html lang="es">
@@ -35,7 +37,11 @@ $csrf = csrf_token();
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sirius — Iniciar sesión</title>
+<?php if ($brand['icon_192']): ?>
+<link rel="icon" href="<?= htmlspecialchars($brand['icon_192']) ?>" type="image/png">
+<?php else: ?>
 <link rel="icon" href="assets/img/icons/favicon.svg" type="image/svg+xml">
+<?php endif; ?>
 <link rel="stylesheet" href="assets/fonts/fonts.css">
 <link rel="stylesheet" href="assets/css/app.css">
 </head>
@@ -43,9 +49,13 @@ $csrf = csrf_token();
 <main class="flex min-h-screen items-center justify-center p-4">
   <div class="w-full max-w-sm">
     <div class="mb-8 text-center">
+      <?php if ($brand['logo']): ?>
+      <img src="<?= htmlspecialchars($brand['logo']) ?>" alt="Logotipo" class="mx-auto mb-4 h-16 w-16 rounded-2xl object-contain shadow-lg">
+      <?php else: ?>
       <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-indigo-600 shadow-lg shadow-indigo-600/30">
         <svg viewBox="0 0 24 24" class="h-9 w-9 text-white" fill="currentColor"><path d="M12 1l2.4 6.9L21 9l-5.2 4.4L17.5 21 12 17.2 6.5 21l1.7-7.6L3 9l6.6-1.1z"/></svg>
       </div>
+      <?php endif; ?>
       <h1 class="text-2xl font-bold tracking-tight text-slate-900">Sirius</h1>
       <p class="mt-1 text-sm text-slate-500">Laboratorio y Clínica Bosques Polanco</p>
     </div>

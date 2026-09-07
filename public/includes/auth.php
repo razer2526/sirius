@@ -30,7 +30,7 @@ function current_user(): ?array
     if (empty($_SESSION['user_id'])) {
         return $user = null;
     }
-    $st = db()->prepare('SELECT id, username, full_name, role, is_active FROM users WHERE id = ? AND is_active = 1');
+    $st = db()->prepare('SELECT id, username, full_name, role, is_active, theme FROM users WHERE id = ? AND is_active = 1');
     $st->execute([$_SESSION['user_id']]);
     $row = $st->fetch();
     return $user = ($row ?: null);

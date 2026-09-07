@@ -1,14 +1,57 @@
-/** Configuración: instalar la app y buscar actualizaciones. Alcanzable desde el menú del avatar. */
+/** Configuración: instalar la app, buscar actualizaciones y personalización. Alcanzable desde el menú del avatar. */
 
-import { icon, toast, modal } from '../ui.js';
+import { apiGet, apiPost } from '../api.js';
+import { icon, escapeHtml, toast, modal } from '../ui.js';
 import { isIOS, isStandaloneDisplay, canPromptInstall, promptInstall, onInstallPromptChange } from '../pwa_install.js';
 
-export async function render(root) {
+// Mismos colores que las variables --theme-accent de src/tailwind.css — si se
+// agrega un tema ahí, se agrega aquí también para que el swatch se vea bien.
+const THEMES = [
+  { key: '',        label: 'Índigo',    hex: '#4f46e5' },
+  { key: 'slate',   label: 'Pizarra',   hex: '#475569' },
+  { key: 'emerald', label: 'Esmeralda', hex: '#059669' },
+  { key: 'rose',    label: 'Coral',     hex: '#e11d48' },
+  { key: 'amber',   label: 'Ámbar',     hex: '#d97706' },
+  { key: 'sky',     label: 'Cielo',     hex: '#0284c7' },
+  { key: 'pink',    label: 'Rosa',      hex: '#db2777' },
+  { key: 'violet',  label: 'Morado',    hex: '#7c3aed' },
+];
+
+export async function render(root, ctx) {
+  const isAdmin = ctx.user.role === 'administrador' || ctx.user.role === 'developper';
+
   root.innerHTML = `
     <div class="mx-auto max-w-2xl space-y-4">
       <div>
         <h3 class="text-lg font-bold text-slate-900">Configuración</h3>
         <p class="text-sm text-slate-500">Ajustes de esta instalación de Sirius en tu dispositivo.</p>
+      </div>
+
+      <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <div class="flex items-start gap-3">
+          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">${icon('image', 'h-5 w-5')}</span>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-slate-800">Personalización</p>
+            <p class="mt-0.5 text-sm text-slate-500">Elige un tema de color para tu sidebar y tu Dashboard.</p>
+            <div id="theme-swatches" class="mt-3 flex flex-wrap gap-2"></div>
+
+            ${isAdmin ? `
+            <div class="mt-5 border-t border-slate-100 pt-4">
+              <p class="text-sm font-semibold text-slate-800">Logotipo de la aplicación</p>
+              <p class="mt-0.5 text-sm text-slate-500">Se usa en el sidebar, la pantalla de inicio de sesión y el ícono de la app — para todos los usuarios.</p>
+              <div class="mt-3 flex items-center gap-3">
+                <div id="logo-preview" class="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-50 ring-1 ring-slate-200"></div>
+                <div class="flex flex-wrap gap-2">
+                  <label class="cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
+                    Subir logo
+                    <input id="logo-file" type="file" accept="image/png,image/jpeg,image/gif" class="hidden">
+                  </label>
+                  <button id="btn-remove-logo" type="button" class="hidden rounded-lg px-3 py-2 text-sm font-semibold text-red-600 ring-1 ring-red-200 hover:bg-red-50">Quitar</button>
+                </div>
+              </div>
+            </div>` : ''}
+          </div>
+        </div>
       </div>
 
       <div id="cfg-install-card" class="hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -56,6 +99,97 @@ export async function render(root) {
   });
 
   root.querySelector('#btn-check-update').addEventListener('click', (e) => checkForUpdates(e.currentTarget));
+
+  await initPersonalizacion(root, isAdmin);
+}
+
+/* ================== Personalización ================== */
+async function initPersonalizacion(root, isAdmin) {
+  let data;
+  try {
+    data = await apiGet('branding/get');
+  } catch (e) {
+    toast(e.message, 'error');
+    return;
+  }
+
+  paintSwatches(root, data.theme);
+  if (isAdmin) paintLogo(root, data.urls);
+}
+
+function paintSwatches(root, currentTheme) {
+  const box = root.querySelector('#theme-swatches');
+  if (!box) return;
+  const paint = () => {
+    box.innerHTML = THEMES.map((t) => `
+      <button type="button" data-theme-pick="${t.key}" title="${escapeHtml(t.label)}"
+              class="flex h-9 w-9 items-center justify-center rounded-full ring-2 ${(currentTheme || '') === t.key ? 'ring-slate-900' : 'ring-transparent hover:ring-slate-300'}">
+        <span class="block h-7 w-7 rounded-full ring-1 ring-black/10" style="background:${t.hex}"></span>
+      </button>`).join('');
+    box.querySelectorAll('[data-theme-pick]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const theme = btn.dataset.themePick;
+        if (theme === (currentTheme || '')) return;
+        try {
+          await apiPost('branding/save_theme', { theme });
+          currentTheme = theme;
+          document.documentElement.dataset.theme = theme;
+          paint();
+          toast('Tema actualizado');
+        } catch (e) {
+          toast(e.message, 'error');
+        }
+      });
+    });
+  };
+  paint();
+}
+
+function paintLogo(root, urls) {
+  const preview = root.querySelector('#logo-preview');
+  const removeBtn = root.querySelector('#btn-remove-logo');
+  const fileInput = root.querySelector('#logo-file');
+  if (!preview) return;
+
+  const paintPreview = (u) => {
+    preview.innerHTML = u.logo
+      ? `<img src="${escapeHtml(u.logo)}" alt="Logotipo actual" class="h-full w-full object-contain">`
+      : icon('image', 'h-6 w-6 text-slate-300');
+    removeBtn.classList.toggle('hidden', !u.logo);
+  };
+  paintPreview(urls);
+
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await fetch('api/index.php?r=branding/upload_logo', {
+        method: 'POST',
+        headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
+        body: fd,
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error);
+      paintPreview(json.data.urls);
+      toast('Logotipo actualizado — todos lo verán al recargar');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      fileInput.value = '';
+    }
+  });
+
+  removeBtn.addEventListener('click', async () => {
+    try {
+      const { urls: fresh } = await apiPost('branding/remove_logo', {});
+      paintPreview(fresh);
+      toast('Logotipo eliminado, volviste al de Sirius');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  });
 }
 
 function showIOSInstallInstructions() {
