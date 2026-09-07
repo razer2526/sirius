@@ -200,7 +200,9 @@ function renderTaskSections(list) {
       ${render(items)}
     </div>`;
   const stack = (sectionKey) => (items) => `<div class="space-y-2.5">${items.map((t) => misTaskCard(t, { sectionKey })).join('')}</div>`;
-  const squareGrid = (sectionKey) => (items) => `<div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">${items.map((t) => misTaskCard(t, { square: true, sectionKey })).join('')}</div>`;
+  // En móvil (< sm) va a una sola columna, como el resto de las secciones: dos
+  // tarjetas cuadradas lado a lado ahí no dejan espacio ni para el título.
+  const squareGrid = (sectionKey) => (items) => `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">${items.map((t) => misTaskCard(t, { square: true, sectionKey })).join('')}</div>`;
 
   const sections = [
     group('Prioridad alta', prioridad, squareGrid('prioridad')),
@@ -282,7 +284,7 @@ function misTaskCard(t, { square = false, sectionKey } = {}) {
   const subsDone = subs.filter((s) => s.status === 'completada').length;
 
   return `
-    <div class="rounded-2xl ${cardTint} p-4 shadow-sm ring-1 ring-slate-200 ${square ? 'flex flex-col aspect-square overflow-hidden' : ''}">
+    <div class="rounded-2xl ${cardTint} p-4 shadow-sm ring-1 ring-slate-200 ${square ? 'flex flex-col sm:aspect-square sm:overflow-hidden' : ''}">
       <div class="flex items-start gap-2.5">
         <button type="button" ${isRecurring ? `data-recurring="${t.id}"` : `data-toggle="${t.id}"`} title="Completar"
                 class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
