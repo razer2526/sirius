@@ -12,6 +12,8 @@
  * incluso sobre tu propia subida — así nadie borra sin autorización el trabajo de otros.
  */
 
+require_once __DIR__ . '/../../includes/trash.php';
+
 const FILE_MAX_SIZE = 25 * 1024 * 1024;
 const FILE_COPY_LIMIT = 300;
 const FILES_DIR = __DIR__ . '/../../uploads/archivos/';
@@ -90,8 +92,10 @@ function handle_files(string $action): void
         case 'folder_delete': {
             $folder = find_folder_by_id((int)(request_body()['id'] ?? 0));
             require_file_delete($folder, $me, $canManage);
-            file_delete_folder_tree((int)$folder['id']);
-            log_activity('archivos', 'folder_delete', "Eliminó la carpeta \"{$folder['name']}\"", 'file_folder', (int)$folder['id']);
+            if (file_count_tree((int)$folder['id']) > FILE_COPY_LIMIT) {
+                json_error('Esta carpeta tiene demasiados elementos para eliminar de una vez (máximo ' . FILE_COPY_LIMIT . ')', 422);
+            }
+            file_archive_folder_tree($folder, $me);
             json_ok();
         }
 
@@ -172,10 +176,59 @@ function handle_files(string $action): void
         case 'file_delete': {
             $file = find_file_by_id((int)(request_body()['id'] ?? 0));
             require_file_delete($file, $me, $canManage);
-            @unlink(FILES_DIR . $file['stored_name']);
-            db()->prepare('DELETE FROM files WHERE id = ?')->execute([$file['id']]);
-            log_activity('archivos', 'file_delete', "Eliminó \"{$file['name']}\"", 'file', (int)$file['id']);
+            file_archive_to_trash($file, $me);
             json_ok();
+        }
+
+        /** Elimina varios archivos/carpetas de una sola llamada (selección múltiple
+         *  en la interfaz). No aborta todo el lote por un solo elemento inválido:
+         *  cada uno se procesa por separado y los que fallan se listan en 'errors'. */
+        case 'bulk_delete': {
+            $b = request_body();
+            $items = is_array($b['items'] ?? null) ? $b['items'] : [];
+            if (!$items) {
+                json_error('No hay elementos seleccionados', 422);
+            }
+            if (count($items) > FILE_COPY_LIMIT) {
+                json_error('Selecciona como máximo ' . FILE_COPY_LIMIT . ' elementos a la vez', 422);
+            }
+            $deleted = 0;
+            $errors = [];
+            foreach ($items as $it) {
+                $type = ($it['type'] ?? '') === 'folder' ? 'folder' : 'file';
+                $id = (int)($it['id'] ?? 0);
+                if ($type === 'folder') {
+                    $folder = find_folder_by_id_safe($id);
+                    if (!$folder) {
+                        $errors[] = "Carpeta #$id: no encontrada";
+                        continue;
+                    }
+                    $reason = file_delete_denied_reason($folder, $me, $canManage);
+                    if ($reason !== null) {
+                        $errors[] = "\"{$folder['name']}\": $reason";
+                        continue;
+                    }
+                    if (file_count_tree($id) > FILE_COPY_LIMIT) {
+                        $errors[] = "\"{$folder['name']}\": tiene demasiados elementos";
+                        continue;
+                    }
+                    file_archive_folder_tree($folder, $me);
+                } else {
+                    $file = find_file_by_id_safe($id);
+                    if (!$file) {
+                        $errors[] = "Archivo #$id: no encontrado";
+                        continue;
+                    }
+                    $reason = file_delete_denied_reason($file, $me, $canManage);
+                    if ($reason !== null) {
+                        $errors[] = "\"{$file['name']}\": $reason";
+                        continue;
+                    }
+                    file_archive_to_trash($file, $me);
+                }
+                $deleted++;
+            }
+            json_ok(['deleted' => $deleted, 'errors' => $errors]);
         }
 
         /* ---- Copiar y compartir ---- */
@@ -281,6 +334,23 @@ function find_file_by_id(int $id): array
     return $row;
 }
 
+/** Como find_folder_by_id/find_file_by_id, pero regresa null en vez de cortar
+ *  la petición — para el borrado en bloque, donde un elemento inválido no debe
+ *  abortar los demás (json_error() termina el script, no se puede atrapar). */
+function find_folder_by_id_safe(int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM file_folders WHERE id = ?');
+    $st->execute([$id]);
+    return $st->fetch() ?: null;
+}
+
+function find_file_by_id_safe(int $id): ?array
+{
+    $st = db()->prepare('SELECT * FROM files WHERE id = ?');
+    $st->execute([$id]);
+    return $st->fetch() ?: null;
+}
+
 /** Ruta de carpetas desde la raíz hasta $folderId (para el breadcrumb). */
 function file_breadcrumb(int $folderId, string $scope, ?int $ownerId): array
 {
@@ -367,15 +437,20 @@ function require_file_edit(array $row, array $me, bool $canManage): void
 /** Eliminar: dueño (privado) o gestor de archivos/admin (público) — el autor no basta. */
 function require_file_delete(array $row, array $me, bool $canManage): void
 {
+    $reason = file_delete_denied_reason($row, $me, $canManage);
+    if ($reason !== null) {
+        json_error(ucfirst($reason), 403);
+    }
+}
+
+/** Misma regla que require_file_delete, pero regresa el motivo (o null si sí
+ *  puede) en vez de cortar la petición — para usarla dentro del borrado en bloque. */
+function file_delete_denied_reason(array $row, array $me, bool $canManage): ?string
+{
     if ($row['scope'] === 'private') {
-        if ((int)$row['owner_id'] !== (int)$me['id']) {
-            json_error('Ese elemento pertenece a la carpeta privada de otro usuario', 403);
-        }
-        return;
+        return (int)$row['owner_id'] !== (int)$me['id'] ? 'ese elemento pertenece a la carpeta privada de otro usuario' : null;
     }
-    if (!$canManage) {
-        json_error('Solo un administrador puede eliminar archivos de la carpeta compartida', 403);
-    }
+    return $canManage ? null : 'solo un administrador puede eliminar archivos de la carpeta compartida';
 }
 
 /** Leer/copiar desde el origen: lo privado solo si es tuyo; lo público siempre es visible. */
@@ -386,30 +461,46 @@ function require_file_read(array $row, array $me): void
     }
 }
 
-/* ================= Borrado en cascada (carpeta) ================= */
+/* ================= Papelera ================= */
 
-/** Borra del disco todos los archivos del árbol antes de eliminar la carpeta raíz
- *  (la base de datos limpia el resto sola vía ON DELETE CASCADE). */
-function file_delete_folder_tree(int $folderId): void
+/** Archiva un archivo a la papelera (nunca borra el binario del disco: sobrevive
+ *  hasta que se purgue desde Admin Tools > Papelera, por si se restaura). */
+function file_archive_to_trash(array $file, array $me, ?int $relatedTrashId = null): int
 {
-    $folderIds = [$folderId];
-    $queue = [$folderId];
-    $guard = 0;
-    while ($queue && $guard++ < FILE_COPY_LIMIT * 5) {
-        $st = db()->prepare('SELECT id FROM file_folders WHERE parent_id = ?');
-        $st->execute([array_shift($queue)]);
-        foreach ($st->fetchAll() as $row) {
-            $folderIds[] = (int)$row['id'];
-            $queue[] = (int)$row['id'];
-        }
+    $trashId = trash_archive('file', (int)$file['id'], $file, null, null,
+        'Archivo "' . $file['name'] . '"', $me, $relatedTrashId);
+    db()->prepare('DELETE FROM files WHERE id = ?')->execute([$file['id']]);
+    log_activity('archivos', 'file_delete', "Eliminó \"{$file['name']}\"", 'file', (int)$file['id']);
+    return $trashId;
+}
+
+/**
+ * Archiva una carpeta y todo su árbol (subcarpetas + archivos) a la papelera,
+ * de hijos hacia el padre para que cada uno enlace a la papelera de su padre
+ * inmediato vía related_trash_id (igual que proyecto→tareas, pero anidado en
+ * vez de un solo nivel). No borra nada del disco.
+ */
+function file_archive_folder_tree(array $folder, array $me, ?int $relatedTrashId = null): int
+{
+    $folderId = (int)$folder['id'];
+    $trashId = trash_archive('file_folder', $folderId, $folder, null, null,
+        'Carpeta "' . $folder['name'] . '"', $me, $relatedTrashId);
+
+    $st = db()->prepare('SELECT * FROM files WHERE folder_id = ?');
+    $st->execute([$folderId]);
+    foreach ($st->fetchAll() as $file) {
+        file_archive_to_trash($file, $me, $trashId);
     }
-    $marks = implode(',', array_fill(0, count($folderIds), '?'));
-    $st = db()->prepare("SELECT stored_name FROM files WHERE folder_id IN ($marks)");
-    $st->execute($folderIds);
-    foreach ($st->fetchAll() as $row) {
-        @unlink(FILES_DIR . $row['stored_name']);
+
+    $st = db()->prepare('SELECT * FROM file_folders WHERE parent_id = ?');
+    $st->execute([$folderId]);
+    foreach ($st->fetchAll() as $child) {
+        file_archive_folder_tree($child, $me, $trashId);
     }
+
     db()->prepare('DELETE FROM file_folders WHERE id = ?')->execute([$folderId]);
+    log_activity('archivos', 'folder_delete', "Eliminó la carpeta \"{$folder['name']}\"", 'file_folder', $folderId);
+    return $trashId;
 }
 
 /* ================= Copiar ================= */

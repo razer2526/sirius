@@ -17,12 +17,23 @@ let data = null;
 // Portapapeles del propio navegador (no persiste en el servidor): { mode, type, id, name, scope }
 let clipboard = null;
 
+// Selección múltiple: claves "tipo:id" (ej. "file:12", "folder:3"), con el
+// último ítem tocado para poder hacer shift+clic en rango.
+let selected = new Set();
+let lastSelectedKey = null;
+// Arrastre para selección tipo "rubber band" — a nivel de módulo porque los
+// listeners de mousemove/mouseup viven en document y se registran una sola
+// vez (ver bloque al final del archivo), no en cada repintado.
+let dragSelect = null; // { listEl, additive, startX, startY, box }
+
 export async function render(root) {
   await load(root);
 }
 
 async function load(root) {
   root.innerHTML = spinner();
+  selected.clear();
+  lastSelectedKey = null;
   try {
     data = await apiGet('files/list', { scope, folder_id: folderId });
   } catch (e) {
@@ -70,7 +81,16 @@ function paint(root) {
         <p class="text-xs text-slate-400">${fmtSize(data.used_bytes)} usados</p>
       </div>
 
-      <div id="file-list" class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 transition"></div>
+      ${selected.size ? `
+      <div class="flex items-center justify-between gap-3 rounded-xl bg-indigo-50 px-4 py-2.5 ring-1 ring-indigo-200">
+        <p class="text-sm font-medium text-indigo-700">${selected.size} seleccionado(s)</p>
+        <div class="flex gap-2">
+          <button type="button" id="btn-bulk-delete" class="rounded-lg px-3 py-1.5 text-sm font-semibold text-red-600 hover:bg-red-100">Eliminar</button>
+          <button type="button" id="btn-clear-selection" class="rounded-lg px-3 py-1.5 text-sm font-semibold text-indigo-600 hover:bg-indigo-100">Cancelar</button>
+        </div>
+      </div>` : ''}
+
+      <div id="file-list" class="relative min-h-[16rem] rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 transition"></div>
       ${clipboard ? `
       <p class="text-xs text-slate-400">
         ${clipboard.mode === 'copy' ? 'Copiando' : 'Cortando'} "${escapeHtml(clipboard.name)}" — clic derecho en esta carpeta y "Pegar", o
@@ -94,8 +114,12 @@ function paint(root) {
     e.target.value = '';
   });
   root.querySelector('#btn-clear-clipboard')?.addEventListener('click', () => { clipboard = null; repaint(); });
+  root.querySelector('#btn-bulk-delete')?.addEventListener('click', () => bulkDeleteSelected());
+  root.querySelector('#btn-clear-selection')?.addEventListener('click', () => { clearSelection(); repaint(); });
 
-  wireDropZone(root.querySelector('#file-list'));
+  const listEl = root.querySelector('#file-list');
+  wireDropZone(listEl);
+  wireDragSelect(listEl);
 }
 
 /* ================= Breadcrumb ================= */
@@ -148,14 +172,44 @@ function renderList(listEl) {
     const r = b.getBoundingClientRect();
     openItemMenu(r.right, r.bottom + 4, findItem(type, +id));
   }));
+  listEl.querySelectorAll('[data-select]').forEach((cb) => cb.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleSelect(cb.dataset.select);
+    repaint();
+  }));
+
+  // Ctrl/Cmd+clic o Shift+clic en cualquier parte de la fila selecciona en vez
+  // de abrir — se intercepta en fase de captura para llegar antes que el clic
+  // del botón "abrir" (que vive más adentro, sobre el mismo elemento).
+  listEl.addEventListener('click', (e) => {
+    const row = e.target.closest('[data-item]');
+    if (!row || e.target.closest('[data-select]')) return;
+    if (!e.ctrlKey && !e.metaKey && !e.shiftKey) return;
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.shiftKey) rangeSelect(row.dataset.item);
+    else toggleSelect(row.dataset.item);
+    repaint();
+  }, true);
+
   listEl.addEventListener('contextmenu', (e) => {
     e.preventDefault();
     const row = e.target.closest('[data-item]');
-    if (row) {
-      const [type, id] = row.dataset.item.split(':');
-      openItemMenu(e.clientX, e.clientY, findItem(type, +id));
-    } else {
+    if (!row) {
       openEmptyMenu(e.clientX, e.clientY);
+      return;
+    }
+    const key = row.dataset.item;
+    const [type, id] = key.split(':');
+    // Clic derecho fuera de la selección actual: la reemplaza por este ítem
+    // (igual que Explorer/Finder), en vez de mezclar selecciones sin relación.
+    if (selected.size && !selected.has(key)) {
+      clearSelection();
+    }
+    if (selected.size > 1) {
+      openBulkMenu(e.clientX, e.clientY);
+    } else {
+      openItemMenu(e.clientX, e.clientY, findItem(type, +id));
     }
   });
 }
@@ -163,8 +217,12 @@ function renderList(listEl) {
 function rowHtml(item) {
   const isFolder = item.type === 'folder';
   const ic = isFolder ? 'folder' : iconForFile(item);
+  const key = `${item.type}:${item.id}`;
+  const isSelected = selected.has(key);
   return `
-    <div data-item="${item.type}:${item.id}" class="flex items-center gap-3 border-b border-slate-100 px-4 py-2.5 last:border-0 hover:bg-slate-50">
+    <div data-item="${key}" class="group flex items-center gap-3 border-b border-slate-100 px-4 py-2.5 last:border-0 ${isSelected ? 'bg-indigo-50' : 'hover:bg-slate-50'}">
+      <input type="checkbox" data-select="${key}" ${isSelected ? 'checked' : ''} aria-label="Seleccionar ${escapeHtml(item.name)}"
+             class="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 ${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}">
       <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isFolder ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}">${icon(ic, 'h-5 w-5')}</span>
       <button type="button" data-open class="min-w-0 flex-1 truncate text-left text-sm font-medium text-slate-800 hover:text-indigo-600">
         ${escapeHtml(item.name)}
@@ -218,6 +276,12 @@ function openEmptyMenu(x, y) {
     entries.push({ label: `Pegar "${clipboard.name}"`, ic: 'clipboard', action: () => pasteClipboard() });
   }
   showContextMenu(x, y, entries);
+}
+
+function openBulkMenu(x, y) {
+  showContextMenu(x, y, [
+    { label: `Eliminar (${selected.size})`, ic: 'trash', danger: true, action: () => bulkDeleteSelected() },
+  ]);
 }
 
 function showContextMenu(x, y, entries) {
@@ -365,6 +429,87 @@ async function pasteClipboard() {
   }
 }
 
+/* ================= Selección múltiple ================= */
+function toggleSelect(key) {
+  if (selected.has(key)) selected.delete(key);
+  else selected.add(key);
+  lastSelectedKey = key;
+}
+
+/** Selecciona el rango visual entre el último ítem tocado y `key` (orden de la lista actual). */
+function rangeSelect(key) {
+  const order = [...data.folders, ...data.files].map((it) => `${it.type}:${it.id}`);
+  const a = lastSelectedKey ? order.indexOf(lastSelectedKey) : -1;
+  const b = order.indexOf(key);
+  if (a === -1 || b === -1) {
+    toggleSelect(key);
+    return;
+  }
+  const [start, end] = a < b ? [a, b] : [b, a];
+  for (let i = start; i <= end; i++) selected.add(order[i]);
+  lastSelectedKey = key;
+}
+
+function clearSelection() {
+  selected.clear();
+  lastSelectedKey = null;
+}
+
+async function bulkDeleteSelected() {
+  const items = [...selected].map((key) => {
+    const [type, id] = key.split(':');
+    return { type, id: +id };
+  });
+  if (!items.length) return;
+  const names = items
+    .map(({ type, id }) => findItem(type, id)?.name)
+    .filter(Boolean)
+    .slice(0, 5);
+  const preview = names.join(', ') + (items.length > names.length ? `, y ${items.length - names.length} más` : '');
+  const ok = await confirmDialog(
+    'Eliminar seleccionados',
+    `¿Eliminar ${items.length} elemento(s)? ${preview}`,
+    { danger: true, confirmLabel: 'Eliminar' }
+  );
+  if (!ok) return;
+  try {
+    const res = await apiPost('files/bulk_delete', { items });
+    clearSelection();
+    if (res.errors?.length) {
+      toast(`${res.deleted} eliminado(s), ${res.errors.length} con error: ${res.errors[0]}`, 'error');
+    } else {
+      toast(res.deleted === 1 ? 'Elemento eliminado' : `${res.deleted} elementos eliminados`);
+    }
+    reload();
+  } catch (e) {
+    toast(e.message, 'error');
+  }
+}
+
+/** Selección por arrastre ("rubber band"): mousedown en área vacía del listado
+ *  dibuja un rectángulo; cualquier fila que intersecte al soltar se selecciona.
+ *  El estado vive a nivel de módulo porque mousemove/mouseup se escuchan en
+ *  document una sola vez (bloque al final del archivo), no en cada repintado. */
+function wireDragSelect(listEl) {
+  listEl.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return; // solo clic izquierdo
+    if (e.target.closest('[data-item]') || e.target.closest('button') || e.target.closest('input')) return;
+    const additive = e.ctrlKey || e.metaKey || e.shiftKey;
+    if (!additive) clearSelection();
+    const rect = listEl.getBoundingClientRect();
+    const box = document.createElement('div');
+    box.className = 'pointer-events-none absolute z-10 rounded border border-indigo-400 bg-indigo-400/10';
+    listEl.appendChild(box);
+    dragSelect = {
+      listEl,
+      startX: e.clientX - rect.left + listEl.scrollLeft,
+      startY: e.clientY - rect.top + listEl.scrollTop,
+      box,
+    };
+    e.preventDefault();
+  });
+}
+
 /* ================= Subida ================= */
 async function uploadFiles(fileList) {
   let errors = 0;
@@ -416,3 +561,60 @@ function fmtSize(bytes) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
+
+/**
+ * Listeners de document para el arrastre de selección: se registran una sola
+ * vez al cargar el módulo (import dinámico = un solo módulo vivo por sesión),
+ * nunca dentro de paint()/renderList(), para no acumular listeners duplicados
+ * en cada repintado. mousemove/mouseup viven en document (no en el listado)
+ * porque el usuario puede soltar el botón fuera del área visible mientras arrastra.
+ */
+document.addEventListener('mousemove', (e) => {
+  if (!dragSelect) return;
+  const { listEl, startX, startY, box } = dragSelect;
+  const rect = listEl.getBoundingClientRect();
+  const curX = e.clientX - rect.left + listEl.scrollLeft;
+  const curY = e.clientY - rect.top + listEl.scrollTop;
+  const x = Math.min(startX, curX);
+  const y = Math.min(startY, curY);
+  const w = Math.abs(curX - startX);
+  const h = Math.abs(curY - startY);
+  box.style.left = `${x}px`;
+  box.style.top = `${y}px`;
+  box.style.width = `${w}px`;
+  box.style.height = `${h}px`;
+
+  const dragRight = x + w;
+  const dragBottom = y + h;
+  listEl.querySelectorAll('[data-item]').forEach((row) => {
+    const r = row.getBoundingClientRect();
+    const rowTop = r.top - rect.top + listEl.scrollTop;
+    const rowLeft = r.left - rect.left + listEl.scrollLeft;
+    const intersects = !(rowLeft > dragRight || rowLeft + r.width < x || rowTop > dragBottom || rowTop + r.height < y);
+    row.classList.toggle('bg-indigo-50', intersects);
+    row.dataset.dragHit = intersects ? '1' : '';
+  });
+});
+
+document.addEventListener('mouseup', () => {
+  if (!dragSelect) return;
+  const { listEl, box } = dragSelect;
+  listEl.querySelectorAll('[data-item][data-drag-hit="1"]').forEach((row) => {
+    selected.add(row.dataset.item);
+    lastSelectedKey = row.dataset.item;
+  });
+  box.remove();
+  dragSelect = null;
+  repaint();
+});
+
+/** Supr/Delete elimina la selección — solo si Archivos está montado y no se está
+ *  escribiendo en un campo (para no interceptar el Supr normal de un formulario). */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete' || !selected.size) return;
+  const active = document.activeElement;
+  const isTyping = active && ['INPUT', 'TEXTAREA'].includes(active.tagName);
+  if (isTyping || !document.getElementById('file-list')) return;
+  e.preventDefault();
+  bulkDeleteSelected();
+});

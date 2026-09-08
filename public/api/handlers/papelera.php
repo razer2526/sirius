@@ -10,7 +10,7 @@
 
 require_once __DIR__ . '/../../includes/trash.php';
 
-const TRASH_ENTITY_TYPES = ['task', 'project', 'result_delivery', 'board_item'];
+const TRASH_ENTITY_TYPES = ['task', 'project', 'result_delivery', 'board_item', 'file', 'file_folder'];
 
 function handle_papelera(string $action): void
 {
@@ -79,6 +79,10 @@ function handle_papelera(string $action): void
         case 'purge': {
             $id = (int)(request_body()['id'] ?? 0);
             $trashRow = find_trash_item($id);
+            if ($trashRow['entity_type'] === 'file') {
+                $snapshot = json_decode((string)$trashRow['snapshot'], true) ?: [];
+                trash_purge_file_binary($snapshot['row'] ?? []);
+            }
             db()->prepare('DELETE FROM trash_items WHERE id = ?')->execute([$id]);
             log_activity('papelera', 'purge', 'Eliminó permanentemente ' . $trashRow['summary'], $trashRow['entity_type'], (int)$trashRow['entity_id']);
             json_ok();
