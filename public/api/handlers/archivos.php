@@ -231,6 +231,141 @@ function handle_files(string $action): void
             json_ok(['deleted' => $deleted, 'errors' => $errors]);
         }
 
+        /**
+         * Mueve varios archivos/carpetas a una carpeta destino (siempre dentro del
+         * mismo scope: mover entre privado y compartido no existe, para eso está
+         * "Compartir a lo público"). Como bulk_delete, un elemento inválido no
+         * aborta el resto del lote.
+         */
+        case 'bulk_move': {
+            $b = request_body();
+            $items = is_array($b['items'] ?? null) ? $b['items'] : [];
+            if (!$items) {
+                json_error('No hay elementos seleccionados', 422);
+            }
+            if (count($items) > FILE_COPY_LIMIT) {
+                json_error('Selecciona como máximo ' . FILE_COPY_LIMIT . ' elementos a la vez', 422);
+            }
+            $targetId = isset($b['target_folder_id']) && $b['target_folder_id'] !== '' ? (int)$b['target_folder_id'] : null;
+
+            $moved = 0;
+            $errors = [];
+            foreach ($items as $it) {
+                $type = ($it['type'] ?? '') === 'folder' ? 'folder' : 'file';
+                $id = (int)($it['id'] ?? 0);
+                if ($type === 'folder') {
+                    $folder = find_folder_by_id_safe($id);
+                    if (!$folder) {
+                        $errors[] = "Carpeta #$id: no encontrada";
+                        continue;
+                    }
+                    $reason = file_edit_denied_reason($folder, $me, $canManage);
+                    if ($reason !== null) {
+                        $errors[] = "\"{$folder['name']}\": $reason";
+                        continue;
+                    }
+                    if ($targetId !== null) {
+                        $target = find_folder_by_id_safe($targetId);
+                        if (!$target || $target['scope'] !== $folder['scope'] || $target['owner_id'] != $folder['owner_id']) {
+                            $errors[] = "\"{$folder['name']}\": carpeta destino no válida";
+                            continue;
+                        }
+                        if ($targetId === $id || folder_is_descendant($targetId, $id)) {
+                            $errors[] = "\"{$folder['name']}\": no puedes moverla dentro de sí misma";
+                            continue;
+                        }
+                    }
+                    db()->prepare('UPDATE file_folders SET parent_id = ? WHERE id = ?')->execute([$targetId, $id]);
+                } else {
+                    $file = find_file_by_id_safe($id);
+                    if (!$file) {
+                        $errors[] = "Archivo #$id: no encontrado";
+                        continue;
+                    }
+                    $reason = file_edit_denied_reason($file, $me, $canManage);
+                    if ($reason !== null) {
+                        $errors[] = "\"{$file['name']}\": $reason";
+                        continue;
+                    }
+                    if ($targetId !== null) {
+                        $target = find_folder_by_id_safe($targetId);
+                        if (!$target || $target['scope'] !== $file['scope'] || $target['owner_id'] != $file['owner_id']) {
+                            $errors[] = "\"{$file['name']}\": carpeta destino no válida";
+                            continue;
+                        }
+                    }
+                    db()->prepare('UPDATE files SET folder_id = ? WHERE id = ?')->execute([$targetId, $id]);
+                }
+                $moved++;
+            }
+            if ($moved) {
+                log_activity('archivos', 'bulk_move', "Movió $moved elemento(s)");
+            }
+            json_ok(['moved' => $moved, 'errors' => $errors]);
+        }
+
+        /** Copia varios archivos/carpetas (Ctrl+V de una selección múltiple). */
+        case 'bulk_copy': {
+            $b = request_body();
+            $items = is_array($b['items'] ?? null) ? $b['items'] : [];
+            if (!$items) {
+                json_error('No hay elementos seleccionados', 422);
+            }
+            if (count($items) > FILE_COPY_LIMIT) {
+                json_error('Selecciona como máximo ' . FILE_COPY_LIMIT . ' elementos a la vez', 422);
+            }
+            $targetScope = ($b['target_scope'] ?? '') === 'public' ? 'public' : 'private';
+            $targetOwnerId = $targetScope === 'private' ? (int)$me['id'] : null;
+            $targetFolderId = isset($b['target_folder_id']) && $b['target_folder_id'] !== '' ? (int)$b['target_folder_id'] : null;
+            if ($targetFolderId !== null) {
+                find_folder($targetFolderId, $targetScope, $targetOwnerId);
+            }
+
+            $copied = 0;
+            $errors = [];
+            foreach ($items as $it) {
+                $type = ($it['type'] ?? '') === 'folder' ? 'folder' : 'file';
+                $id = (int)($it['id'] ?? 0);
+                if ($type === 'folder') {
+                    $folder = find_folder_by_id_safe($id);
+                    if (!$folder) {
+                        $errors[] = "Carpeta #$id: no encontrada";
+                        continue;
+                    }
+                    $reason = file_read_denied_reason($folder, $me);
+                    if ($reason !== null) {
+                        $errors[] = "\"{$folder['name']}\": $reason";
+                        continue;
+                    }
+                    $sameOwner = $folder['owner_id'] !== null ? (int)$folder['owner_id'] : null;
+                    if ($targetFolderId !== null && $targetScope === $folder['scope'] && $targetOwnerId === $sameOwner
+                        && ($targetFolderId === $id || folder_is_descendant($targetFolderId, $id))) {
+                        $errors[] = "\"{$folder['name']}\": no puedes copiarla dentro de sí misma";
+                        continue;
+                    }
+                    if (file_count_tree($id) > FILE_COPY_LIMIT) {
+                        $errors[] = "\"{$folder['name']}\": tiene demasiados elementos";
+                        continue;
+                    }
+                    file_copy_folder_tree($id, $targetScope, $targetOwnerId, $targetFolderId, (int)$me['id']);
+                } else {
+                    $file = find_file_by_id_safe($id);
+                    if (!$file) {
+                        $errors[] = "Archivo #$id: no encontrado";
+                        continue;
+                    }
+                    $reason = file_read_denied_reason($file, $me);
+                    if ($reason !== null) {
+                        $errors[] = "\"{$file['name']}\": $reason";
+                        continue;
+                    }
+                    file_copy_single($file, $targetScope, $targetOwnerId, $targetFolderId, (int)$me['id']);
+                }
+                $copied++;
+            }
+            json_ok(['copied' => $copied, 'errors' => $errors]);
+        }
+
         /* ---- Copiar y compartir ---- */
         case 'copy': {
             $b = request_body();
@@ -423,15 +558,20 @@ function file_out(array $row): array
 /** Renombrar o mover: dueño (privado) o autor/gestor (público). */
 function require_file_edit(array $row, array $me, bool $canManage): void
 {
+    $reason = file_edit_denied_reason($row, $me, $canManage);
+    if ($reason !== null) {
+        json_error(ucfirst($reason), 403);
+    }
+}
+
+/** Misma regla que require_file_edit, pero regresa el motivo (o null) en vez
+ *  de cortar la petición — para usarla dentro de mover/copiar en bloque. */
+function file_edit_denied_reason(array $row, array $me, bool $canManage): ?string
+{
     if ($row['scope'] === 'private') {
-        if ((int)$row['owner_id'] !== (int)$me['id']) {
-            json_error('Ese elemento pertenece a la carpeta privada de otro usuario', 403);
-        }
-        return;
+        return (int)$row['owner_id'] !== (int)$me['id'] ? 'ese elemento pertenece a la carpeta privada de otro usuario' : null;
     }
-    if ((int)$row['created_by'] !== (int)$me['id'] && !$canManage) {
-        json_error('Solo quien lo subió (o un gestor de archivos) puede modificarlo', 403);
-    }
+    return ((int)$row['created_by'] !== (int)$me['id'] && !$canManage) ? 'solo quien lo subió (o un gestor de archivos) puede modificarlo' : null;
 }
 
 /** Eliminar: dueño (privado) o gestor de archivos/admin (público) — el autor no basta. */
@@ -456,9 +596,17 @@ function file_delete_denied_reason(array $row, array $me, bool $canManage): ?str
 /** Leer/copiar desde el origen: lo privado solo si es tuyo; lo público siempre es visible. */
 function require_file_read(array $row, array $me): void
 {
-    if ($row['scope'] === 'private' && (int)$row['owner_id'] !== (int)$me['id']) {
-        json_error('No tienes acceso a ese elemento', 403);
+    $reason = file_read_denied_reason($row, $me);
+    if ($reason !== null) {
+        json_error(ucfirst($reason), 403);
     }
+}
+
+/** Misma regla que require_file_read, pero regresa el motivo (o null) en vez
+ *  de cortar la petición — para usarla dentro de copiar en bloque. */
+function file_read_denied_reason(array $row, array $me): ?string
+{
+    return ($row['scope'] === 'private' && (int)$row['owner_id'] !== (int)$me['id']) ? 'no tienes acceso a ese elemento' : null;
 }
 
 /* ================= Papelera ================= */
