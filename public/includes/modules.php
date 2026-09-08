@@ -76,6 +76,11 @@ return [
             'manage' => 'Gestionar y cancelar citas de cualquier usuario',
         ],
     ],
+    'marketing' => [
+        'label' => 'Marketing',
+        'icon'  => 'camera',
+        'phase' => 2,
+    ],
     'whatsapp' => [
         'label' => 'WhatsApp',
         'icon'  => 'chat',
