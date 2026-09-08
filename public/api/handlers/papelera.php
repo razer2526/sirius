@@ -82,6 +82,8 @@ function handle_papelera(string $action): void
             if ($trashRow['entity_type'] === 'file') {
                 $snapshot = json_decode((string)$trashRow['snapshot'], true) ?: [];
                 trash_purge_file_binary($snapshot['row'] ?? []);
+                require_once __DIR__ . '/../../includes/thumbnails.php';
+                file_thumbnail_purge((int)$trashRow['entity_id']);
             }
             db()->prepare('DELETE FROM trash_items WHERE id = ?')->execute([$id]);
             log_activity('papelera', 'purge', 'Eliminó permanentemente ' . $trashRow['summary'], $trashRow['entity_type'], (int)$trashRow['entity_id']);

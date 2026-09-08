@@ -14,6 +14,15 @@ const MAX_SIZE = 25 * 1024 * 1024;
 let scope = 'private';
 let folderId = null;
 let data = null;
+// Vista elegida: 'list' | 'details' | 'icons-sm' | 'icons-md' | 'icons-lg'.
+// Es una preferencia del navegador de quien la usa, no algo que viva en el
+// servidor — por eso localStorage y no una columna de usuario.
+let viewMode = 'list';
+try {
+  viewMode = localStorage.getItem('sirius_archivos_view') || 'list';
+} catch {
+  // localStorage puede fallar (ventana privada, cuota) — se queda en 'list'
+}
 // Portapapeles del propio navegador (no persiste en el servidor):
 // { mode: 'copy'|'cut', items: [{type, id, name}], scope }. Solo copiar tiene
 // atajo de teclado (Ctrl/Cmd+C, Ctrl/Cmd+V) — cortar sigue existiendo desde el
@@ -82,7 +91,16 @@ function paint(root) {
 
       <div class="flex flex-wrap items-center justify-between gap-2">
         <div id="breadcrumb" class="flex flex-wrap items-center gap-1 text-sm text-slate-500"></div>
-        <p class="text-xs text-slate-400">${fmtSize(data.used_bytes)} usados</p>
+        <div class="flex items-center gap-3">
+          <select id="view-mode" class="rounded-lg border-0 bg-slate-50 px-2.5 py-1.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none">
+            <option value="list">Lista</option>
+            <option value="details">Detalles</option>
+            <option value="icons-sm">Iconos pequeños</option>
+            <option value="icons-md">Iconos medianos</option>
+            <option value="icons-lg">Iconos grandes</option>
+          </select>
+          <p class="text-xs text-slate-400">${fmtSize(data.used_bytes)} usados</p>
+        </div>
       </div>
 
       ${selected.size ? `
@@ -104,6 +122,14 @@ function paint(root) {
 
   renderBreadcrumb(root.querySelector('#breadcrumb'));
   renderList(root.querySelector('#file-list'));
+
+  const viewSelect = root.querySelector('#view-mode');
+  viewSelect.value = viewMode;
+  viewSelect.addEventListener('change', () => {
+    viewMode = viewSelect.value;
+    try { localStorage.setItem('sirius_archivos_view', viewMode); } catch { /* ver arriba */ }
+    repaint();
+  });
 
   root.querySelectorAll('[data-scope]').forEach((b) => b.addEventListener('click', () => {
     if (b.dataset.scope === scope) return;
@@ -150,13 +176,31 @@ function findItem(type, id) {
   return list.find((x) => x.id === id);
 }
 
+/** Clases de grid completas y literales (Tailwind escanea el texto fuente,
+ *  no puede ver un valor armado en tiempo de ejecución con un template). */
+const ICON_GRID_COLS = {
+  'icons-sm': 'grid-cols-[repeat(auto-fill,minmax(76px,1fr))]',
+  'icons-md': 'grid-cols-[repeat(auto-fill,minmax(108px,1fr))]',
+  'icons-lg': 'grid-cols-[repeat(auto-fill,minmax(156px,1fr))]',
+};
+const TILE_SIZE = { 'icons-sm': 'sm', 'icons-md': 'md', 'icons-lg': 'lg' };
+
 function renderList(listEl) {
   const items = [...data.folders, ...data.files];
-  listEl.innerHTML = items.length ? items.map(rowHtml).join('') : `
-    <div class="py-14 text-center">
-      <p class="text-sm font-medium text-slate-600">Carpeta vacía</p>
-      <p class="mt-1 text-xs text-slate-400">Arrastra un archivo aquí, o usa "Subir archivo" / "Carpeta".</p>
-    </div>`;
+  if (!items.length) {
+    listEl.innerHTML = `
+      <div class="py-14 text-center">
+        <p class="text-sm font-medium text-slate-600">Carpeta vacía</p>
+        <p class="mt-1 text-xs text-slate-400">Arrastra un archivo aquí, o usa "Subir archivo" / "Carpeta".</p>
+      </div>`;
+  } else if (viewMode === 'details') {
+    listEl.innerHTML = detailsTableHtml(items);
+  } else if (viewMode in ICON_GRID_COLS) {
+    const size = TILE_SIZE[viewMode];
+    listEl.innerHTML = `<div class="grid ${ICON_GRID_COLS[viewMode]} gap-1 p-3">${items.map((it) => tileHtml(it, size)).join('')}</div>`;
+  } else {
+    listEl.innerHTML = items.map(rowHtml).join('');
+  }
 
   listEl.querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => {
     const row = b.closest('[data-item]');
@@ -220,14 +264,13 @@ function renderList(listEl) {
 
 function rowHtml(item) {
   const isFolder = item.type === 'folder';
-  const ic = isFolder ? 'folder' : iconForFile(item);
   const key = `${item.type}:${item.id}`;
   const isSelected = selected.has(key);
   return `
     <div data-item="${key}" class="group flex items-center gap-3 border-b border-slate-100 px-4 py-2.5 last:border-0 ${isSelected ? 'bg-indigo-50' : 'hover:bg-slate-50'}">
       <input type="checkbox" data-select="${key}" ${isSelected ? 'checked' : ''} aria-label="Seleccionar ${escapeHtml(item.name)}"
              class="h-4 w-4 shrink-0 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 ${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}">
-      <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${isFolder ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}">${icon(ic, 'h-5 w-5')}</span>
+      ${itemIconHtml(item, 'h-9 w-9', 'h-5 w-5')}
       <button type="button" data-open class="min-w-0 flex-1 truncate text-left text-sm font-medium text-slate-800 hover:text-indigo-600">
         ${escapeHtml(item.name)}
       </button>
@@ -240,11 +283,109 @@ function rowHtml(item) {
     </div>`;
 }
 
+/** Vista Detalles: tabla con columnas explícitas (nombre, tipo, tamaño, autor, fecha). */
+function detailsTableHtml(items) {
+  const showCreator = scope === 'public';
+  return `
+    <table class="w-full text-sm">
+      <thead>
+        <tr class="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wide text-slate-400">
+          <th class="w-8 px-3 py-2"></th>
+          <th class="px-2 py-2">Nombre</th>
+          <th class="hidden px-2 py-2 sm:table-cell">Tipo</th>
+          <th class="hidden px-2 py-2 sm:table-cell">Tamaño</th>
+          ${showCreator ? '<th class="hidden px-2 py-2 md:table-cell">Autor</th>' : ''}
+          <th class="hidden px-2 py-2 md:table-cell">Modificado</th>
+          <th class="w-10 px-2 py-2"></th>
+        </tr>
+      </thead>
+      <tbody>${items.map((it) => detailsRowHtml(it, showCreator)).join('')}</tbody>
+    </table>`;
+}
+
+function detailsRowHtml(item, showCreator) {
+  const isFolder = item.type === 'folder';
+  const key = `${item.type}:${item.id}`;
+  const isSelected = selected.has(key);
+  return `
+    <tr data-item="${key}" class="group border-b border-slate-100 last:border-0 ${isSelected ? 'bg-indigo-50' : 'hover:bg-slate-50'}">
+      <td class="px-3 py-2">
+        <input type="checkbox" data-select="${key}" ${isSelected ? 'checked' : ''} aria-label="Seleccionar ${escapeHtml(item.name)}"
+               class="h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 ${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}">
+      </td>
+      <td class="px-2 py-2">
+        <div class="flex min-w-0 items-center gap-2.5">
+          ${itemIconHtml(item, 'h-7 w-7', 'h-4 w-4', 'rounded-md')}
+          <button type="button" data-open class="min-w-0 flex-1 truncate text-left font-medium text-slate-800 hover:text-indigo-600">${escapeHtml(item.name)}</button>
+        </div>
+      </td>
+      <td class="hidden px-2 py-2 text-xs text-slate-500 sm:table-cell">${isFolder ? 'Carpeta' : fileTypeLabel(item)}</td>
+      <td class="hidden px-2 py-2 text-xs text-slate-500 sm:table-cell">${isFolder ? '—' : fmtSize(item.size)}</td>
+      ${showCreator ? `<td class="hidden truncate px-2 py-2 text-xs text-slate-500 md:table-cell">${escapeHtml(item.creator_name || '')}</td>` : ''}
+      <td class="hidden px-2 py-2 text-xs text-slate-500 md:table-cell">${fmtDateTime(item.updated_at)}</td>
+      <td class="px-2 py-2 text-right">
+        <button type="button" data-menu title="Más acciones" class="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700">${icon('more-vertical', 'h-4 w-4')}</button>
+      </td>
+    </tr>`;
+}
+
+/** Vistas de iconos (pequeños/medianos/grandes): mismas dimensiones box+ícono
+ *  escritas completas (ver ICON_GRID_COLS) para que Tailwind las encuentre. */
+const TILE_DIMS = {
+  sm: { box: 'h-14 w-14', icon: 'h-6 w-6' },
+  md: { box: 'h-20 w-20', icon: 'h-8 w-8' },
+  lg: { box: 'h-28 w-28', icon: 'h-11 w-11' },
+};
+
+function tileHtml(item, size) {
+  const { box, icon: iconCls } = TILE_DIMS[size];
+  const key = `${item.type}:${item.id}`;
+  const isSelected = selected.has(key);
+  return `
+    <div data-item="${key}" class="group relative flex flex-col items-center gap-1.5 rounded-xl p-2 text-center ${isSelected ? 'bg-indigo-50 ring-1 ring-indigo-300' : 'hover:bg-slate-50'}">
+      <input type="checkbox" data-select="${key}" ${isSelected ? 'checked' : ''} aria-label="Seleccionar ${escapeHtml(item.name)}"
+             class="absolute left-1.5 top-1.5 h-4 w-4 cursor-pointer rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 ${isSelected ? '' : 'opacity-0 group-hover:opacity-100'}">
+      <button type="button" data-menu title="Más acciones" class="absolute right-1 top-1 rounded-lg p-1 text-slate-400 opacity-0 hover:bg-slate-100 hover:text-slate-700 group-hover:opacity-100">
+        ${icon('more-vertical', 'h-3.5 w-3.5')}
+      </button>
+      ${itemIconHtml(item, box, iconCls, 'rounded-xl')}
+      <button type="button" data-open class="w-full truncate text-xs font-medium text-slate-700 hover:text-indigo-600">
+        ${escapeHtml(item.name)}
+      </button>
+    </div>`;
+}
+
+/** Ícono compartido por las 5 vistas: miniatura real para imágenes (cacheada
+ *  en el servidor, ver includes/thumbnails.php), ícono genérico por tipo para
+ *  todo lo demás — carpetas incluidas. */
+function itemIconHtml(item, boxCls, iconCls, roundedCls = 'rounded-lg') {
+  const isFolder = item.type === 'folder';
+  const isImage = !isFolder && (item.mime || '').startsWith('image/');
+  if (isImage) {
+    return `<img src="archivo.php?id=${item.id}&thumb=1" loading="lazy" alt=""
+                 class="${boxCls} shrink-0 ${roundedCls} bg-slate-100 object-cover">`;
+  }
+  const ic = isFolder ? 'folder' : iconForFile(item);
+  return `<span class="flex ${boxCls} shrink-0 items-center justify-center ${roundedCls} ${isFolder ? 'bg-amber-50 text-amber-600' : 'bg-slate-100 text-slate-500'}">${icon(ic, iconCls)}</span>`;
+}
+
 function iconForFile(item) {
   if ((item.mime || '').startsWith('image/')) return 'image';
   const ext = (item.name.split('.').pop() || '').toLowerCase();
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return 'package';
   return 'file-text';
+}
+
+/** Etiqueta corta de tipo para la vista Detalles. */
+function fileTypeLabel(item) {
+  const mime = item.mime || '';
+  if (mime.startsWith('image/')) return 'Imagen';
+  if (mime === 'application/pdf') return 'PDF';
+  if (mime.startsWith('video/')) return 'Video';
+  if (mime.startsWith('audio/')) return 'Audio';
+  const ext = (item.name.split('.').pop() || '').toUpperCase();
+  if (['ZIP', 'RAR', '7Z', 'TAR', 'GZ'].includes(ext)) return 'Comprimido';
+  return ext || 'Archivo';
 }
 
 /* ================= Menú contextual ================= */
