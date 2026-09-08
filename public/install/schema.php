@@ -524,6 +524,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 zone_id INT UNSIGNED NULL,
                 coverage_override TINYINT(1) NULL,
                 extra_cost TINYINT(1) NULL,
+                is_custom TINYINT(1) NOT NULL DEFAULT 0,
                 INDEX idx_postalcode_cp (cp),
                 CONSTRAINT fk_postalcode_zone FOREIGN KEY (zone_id) REFERENCES coverage_zones(id) ON DELETE SET NULL
             )$suffix",
@@ -1109,7 +1110,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 colonias TEXT NOT NULL,
                 zone_id INTEGER NULL REFERENCES coverage_zones(id) ON DELETE SET NULL,
                 coverage_override INTEGER NULL,
-                extra_cost INTEGER NULL
+                extra_cost INTEGER NULL,
+                is_custom INTEGER NOT NULL DEFAULT 0
             )",
             'commission_statements' => "CREATE TABLE IF NOT EXISTS commission_statements (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1367,6 +1369,10 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // de hemoglobina glicosilada) para cuando el criterio no es sexo/edad/condición
         // filtrable — alternativa al sistema estructurado, no lo reemplaza.
         "ALTER TABLE lab_reference_ranges ADD COLUMN long_reference TEXT NULL",
+        // Código postal agregado a mano desde Cobertura > Áreas personalizadas
+        // (no viene del catálogo SEPOMEX) — distingue esas filas en la UI, aunque
+        // el reimport nunca las toca porque no aparecen en el CSV semilla.
+        "ALTER TABLE postal_codes ADD COLUMN is_custom " . ($isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0'),
     ];
     $applied = 0;
     foreach ($migrations as $sql) {

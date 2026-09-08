@@ -12,10 +12,15 @@
  */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, confirmDialog, spinner, inputCls, debounce } from '../ui.js';
+import { icon, escapeHtml, toast, confirmDialog, modal, spinner, inputCls, labelCls, debounce } from '../ui.js';
 import { renderCoverageMap } from '../coverage_map.js';
 
+// Mismo texto exacto que trae el catálogo SEPOMEX (ver seed_data/) — así una
+// zona nueva creada aquí cae en el mismo grupo que el resto del estado.
+const CUSTOM_ESTADOS = ['Ciudad de México', 'México'];
+
 let zones = [];
+let customAreas = [];
 let expandedGroups = new Set();     // estados abiertos
 let expandedMunicipios = new Set(); // ids de zona (municipio/alcaldía) abiertos
 let postalCache = new Map();        // zone id -> códigos postales ya cargados
@@ -38,6 +43,17 @@ export async function render(root) {
       <input id="f-q" type="text" placeholder="Buscar municipio/alcaldía…" autocomplete="off" class="${inputCls}">
 
       <div id="zone-list">${spinner()}</div>
+
+      <div class="flex items-center justify-between gap-3 pt-2">
+        <div>
+          <h4 class="text-sm font-bold text-slate-800">Áreas personalizadas</h4>
+          <p class="text-xs text-slate-500">Códigos postales que no aparecen en el catálogo SEPOMEX.</p>
+        </div>
+        <button id="btn-add-custom" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+          ${icon('plus', 'h-4 w-4')} Agregar
+        </button>
+      </div>
+      <div id="custom-list">${spinner()}</div>
     </div>`;
 
   const load = async () => {
@@ -46,6 +62,14 @@ export async function render(root) {
     paintZones(root);
     paintMap(root);
   };
+
+  const loadCustom = async () => {
+    const res = await apiGet('cobertura/custom_areas_list');
+    customAreas = res.areas;
+    paintCustomAreas(root, load);
+  };
+
+  root.querySelector('#btn-add-custom').addEventListener('click', () => openCustomAreaModal(load, loadCustom));
 
   root.querySelector('#f-q').addEventListener('input', debounce(() => paintZones(root), 150));
   root.querySelector('#btn-reimport').addEventListener('click', async () => {
@@ -64,7 +88,7 @@ export async function render(root) {
     }
   });
 
-  await load();
+  await Promise.all([load(), loadCustom()]);
 }
 
 function stateLabel(hasCoverage, extraCost) {
@@ -311,4 +335,108 @@ function updatePostalCache(id, res) {
       break;
     }
   }
+}
+
+/* ================== Áreas personalizadas ================== */
+function paintCustomAreas(root, load) {
+  const box = root.querySelector('#custom-list');
+  if (!box) return; // se salió del módulo
+
+  if (!customAreas.length) {
+    box.innerHTML = '<div class="rounded-2xl bg-white py-8 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">Sin áreas personalizadas todavía.</div>';
+    return;
+  }
+
+  box.innerHTML = `
+    <div class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+      <div class="divide-y divide-slate-100">
+        ${customAreas.map((a) => `
+          <div class="flex items-center justify-between gap-3 px-4 py-2.5 hover:bg-slate-50">
+            <div class="min-w-0 flex-1 text-sm text-slate-700">
+              <span class="font-mono text-xs text-slate-500">${escapeHtml(a.cp)}</span>
+              — ${escapeHtml(a.colonia)}, ${escapeHtml(a.municipio)}, ${escapeHtml(a.estado)}
+            </div>
+            <button type="button" data-del-custom="${a.id}" title="Quitar" class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">
+              ${icon('trash', 'h-4 w-4')}
+            </button>
+          </div>`).join('')}
+      </div>
+    </div>`;
+
+  box.querySelectorAll('[data-del-custom]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const id = +btn.dataset.delCustom;
+      const area = customAreas.find((a) => a.id === id);
+      const ok = await confirmDialog(
+        'Quitar área personalizada',
+        `¿Quitar el CP ${area?.cp ?? ''} (${area?.colonia ?? ''})? Deja de tener cobertura.`,
+        { confirmLabel: 'Quitar', danger: true }
+      );
+      if (!ok) return;
+      try {
+        await apiPost('cobertura/custom_area_delete', { id });
+        toast('Área personalizada eliminada');
+        customAreas = customAreas.filter((a) => a.id !== id);
+        paintCustomAreas(root, load);
+        await load(); // el municipio pudo perder su última cobertura forzada
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }));
+}
+
+function openCustomAreaModal(load, loadCustom) {
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="space-y-3">
+      <div>
+        <label class="${labelCls}">Estado</label>
+        <select id="ca-estado" class="${inputCls}">
+          ${CUSTOM_ESTADOS.map((e) => `<option value="${escapeHtml(e)}">${escapeHtml(e)}</option>`).join('')}
+        </select>
+      </div>
+      <div>
+        <label class="${labelCls}">Alcaldía / Municipio</label>
+        <input type="text" id="ca-municipio" placeholder="p. ej. Miguel Hidalgo" class="${inputCls}">
+      </div>
+      <div>
+        <label class="${labelCls}">Colonia</label>
+        <input type="text" id="ca-colonia" placeholder="p. ej. Polanco" class="${inputCls}">
+      </div>
+      <div>
+        <label class="${labelCls}">Código postal</label>
+        <input type="text" id="ca-cp" inputmode="numeric" maxlength="5" placeholder="p. ej. 11560" class="${inputCls}">
+      </div>
+      <p class="text-xs text-slate-400">Úsalo solo para códigos postales que no aparecen en el catálogo — uno que ya existe se busca y se toggle arriba, no se duplica aquí.</p>
+    </div>`;
+
+  modal({
+    title: 'Agregar área personalizada',
+    content: wrap,
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Agregar', primary: true,
+        onClick: async (close, btn) => {
+          const estado = wrap.querySelector('#ca-estado').value;
+          const municipio = wrap.querySelector('#ca-municipio').value.trim();
+          const colonia = wrap.querySelector('#ca-colonia').value.trim();
+          const cp = wrap.querySelector('#ca-cp').value.trim();
+          if (!municipio) { toast('Escribe la alcaldía o municipio', 'error'); return; }
+          if (!colonia) { toast('Escribe la colonia', 'error'); return; }
+          if (!/^\d{5}$/.test(cp)) { toast('El código postal debe tener 5 dígitos', 'error'); return; }
+          btn.disabled = true;
+          try {
+            await apiPost('cobertura/custom_area_save', { estado, municipio, colonia, cp });
+            toast('Área personalizada agregada');
+            close();
+            await Promise.all([load(), loadCustom()]);
+          } catch (e) {
+            toast(e.message, 'error');
+            btn.disabled = false;
+          }
+        },
+      },
+    ],
+  });
 }
