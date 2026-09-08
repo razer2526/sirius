@@ -28,6 +28,9 @@
 
 require_once __DIR__ . '/../../install/schema.php';
 
+/** Únicos dos estados que opera el despacho — mismo texto exacto que trae el catálogo SEPOMEX (ver seed_data/). */
+const COBERTURA_CUSTOM_ESTADOS = ['Ciudad de México', 'México'];
+
 /** Cobertura + costo extra efectivos de un código postal ahora mismo (excepción propia, o heredado de su zona). */
 function cobertura_effective_postal_state(int $id): ?array
 {
@@ -184,6 +187,97 @@ function handle_cobertura(string $action): void
             $log = sirius_seed_cobertura($pdo);
             log_activity('cobertura', 'reimport', 'Reimportó el catálogo de códigos postales');
             json_ok(['log' => $log]);
+        }
+
+        /** Códigos postales agregados a mano porque no aparecen en el catálogo SEPOMEX. */
+        case 'custom_areas_list': {
+            $rows = db()->query(
+                "SELECT id, estado, municipio, colonias, cp FROM postal_codes WHERE is_custom = 1 ORDER BY estado, municipio, cp"
+            )->fetchAll();
+            foreach ($rows as &$r) {
+                $r['id'] = (int)$r['id'];
+                $colonias = json_decode((string)$r['colonias'], true) ?: [];
+                $r['colonia'] = $colonias[0]['nombre'] ?? '';
+                unset($r['colonias']);
+            }
+            unset($r);
+            json_ok(['areas' => $rows]);
+        }
+
+        /**
+         * Agrega un código postal que no está en el catálogo SEPOMEX. Reutiliza la
+         * zona (estado+municipio) si ya existe — sin tocar su has_coverage — o crea
+         * una nueva con cobertura activa por default (es la intención de agregarla
+         * a mano). Si la zona encontrada NO tiene cobertura completa, este código
+         * postal se marca como excepción (coverage_override) para garantizar que
+         * quede cubierto sin alterar el resto del municipio.
+         */
+        case 'custom_area_save': {
+            $b = request_body();
+            $estado = trim((string)($b['estado'] ?? ''));
+            $municipio = mb_substr(trim((string)($b['municipio'] ?? '')), 0, 100);
+            $colonia = mb_substr(trim((string)($b['colonia'] ?? '')), 0, 150);
+            $cp = preg_replace('/\D/', '', (string)($b['cp'] ?? ''));
+
+            if (!in_array($estado, COBERTURA_CUSTOM_ESTADOS, true)) {
+                json_error('Elige Ciudad de México o Estado de México', 422);
+            }
+            if ($municipio === '') {
+                json_error('Escribe la alcaldía o municipio', 422);
+            }
+            if ($colonia === '') {
+                json_error('Escribe la colonia', 422);
+            }
+            if (strlen($cp) !== 5) {
+                json_error('El código postal debe tener 5 dígitos', 422);
+            }
+
+            $findCp = db()->prepare('SELECT id FROM postal_codes WHERE cp = ?');
+            $findCp->execute([$cp]);
+            if ($findCp->fetch()) {
+                json_error('Este código postal ya existe en el catálogo — búscalo arriba en vez de agregarlo aquí', 422);
+            }
+
+            $findZone = db()->prepare('SELECT id, has_coverage FROM coverage_zones WHERE estado = ? AND municipio = ?');
+            $findZone->execute([$estado, $municipio]);
+            $zone = $findZone->fetch();
+            if ($zone) {
+                $zoneId = (int)$zone['id'];
+                $zoneHasCoverage = (bool)$zone['has_coverage'];
+            } else {
+                db()->prepare('INSERT INTO coverage_zones (estado, municipio, has_coverage) VALUES (?, ?, 1)')
+                    ->execute([$estado, $municipio]);
+                $zoneId = (int)db()->lastInsertId();
+                $zoneHasCoverage = true;
+            }
+            // Si la zona ya cubre completo, este CP hereda esa cobertura (sin
+            // excepción); si no, se fuerza cubierto solo para este CP.
+            $override = $zoneHasCoverage ? null : 1;
+
+            $colonias = json_encode([['nombre' => $colonia, 'tipo' => 'Colonia']], JSON_UNESCAPED_UNICODE);
+            db()->prepare(
+                'INSERT INTO postal_codes (cp, estado, municipio, colonias, zone_id, coverage_override, extra_cost, is_custom)
+                 VALUES (?, ?, ?, ?, ?, ?, NULL, 1)'
+            )->execute([$cp, $estado, $municipio, $colonias, $zoneId, $override]);
+            $newId = (int)db()->lastInsertId();
+
+            log_activity('cobertura', 'custom_area_add', "Agregó área personalizada: $colonia, $municipio, $estado (CP $cp)", 'postal_code', $newId);
+            json_ok(['id' => $newId]);
+        }
+
+        /** Quita un área personalizada — nunca toca filas que vengan del catálogo SEPOMEX. */
+        case 'custom_area_delete': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $st = db()->prepare('SELECT cp FROM postal_codes WHERE id = ? AND is_custom = 1');
+            $st->execute([$id]);
+            $row = $st->fetch();
+            if (!$row) {
+                json_error('Área personalizada no encontrada', 404);
+            }
+            db()->prepare('DELETE FROM postal_codes WHERE id = ? AND is_custom = 1')->execute([$id]);
+            log_activity('cobertura', 'custom_area_delete', 'Quitó el área personalizada del CP ' . $row['cp'], 'postal_code', $id);
+            json_ok(['deleted' => true]);
         }
     }
 }
