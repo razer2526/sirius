@@ -320,9 +320,9 @@ async function renderMail(root) {
             <input type="email" data-cfg="reply_to" value="${escapeHtml(config.reply_to)}" placeholder="Opcional" class="${inputCls}">
           </div>
           <div>
-            <label class="${labelCls}">Copia oculta interna</label>
-            <input type="email" data-cfg="always_bcc" value="${escapeHtml(config.always_bcc)}" placeholder="id@bosquespolanco.com" class="${inputCls}">
-            <p class="mt-1 text-xs text-slate-400">Recibe copia de toda ficha enviada.</p>
+            <label class="${labelCls}">Copias adicionales</label>
+            <input type="email" multiple data-cfg="always_bcc" value="${escapeHtml(config.always_bcc)}" placeholder="correo1@dominio.com, correo2@dominio.com" class="${inputCls}">
+            <p class="mt-1 text-xs text-slate-400">id@bosquespolanco.com siempre recibe copia de toda ficha enviada. Agrega hasta 2 correos más, separados por coma.</p>
           </div>
         </div>
       </section>

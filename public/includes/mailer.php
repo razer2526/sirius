@@ -12,6 +12,13 @@
 
 require_once __DIR__ . '/db.php';
 
+/** Copia interna que siempre debe llegar, sin importar la configuración — así
+ *  lo pidió el negocio, y así lo hacía el sistema anterior (id.bosquespolanco.com). */
+const MAIL_FIXED_BCC = 'id@bosquespolanco.com';
+
+/** Máximo de correos adicionales (además del fijo) en 'always_bcc'. */
+const MAIL_EXTRA_BCC_LIMIT = 2;
+
 function mail_defaults(): array
 {
     return [
@@ -24,8 +31,8 @@ function mail_defaults(): array
         'from_email'  => '',
         'from_name'   => 'Laboratorio Clínico Bosques Polanco',
         'reply_to'    => '',
-        // Copia interna de todo lo que sale; el sistema anterior mandaba
-        // siempre una copia a la cuenta de identificación
+        // Correos adicionales que reciben copia de toda ficha enviada, además
+        // del fijo (MAIL_FIXED_BCC) — separados por coma, ver mail_bcc_addresses().
         'always_bcc'  => '',
     ];
 }
@@ -115,7 +122,7 @@ function mail_send(array $to, string $subject, string $htmlBody, array $attachme
     }
 
     $recipients = mail_valid_addresses($to);
-    $bcc = mail_valid_addresses([$cfg['always_bcc']]);
+    $bcc = mail_bcc_addresses();
     if (!$recipients && !$bcc) {
         throw new RuntimeException('No hay destinatarios válidos.');
     }
@@ -214,13 +221,6 @@ function ficha_send_email(int $episodeId, bool $force = false): array
         $to = mail_valid_addresses([$patient['email'] ?? '']);
         $result['to'] = implode(', ', $to);
 
-        // Sin correo del paciente y sin copia interna no hay a quién mandarle: es una
-        // situación normal (muchos pacientes mayores no tienen correo), no una falla
-        if (!$to && !mail_valid_addresses([mail_config()['always_bcc']])) {
-            $result['error'] = $force ? 'El paciente no tiene correo y no hay copia interna configurada.' : '';
-            return $result;
-        }
-
         mail_send(
             $to,
             'Ficha de identificación · ' . $name,
@@ -274,4 +274,19 @@ function mail_valid_addresses(array $list): array
         }
     }
     return $out;
+}
+
+/** Divide una lista de correos separados por coma (tal como se captura en
+ *  Admin Tools > API > Correo) y descarta los inválidos. */
+function mail_split_addresses(string $raw): array
+{
+    return mail_valid_addresses(explode(',', $raw));
+}
+
+/** Copia interna completa de toda ficha enviada: el fijo (MAIL_FIXED_BCC) más
+ *  los correos adicionales configurados en 'always_bcc'. */
+function mail_bcc_addresses(): array
+{
+    $extra = mail_split_addresses((string)mail_config()['always_bcc']);
+    return mail_valid_addresses(array_merge([MAIL_FIXED_BCC], $extra));
 }

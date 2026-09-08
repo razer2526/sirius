@@ -18,7 +18,19 @@ function handle_mail(string $action): void
         }
 
         case 'save': {
-            $cfg = mail_save(request_body());
+            $body = request_body();
+            if (trim((string)($body['always_bcc'] ?? '')) !== '') {
+                $extra = array_map('trim', explode(',', (string)$body['always_bcc']));
+                if (count($extra) > MAIL_EXTRA_BCC_LIMIT) {
+                    json_error('Máximo ' . MAIL_EXTRA_BCC_LIMIT . ' correos adicionales, separados por coma', 422);
+                }
+                foreach ($extra as $addr) {
+                    if ($addr !== '' && !filter_var($addr, FILTER_VALIDATE_EMAIL)) {
+                        json_error('Correo inválido: ' . $addr, 422);
+                    }
+                }
+            }
+            $cfg = mail_save($body);
             log_activity('api', 'mail_config', 'Actualizó la configuración de correo'
                 . ($cfg['enabled'] ? ' (activo)' : ' (inactivo)'));
             json_ok(['config' => mail_public_config()]);
