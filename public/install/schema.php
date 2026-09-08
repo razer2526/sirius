@@ -699,6 +699,32 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 UNIQUE KEY uq_remember_selector (selector),
                 CONSTRAINT fk_remember_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )$suffix",
+            'content_posts' => "CREATE TABLE IF NOT EXISTS content_posts (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                post_date DATE NOT NULL,
+                title VARCHAR(150) NOT NULL,
+                category VARCHAR(30) NOT NULL DEFAULT 'organico',
+                status ENUM('idea','diseno','programada','publicada') NOT NULL DEFAULT 'idea',
+                caption TEXT NULL,
+                canva_url VARCHAR(500) NULL,
+                thumbnail_file VARCHAR(80) NULL,
+                emoji VARCHAR(40) NULL,
+                color VARCHAR(20) NOT NULL DEFAULT 'sky',
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                INDEX idx_contentpost_date (post_date),
+                CONSTRAINT fk_contentpost_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'commemorative_dates' => "CREATE TABLE IF NOT EXISTS commemorative_dates (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                month TINYINT UNSIGNED NOT NULL,
+                day TINYINT UNSIGNED NOT NULL,
+                label VARCHAR(150) NOT NULL,
+                emoji_suggestion VARCHAR(8) NULL,
+                category VARCHAR(30) NULL,
+                INDEX idx_commemdate_month_day (month, day)
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -1250,6 +1276,29 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'content_posts' => "CREATE TABLE IF NOT EXISTS content_posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_date TEXT NOT NULL,
+                title TEXT NOT NULL,
+                category TEXT NOT NULL DEFAULT 'organico',
+                status TEXT NOT NULL DEFAULT 'idea',
+                caption TEXT NULL,
+                canva_url TEXT NULL,
+                thumbnail_file TEXT NULL,
+                emoji TEXT NULL,
+                color TEXT NOT NULL DEFAULT 'sky',
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'commemorative_dates' => "CREATE TABLE IF NOT EXISTS commemorative_dates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                month INTEGER NOT NULL,
+                day INTEGER NOT NULL,
+                label TEXT NOT NULL,
+                emoji_suggestion TEXT NULL,
+                category TEXT NULL
+            )",
         ];
     }
 
@@ -1299,6 +1348,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_epstudy_study ON episode_studies (study_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_cstatement_party ON commission_statements (party_type, party_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_postalcode_cp ON postal_codes (cp)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_contentpost_date ON content_posts (post_date)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_commemdate_month_day ON commemorative_dates (month, day)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');
@@ -1597,6 +1648,76 @@ function sirius_seed_cobertura(PDO $pdo): array
     return [$msg];
 }
 
+/**
+ * Catálogo de fechas conmemorativas/de salud relevantes para planear contenido
+ * (Marketing > Calendario). Recurrentes por mes+día, sin año — el 19 de
+ * octubre aplica todos los años. Idempotente: upsert por mes+día+etiqueta, así
+ * que un admin puede agregar las suyas después sin que una reinstalación las
+ * duplique ni las borre.
+ */
+function sirius_seed_commemorative_dates(PDO $pdo): array
+{
+    $dates = [
+        [1, 24, 'Día Internacional de la Educación', '📚', 'celebracion'],
+        [1, 30, 'Día Escolar de la No Violencia y la Paz', '🕊️', 'celebracion'],
+        [2, 4, 'Día Mundial contra el Cáncer', '🎗️', 'salud'],
+        [2, 11, 'Día Internacional de la Mujer y la Niña en la Ciencia', '🔬', 'celebracion'],
+        [2, 14, 'Día del Amor y la Amistad', '❤️', 'celebracion'],
+        [3, 1, 'Día Cero de la Discriminación', '🤝', 'celebracion'],
+        [3, 4, 'Día Mundial de la Obesidad', '⚖️', 'salud'],
+        [3, 8, 'Día Internacional de la Mujer', '🌷', 'celebracion'],
+        [3, 20, 'Día Internacional de la Felicidad', '😊', 'celebracion'],
+        [3, 21, 'Día Mundial del Síndrome de Down', '💙💛', 'salud'],
+        [3, 22, 'Día Mundial del Agua', '💧', 'salud'],
+        [3, 24, 'Día Mundial de la Tuberculosis', '🫁', 'salud'],
+        [4, 2, 'Día Mundial de Concientización sobre el Autismo', '🧩', 'salud'],
+        [4, 7, 'Día Mundial de la Salud', '🩺', 'salud'],
+        [4, 11, 'Día Mundial del Párkinson', '🧠', 'salud'],
+        [4, 17, 'Día Mundial de la Hemofilia', '🩸', 'salud'],
+        [4, 25, 'Día Mundial del Paludismo', '🦟', 'salud'],
+        [5, 5, 'Día Mundial de la Higiene de Manos', '🧼', 'salud'],
+        [5, 10, 'Día de las Madres', '🌸', 'celebracion'],
+        [5, 12, 'Día Internacional de la Enfermería', '👩‍⚕️', 'salud'],
+        [5, 17, 'Día Mundial de la Hipertensión Arterial', '❤️', 'salud'],
+        [5, 31, 'Día Mundial Sin Tabaco', '🚭', 'salud'],
+        [6, 5, 'Día Mundial del Medio Ambiente', '🌍', 'celebracion'],
+        [6, 14, 'Día Mundial del Donante de Sangre', '🩸', 'salud'],
+        [6, 21, 'Día Internacional del Yoga', '🧘', 'salud'],
+        [7, 11, 'Día Mundial de la Población', '🌐', 'celebracion'],
+        [7, 28, 'Día Mundial contra la Hepatitis', '🫀', 'salud'],
+        [8, 1, 'Inicio de la Semana Mundial de la Lactancia Materna', '🤱', 'salud'],
+        [8, 12, 'Día Internacional de la Juventud', '🎉', 'celebracion'],
+        [9, 10, 'Día Mundial para la Prevención del Suicidio', '🎗️', 'salud'],
+        [9, 21, 'Día Mundial del Alzheimer', '🧠', 'salud'],
+        [9, 29, 'Día Mundial del Corazón', '❤️', 'salud'],
+        [10, 1, 'Día Internacional de las Personas de Edad', '👵', 'salud'],
+        [10, 10, 'Día Mundial de la Salud Mental', '🧠', 'salud'],
+        [10, 16, 'Día Mundial de la Alimentación', '🍽️', 'salud'],
+        [10, 19, 'Día Mundial de la Lucha contra el Cáncer de Mama', '🎗️', 'salud'],
+        [10, 20, 'Día Mundial de la Osteoporosis', '🦴', 'salud'],
+        [10, 29, 'Día Mundial del Ictus', '🧠', 'salud'],
+        [10, 31, 'Víspera de Día de Muertos', '💀', 'celebracion'],
+        [11, 14, 'Día Mundial de la Diabetes', '🔵', 'salud'],
+        [11, 20, 'Día Universal del Niño', '🧒', 'celebracion'],
+        [11, 25, 'Día Internacional de la Eliminación de la Violencia contra la Mujer', '🎗️', 'salud'],
+        [12, 1, 'Día Mundial de la Lucha contra el SIDA', '🎗️', 'salud'],
+        [12, 3, 'Día Internacional de las Personas con Discapacidad', '♿', 'salud'],
+        [12, 10, 'Día de los Derechos Humanos', '⚖️', 'celebracion'],
+        [12, 25, 'Navidad', '🎄', 'celebracion'],
+    ];
+    $find = $pdo->prepare('SELECT id FROM commemorative_dates WHERE month = ? AND day = ? AND label = ?');
+    $ins = $pdo->prepare('INSERT INTO commemorative_dates (month, day, label, emoji_suggestion, category) VALUES (?, ?, ?, ?, ?)');
+    $count = 0;
+    foreach ($dates as [$month, $day, $label, $emoji, $category]) {
+        $find->execute([$month, $day, $label]);
+        if (!$find->fetch()) {
+            $ins->execute([$month, $day, $label, $emoji, $category]);
+            $count++;
+        }
+    }
+    return ["Marketing: $count fecha(s) conmemorativa(s) nueva(s) sembrada(s) (de " . count($dates) . ' en el catálogo)'];
+}
+
 /** Crea tablas + migraciones + settings por defecto. No toca usuarios. */
 function sirius_install_schema(PDO $pdo, bool $isMysql, string $clinicName = 'Laboratorio y Clínica Bosques Polanco'): array
 {
@@ -1605,6 +1726,7 @@ function sirius_install_schema(PDO $pdo, bool $isMysql, string $clinicName = 'La
         sirius_schema_migrations($pdo, $isMysql),
         sirius_seed_settings($pdo, $clinicName),
         sirius_seed_whatsapp($pdo),
-        sirius_seed_cobertura($pdo)
+        sirius_seed_cobertura($pdo),
+        sirius_seed_commemorative_dates($pdo)
     );
 }
