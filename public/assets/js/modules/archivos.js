@@ -14,7 +14,11 @@ const MAX_SIZE = 25 * 1024 * 1024;
 let scope = 'private';
 let folderId = null;
 let data = null;
-// Portapapeles del propio navegador (no persiste en el servidor): { mode, type, id, name, scope }
+// Portapapeles del propio navegador (no persiste en el servidor):
+// { mode: 'copy'|'cut', items: [{type, id, name}], scope }. Solo copiar tiene
+// atajo de teclado (Ctrl/Cmd+C, Ctrl/Cmd+V) — cortar sigue existiendo desde el
+// menú por si alguien ya lo usa, pero sin atajo, para no facilitar mover algo
+// sin querer con un Ctrl+X accidental.
 let clipboard = null;
 
 // Selección múltiple: claves "tipo:id" (ej. "file:12", "folder:3"), con el
@@ -93,7 +97,7 @@ function paint(root) {
       <div id="file-list" class="relative min-h-[16rem] rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 transition"></div>
       ${clipboard ? `
       <p class="text-xs text-slate-400">
-        ${clipboard.mode === 'copy' ? 'Copiando' : 'Cortando'} "${escapeHtml(clipboard.name)}" — clic derecho en esta carpeta y "Pegar", o
+        ${clipboard.mode === 'copy' ? 'Copiando' : 'Cortando'} ${escapeHtml(clipboardLabel())} — Ctrl+V aquí (o clic derecho y "Pegar"), o
         <button type="button" id="btn-clear-clipboard" class="font-semibold text-indigo-600 hover:text-indigo-500">cancelar</button>.
       </p>` : ''}
     </div>`;
@@ -256,9 +260,10 @@ function openItemMenu(x, y, item) {
   } else {
     entries.push({ label: 'Descargar', ic: 'download', action: () => window.open(`archivo.php?id=${item.id}&download=1`, '_blank') });
   }
-  entries.push({ label: 'Copiar', ic: 'copy', action: () => { clipboard = { mode: 'copy', type: item.type, id: item.id, name: item.name, scope }; repaint(); } });
+  entries.push({ label: 'Copiar', ic: 'copy', action: () => { clipboard = { mode: 'copy', items: [{ type: item.type, id: item.id, name: item.name }], scope }; repaint(); } });
   if (canEdit) {
-    entries.push({ label: 'Cortar', ic: 'scissors', action: () => { clipboard = { mode: 'cut', type: item.type, id: item.id, name: item.name, scope }; repaint(); } });
+    entries.push({ label: 'Mover a…', ic: 'move', action: () => openMoveModal([{ type: item.type, id: item.id, name: item.name }]) });
+    entries.push({ label: 'Cortar', ic: 'scissors', action: () => { clipboard = { mode: 'cut', items: [{ type: item.type, id: item.id, name: item.name }], scope }; repaint(); } });
     entries.push({ label: 'Renombrar', ic: 'edit', action: () => renameItem(item) });
   }
   if (isPrivate) {
@@ -273,15 +278,25 @@ function openItemMenu(x, y, item) {
 function openEmptyMenu(x, y) {
   const entries = [{ label: 'Nueva carpeta', ic: 'folder-open', action: () => createFolder() }];
   if (clipboard) {
-    entries.push({ label: `Pegar "${clipboard.name}"`, ic: 'clipboard', action: () => pasteClipboard() });
+    entries.push({ label: `Pegar ${clipboardLabel()}`, ic: 'clipboard', action: () => pasteClipboard() });
   }
   showContextMenu(x, y, entries);
 }
 
 function openBulkMenu(x, y) {
+  const items = selectedItems();
   showContextMenu(x, y, [
-    { label: `Eliminar (${selected.size})`, ic: 'trash', danger: true, action: () => bulkDeleteSelected() },
+    { label: `Copiar (${items.length})`, ic: 'copy', action: () => { clipboard = { mode: 'copy', items, scope }; repaint(); } },
+    { label: `Mover a… (${items.length})`, ic: 'move', action: () => openMoveModal(items) },
+    { label: `Eliminar (${items.length})`, ic: 'trash', danger: true, action: () => bulkDeleteSelected() },
   ]);
+}
+
+/** La selección actual como [{type, id, name}], en el orden de la lista visible. */
+function selectedItems() {
+  return [...data.folders, ...data.files]
+    .filter((it) => selected.has(`${it.type}:${it.id}`))
+    .map((it) => ({ type: it.type, id: it.id, name: it.name }));
 }
 
 function showContextMenu(x, y, entries) {
@@ -407,26 +422,127 @@ async function shareItem(item) {
   }
 }
 
+/** Texto sin escapar: quien lo use decide cómo insertarlo (HTML crudo en
+ *  paint(), o como label de un botón del menú contextual que ya se escapa solo). */
+function clipboardLabel() {
+  const n = clipboard.items.length;
+  return n === 1 ? `"${clipboard.items[0].name}"` : `${n} elementos`;
+}
+
 async function pasteClipboard() {
   if (!clipboard) return;
+  const items = clipboard.items.map(({ type, id }) => ({ type, id }));
   try {
     if (clipboard.mode === 'copy') {
-      await apiPost('files/copy', { type: clipboard.type, id: clipboard.id, target_scope: scope, target_folder_id: folderId });
-      toast('Copiado');
+      const res = await apiPost('files/bulk_copy', { items, target_scope: scope, target_folder_id: folderId });
+      reportBulkResult(res.copied, res.errors, 'copiado(s)');
     } else {
       if (clipboard.scope !== scope) {
         toast('No se puede mover entre lo privado y lo compartido; usa "Compartir a lo público".', 'error');
         return;
       }
-      const key = clipboard.type === 'folder' ? 'parent_id' : 'folder_id';
-      await apiPost(`files/${clipboard.type}_move`, { id: clipboard.id, [key]: folderId });
-      toast('Movido');
+      const res = await apiPost('files/bulk_move', { items, target_folder_id: folderId });
+      reportBulkResult(res.moved, res.errors, 'movido(s)');
       clipboard = null;
     }
     reload();
   } catch (e) {
     toast(e.message, 'error');
   }
+}
+
+/** Mensaje uniforme para las operaciones en bloque (mover/copiar/eliminar). */
+function reportBulkResult(count, errors, verb) {
+  if (errors?.length) {
+    toast(`${count} ${verb}, ${errors.length} con error: ${errors[0]}`, 'error');
+  } else {
+    toast(`${count} elemento(s) ${verb}`);
+  }
+}
+
+/**
+ * "Mover a…": selector de carpeta destino dentro del mismo scope de los ítems
+ * (mover entre privado y compartido no existe — para eso está "Compartir a lo
+ * público"). Navega igual que el listado principal pero en un árbol aparte,
+ * sin ofrecer como destino ninguna de las carpetas que se están moviendo.
+ */
+async function openMoveModal(items) {
+  const itemScope = scope;
+  const movingFolderIds = new Set(items.filter((it) => it.type === 'folder').map((it) => it.id));
+  let pickFolderId = folderId; // arranca en la carpeta actual
+  let pickBreadcrumb = data.breadcrumb;
+  let pickFolders = [];
+
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="space-y-3">
+      <div id="move-breadcrumb" class="flex flex-wrap items-center gap-1 text-sm text-slate-500"></div>
+      <div id="move-list" class="max-h-64 overflow-y-auto rounded-xl ring-1 ring-slate-200 divide-y divide-slate-100"></div>
+    </div>`;
+
+  async function loadPicker() {
+    const res = await apiGet('files/list', { scope: itemScope, folder_id: pickFolderId });
+    pickFolders = res.folders.filter((f) => !movingFolderIds.has(f.id));
+    pickBreadcrumb = res.breadcrumb;
+    paintPicker();
+  }
+
+  function paintPicker() {
+    const rootLabel = itemScope === 'private' ? 'Mis archivos' : 'Carpeta compartida';
+    const crumbs = [{ id: null, name: rootLabel }, ...pickBreadcrumb];
+    const bc = wrap.querySelector('#move-breadcrumb');
+    bc.innerHTML = crumbs.map((c, i) => {
+      const last = i === crumbs.length - 1;
+      return `${i > 0 ? '<span class="text-slate-300">/</span>' : ''}
+        <button type="button" data-goto="${c.id ?? ''}" ${last ? 'disabled' : ''}
+                class="rounded px-1.5 py-0.5 ${last ? 'font-semibold text-slate-700' : 'hover:text-indigo-600'}">
+          ${escapeHtml(c.name)}
+        </button>`;
+    }).join('');
+    bc.querySelectorAll('[data-goto]:not([disabled])').forEach((b) => b.addEventListener('click', () => {
+      pickFolderId = b.dataset.goto ? +b.dataset.goto : null;
+      loadPicker();
+    }));
+
+    const box = wrap.querySelector('#move-list');
+    box.innerHTML = pickFolders.length ? pickFolders.map((f) => `
+      <button type="button" data-pick-folder="${f.id}" class="flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm hover:bg-slate-50">
+        ${icon('folder', 'h-4 w-4 shrink-0 text-amber-500')} <span class="truncate">${escapeHtml(f.name)}</span>
+      </button>`).join('') : '<div class="px-3 py-6 text-center text-xs text-slate-400">Sin subcarpetas aquí.</div>';
+    box.querySelectorAll('[data-pick-folder]').forEach((b) => b.addEventListener('click', () => {
+      pickFolderId = +b.dataset.pickFolder;
+      loadPicker();
+    }));
+  }
+
+  await loadPicker();
+
+  modal({
+    title: `Mover ${items.length > 1 ? `${items.length} elementos` : `"${items[0].name}"`}`,
+    content: wrap,
+    actions: [
+      { label: 'Cancelar' },
+      {
+        label: 'Mover aquí', primary: true,
+        onClick: async (close, btn) => {
+          btn.disabled = true;
+          try {
+            const res = await apiPost('files/bulk_move', {
+              items: items.map(({ type, id }) => ({ type, id })),
+              target_folder_id: pickFolderId,
+            });
+            close();
+            reportBulkResult(res.moved, res.errors, 'movido(s)');
+            clearSelection();
+            reload();
+          } catch (e) {
+            toast(e.message, 'error');
+            btn.disabled = false;
+          }
+        },
+      },
+    ],
+  });
 }
 
 /* ================= Selección múltiple ================= */
@@ -456,15 +572,9 @@ function clearSelection() {
 }
 
 async function bulkDeleteSelected() {
-  const items = [...selected].map((key) => {
-    const [type, id] = key.split(':');
-    return { type, id: +id };
-  });
+  const items = selectedItems();
   if (!items.length) return;
-  const names = items
-    .map(({ type, id }) => findItem(type, id)?.name)
-    .filter(Boolean)
-    .slice(0, 5);
+  const names = items.map((it) => it.name).slice(0, 5);
   const preview = names.join(', ') + (items.length > names.length ? `, y ${items.length - names.length} más` : '');
   const ok = await confirmDialog(
     'Eliminar seleccionados',
@@ -475,11 +585,7 @@ async function bulkDeleteSelected() {
   try {
     const res = await apiPost('files/bulk_delete', { items });
     clearSelection();
-    if (res.errors?.length) {
-      toast(`${res.deleted} eliminado(s), ${res.errors.length} con error: ${res.errors[0]}`, 'error');
-    } else {
-      toast(res.deleted === 1 ? 'Elemento eliminado' : `${res.deleted} elementos eliminados`);
-    }
+    reportBulkResult(res.deleted, res.errors, 'eliminado(s)');
     reload();
   } catch (e) {
     toast(e.message, 'error');
@@ -608,13 +714,42 @@ document.addEventListener('mouseup', () => {
   repaint();
 });
 
-/** Supr/Delete elimina la selección — solo si Archivos está montado y no se está
- *  escribiendo en un campo (para no interceptar el Supr normal de un formulario). */
-document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Delete' || !selected.size) return;
+/** Evita robarle los atajos de teclado a cualquier otra pantalla o formulario:
+ *  Archivos debe estar montado y el foco no debe estar escribiendo texto. */
+function shortcutsBlocked() {
   const active = document.activeElement;
-  const isTyping = active && ['INPUT', 'TEXTAREA'].includes(active.tagName);
-  if (isTyping || !document.getElementById('file-list')) return;
+  const isTyping = active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable);
+  return isTyping || !document.getElementById('file-list');
+}
+
+/** Supr/Delete elimina la selección. */
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Delete' || !selected.size || shortcutsBlocked()) return;
   e.preventDefault();
   bulkDeleteSelected();
+});
+
+/**
+ * Ctrl/Cmd+C copia la selección al portapapeles interno — solo si no hay texto
+ * genuinamente seleccionado en la página (si lo hay, gana el copiar nativo del
+ * navegador, no el de archivos). Ctrl/Cmd+V pega lo que haya en el
+ * portapapeles (copiar o cortar: cortar no tiene su propio atajo — ver arriba
+ * — pero si ya se activó desde el menú, Ctrl+V sí lo completa).
+ */
+document.addEventListener('keydown', (e) => {
+  const isCopy = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c';
+  const isPaste = (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v';
+  if (!isCopy && !isPaste) return;
+  if (shortcutsBlocked()) return;
+
+  if (isCopy) {
+    if (!selected.size || window.getSelection().toString() !== '') return;
+    e.preventDefault();
+    clipboard = { mode: 'copy', items: selectedItems(), scope };
+    toast(clipboard.items.length === 1 ? 'Copiado' : `${clipboard.items.length} elementos copiados`);
+    repaint();
+  } else if (clipboard) {
+    e.preventDefault();
+    pasteClipboard();
+  }
 });
