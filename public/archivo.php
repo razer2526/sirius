@@ -7,6 +7,7 @@
  *
  *   archivo.php?id=12            → vista en el navegador
  *   archivo.php?id=12&download=1 → descarga
+ *   archivo.php?id=12&thumb=1    → miniatura cacheada (solo imágenes)
  */
 
 require_once __DIR__ . '/includes/auth.php';
@@ -41,6 +42,25 @@ $path = __DIR__ . '/uploads/archivos/' . basename($file['stored_name']);
 if (!is_file($path)) {
     http_response_code(404);
     exit('El archivo ya no está disponible.');
+}
+
+if (!empty($_GET['thumb'])) {
+    if (strpos((string)$file['mime'], 'image/') !== 0) {
+        http_response_code(404);
+        exit;
+    }
+    require_once __DIR__ . '/includes/thumbnails.php';
+    $thumbPath = file_thumbnail_path($path, $id);
+    if (!$thumbPath) {
+        http_response_code(404);
+        exit;
+    }
+    header('Content-Type: image/png');
+    header('Content-Length: ' . filesize($thumbPath));
+    header('Cache-Control: private, max-age=86400');
+    header('X-Content-Type-Options: nosniff');
+    readfile($thumbPath);
+    exit;
 }
 
 $download = !empty($_GET['download']);
