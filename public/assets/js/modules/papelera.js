@@ -5,14 +5,17 @@
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, confirmDialog, spinner, inputCls, labelCls, fmtDateTime } from '../ui.js';
 
-const TYPE_LABELS = { task: 'Tarea', project: 'Proyecto', result_delivery: 'Resultado', board_item: 'Pizarrón' };
+const TYPE_LABELS = {
+  task: 'Tarea', project: 'Proyecto', result_delivery: 'Resultado', board_item: 'Pizarrón',
+  file: 'Archivo', file_folder: 'Carpeta',
+};
 
 let filters = { type: '', page: 1 };
 
 export async function render(root) {
   root.innerHTML = `
     <div class="mx-auto max-w-5xl space-y-4">
-      <div id="tr-counts" class="grid grid-cols-2 gap-3 sm:grid-cols-4"></div>
+      <div id="tr-counts" class="grid grid-cols-2 gap-3 sm:grid-cols-3"></div>
       <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
         <label class="${labelCls}">Tipo</label>
         <select id="f-type" class="${inputCls} sm:max-w-xs">

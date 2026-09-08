@@ -13,6 +13,9 @@ const TRASH_RESULT_COLUMNS = ['id', 'patient_name', 'sample_date', 'due_date', '
     'needs_invoice', 'invoice_sent', 'observations', 'created_by', 'created_at'];
 const TRASH_BOARD_COLUMNS = ['id', 'scope', 'owner_id', 'type', 'title', 'content', 'color',
     'pos_x', 'pos_y', 'width', 'height', 'z_index', 'created_by', 'created_at', 'updated_at'];
+const TRASH_FILE_COLUMNS = ['id', 'scope', 'owner_id', 'folder_id', 'name', 'stored_name', 'mime',
+    'size', 'created_by', 'created_at', 'updated_at'];
+const TRASH_FOLDER_COLUMNS = ['id', 'scope', 'owner_id', 'parent_id', 'name', 'created_by', 'created_at', 'updated_at'];
 
 /** Historial de cumplimiento de una tarea recurrente, para que no se pierda al archivar/restaurar. */
 function task_completions_for(int $taskId): array
@@ -91,8 +94,61 @@ function trash_restore_row(array $trashRow): void
         case 'board_item':
             trash_insert_exact($pdo, 'board_items', TRASH_BOARD_COLUMNS, $row);
             break;
+        case 'file':
+            trash_restore_file($pdo, $row);
+            break;
+        case 'file_folder':
+            trash_restore_file_folder($pdo, $row, (int)$trashRow['id']);
+            break;
         default:
             throw new RuntimeException('Tipo de elemento desconocido: ' . $trashRow['entity_type']);
+    }
+}
+
+/** Restaura un archivo suelto — si su carpeta ya no existe en vivo (se purgó
+ *  aparte), se restaura en la raíz del scope en vez de bloquear la restauración. */
+function trash_restore_file(PDO $pdo, array $row): void
+{
+    if (!empty($row['folder_id'])) {
+        $st = $pdo->prepare('SELECT 1 FROM file_folders WHERE id = ?');
+        $st->execute([$row['folder_id']]);
+        if (!$st->fetch()) {
+            $row['folder_id'] = null;
+        }
+    }
+    trash_insert_exact($pdo, 'files', TRASH_FILE_COLUMNS, $row);
+}
+
+/** Restaura una carpeta y, en cascada, los archivos/subcarpetas que se
+ *  archivaron junto con ella (related_trash_id) — igual que proyecto→tareas,
+ *  pero recursivo porque una carpeta puede anidar otras carpetas. */
+function trash_restore_file_folder(PDO $pdo, array $row, int $trashId): void
+{
+    if (!empty($row['parent_id'])) {
+        $st = $pdo->prepare('SELECT 1 FROM file_folders WHERE id = ?');
+        $st->execute([$row['parent_id']]);
+        if (!$st->fetch()) {
+            $row['parent_id'] = null;
+        }
+    }
+    trash_insert_exact($pdo, 'file_folders', TRASH_FOLDER_COLUMNS, $row);
+
+    $st = $pdo->prepare("SELECT * FROM trash_items WHERE related_trash_id = ? AND entity_type IN ('file', 'file_folder')");
+    $st->execute([$trashId]);
+    foreach ($st->fetchAll() as $childTrash) {
+        trash_restore_row($childTrash);
+        $pdo->prepare('DELETE FROM trash_items WHERE id = ?')->execute([$childTrash['id']]);
+    }
+}
+
+/** Borra del disco el binario de un archivo purgado en definitiva — se llama
+ *  solo desde Papelera > purgar (nunca al archivar: el binario debe sobrevivir
+ *  mientras el archivo siga en la papelera, por si se restaura). */
+function trash_purge_file_binary(array $snapshotRow): void
+{
+    $stored = (string)($snapshotRow['stored_name'] ?? '');
+    if ($stored !== '') {
+        @unlink(__DIR__ . '/../uploads/archivos/' . basename($stored));
     }
 }
 
