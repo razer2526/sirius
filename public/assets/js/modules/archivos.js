@@ -39,6 +39,11 @@ let lastSelectedKey = null;
 // vez (ver bloque al final del archivo), no en cada repintado.
 let dragSelect = null; // { listEl, additive, startX, startY, box }
 
+// Archivo mostrado en el panel de vista previa (columna derecha en escritorio,
+// arriba del listado en móvil). Independiente de `selected`: es "el último
+// archivo en el que se dio clic", no la selección múltiple para acciones en bloque.
+let previewItem = null;
+
 export async function render(root) {
   await load(root);
 }
@@ -47,6 +52,7 @@ async function load(root) {
   root.innerHTML = spinner();
   selected.clear();
   lastSelectedKey = null;
+  previewItem = null;
   try {
     data = await apiGet('files/list', { scope, folder_id: folderId });
   } catch (e) {
@@ -68,7 +74,10 @@ function repaint() {
 
 function paint(root) {
   root.innerHTML = `
-    <div class="mx-auto max-w-5xl space-y-4">
+    <div class="mx-auto max-w-6xl">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start">
+      <div id="preview-panel" class="${previewItem ? 'order-first block lg:order-2 lg:w-80 lg:shrink-0' : 'hidden'}"></div>
+      <div class="min-w-0 flex-1 space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
           <button type="button" data-scope="private" class="rounded-lg px-3.5 py-1.5 text-sm font-semibold transition ${scope === 'private' ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}">
@@ -118,10 +127,13 @@ function paint(root) {
         ${clipboard.mode === 'copy' ? 'Copiando' : 'Cortando'} ${escapeHtml(clipboardLabel())} — Ctrl+V aquí (o clic derecho y "Pegar"), o
         <button type="button" id="btn-clear-clipboard" class="font-semibold text-indigo-600 hover:text-indigo-500">cancelar</button>.
       </p>` : ''}
+      </div>
+    </div>
     </div>`;
 
   renderBreadcrumb(root.querySelector('#breadcrumb'));
   renderList(root.querySelector('#file-list'));
+  renderPreviewPanel(root.querySelector('#preview-panel'));
 
   const viewSelect = root.querySelector('#view-mode');
   viewSelect.value = viewMode;
@@ -210,7 +222,11 @@ function renderList(listEl) {
       folderId = item.id;
       reload();
     } else {
-      window.open(`archivo.php?id=${item.id}`, '_blank');
+      // Un clic ya no abre en pestaña nueva: muestra la vista previa (columna
+      // derecha / arriba en móvil). "Abrir en pestaña nueva" vive ahí adentro,
+      // y en el menú contextual, para quien de verdad quiera salir de Sirius.
+      previewItem = item;
+      repaint();
     }
   }));
   listEl.querySelectorAll('[data-menu]').forEach((b) => b.addEventListener('click', (e) => {
@@ -399,6 +415,7 @@ function openItemMenu(x, y, item) {
   if (item.type === 'folder') {
     entries.push({ label: 'Abrir', ic: 'folder-open', action: () => { folderId = item.id; reload(); } });
   } else {
+    entries.push({ label: 'Vista previa', ic: 'eye', action: () => { previewItem = item; repaint(); } });
     entries.push({ label: 'Descargar', ic: 'download', action: () => window.open(`archivo.php?id=${item.id}&download=1`, '_blank') });
   }
   entries.push({ label: 'Copiar', ic: 'copy', action: () => { clipboard = { mode: 'copy', items: [{ type: item.type, id: item.id, name: item.name }], scope }; repaint(); } });
@@ -422,6 +439,67 @@ function openEmptyMenu(x, y) {
     entries.push({ label: `Pegar ${clipboardLabel()}`, ic: 'clipboard', action: () => pasteClipboard() });
   }
   showContextMenu(x, y, entries);
+}
+
+/* ================= Panel de vista previa ================= */
+/** Cuerpo de la vista previa según el tipo: imagen inline, PDF en iframe,
+ *  video/audio con controles nativos, o un ícono genérico si no hay forma de
+ *  previsualizarlo (el navegador mismo decide qué sabe mostrar inline). */
+function previewBodyHtml(item) {
+  const src = `archivo.php?id=${item.id}`;
+  const mime = item.mime || '';
+  if (mime.startsWith('image/')) {
+    return `<img src="${src}" alt="" class="max-h-full max-w-full rounded-lg object-contain">`;
+  }
+  if (mime === 'application/pdf') {
+    return `<iframe src="${src}" title="${escapeHtml(item.name)}" class="h-full w-full rounded-lg border-0"></iframe>`;
+  }
+  if (mime.startsWith('video/')) {
+    return `<video src="${src}" controls preload="metadata" class="max-h-full max-w-full rounded-lg"></video>`;
+  }
+  if (mime.startsWith('audio/')) {
+    return `<audio src="${src}" controls preload="metadata" class="w-full"></audio>`;
+  }
+  return `
+    <div class="flex flex-col items-center gap-2 py-8 text-center">
+      ${icon(iconForFile(item), 'h-14 w-14 text-slate-300')}
+      <p class="px-4 text-xs text-slate-400">Sin vista previa para este tipo de archivo.</p>
+    </div>`;
+}
+
+function renderPreviewPanel(panelEl) {
+  if (!previewItem) {
+    panelEl.innerHTML = '';
+    return;
+  }
+  const item = previewItem;
+  panelEl.innerHTML = `
+    <div class="sticky top-0 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+      <div class="mb-3 flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="truncate text-sm font-semibold text-slate-800">${escapeHtml(item.name)}</p>
+          <p class="text-xs text-slate-400">${fmtSize(item.size)} · ${fmtDateTime(item.updated_at)}</p>
+        </div>
+        <button type="button" id="btn-preview-close" title="Cerrar" class="shrink-0 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          ${icon('x', 'h-4 w-4')}
+        </button>
+      </div>
+      <div class="flex h-56 items-center justify-center overflow-hidden rounded-lg bg-slate-50 lg:h-72">
+        ${previewBodyHtml(item)}
+      </div>
+      <div class="mt-3 flex gap-2">
+        <button type="button" id="btn-preview-open" class="flex-1 rounded-lg px-3 py-2 text-center text-xs font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
+          Abrir en pestaña nueva
+        </button>
+        <button type="button" id="btn-preview-download" class="flex-1 rounded-lg px-3 py-2 text-center text-xs font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
+          Descargar
+        </button>
+      </div>
+    </div>`;
+
+  panelEl.querySelector('#btn-preview-close').addEventListener('click', () => { previewItem = null; repaint(); });
+  panelEl.querySelector('#btn-preview-open').addEventListener('click', () => window.open(`archivo.php?id=${item.id}`, '_blank'));
+  panelEl.querySelector('#btn-preview-download').addEventListener('click', () => window.open(`archivo.php?id=${item.id}&download=1`, '_blank'));
 }
 
 function openBulkMenu(x, y) {
