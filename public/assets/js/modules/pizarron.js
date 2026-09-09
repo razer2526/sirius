@@ -239,9 +239,10 @@ function wireCanvasNav(wrap) {
   }, { passive: false });
 
   let panning = false;
+  let twoButtonPan = false;
   let startX = 0, startY = 0, startTx = 0, startTy = 0;
-  wrap.addEventListener('pointerdown', (e) => {
-    if (tool !== 'mano' || e.target.closest('#board-toolbar')) return;
+
+  const startPan = (e) => {
     panning = true;
     boardBusy = true;
     wrap.classList.remove('cursor-grab');
@@ -250,7 +251,23 @@ function wireCanvasNav(wrap) {
     startY = e.clientY;
     startTx = view.tx;
     startTy = view.ty;
-    wrap.setPointerCapture(e.pointerId);
+    try { wrap.setPointerCapture(e.pointerId); } catch { /* pointer sintético o ya liberado */ }
+  };
+
+  wrap.addEventListener('pointerdown', (e) => {
+    if (e.target.closest('#board-toolbar')) return;
+    // Atajo universal: mantener presionados los dos botones del mouse a la
+    // vez mueve la vista sin importar la herramienta activa — pero no si ya
+    // hay otro arrastre en curso (mover/redimensionar/dibujar una tarjeta),
+    // para no mover ambas cosas a la vez con el mismo gesto.
+    if (e.buttons === 3 && !boardBusy) {
+      twoButtonPan = true;
+      startPan(e);
+      e.preventDefault();
+      return;
+    }
+    if (tool !== 'mano') return;
+    startPan(e);
     e.preventDefault();
   });
   wrap.addEventListener('pointermove', (e) => {
@@ -267,9 +284,18 @@ function wireCanvasNav(wrap) {
     if (tool === 'mano') wrap.classList.add('cursor-grab');
     try { wrap.releasePointerCapture(e.pointerId); } catch { /* ya liberado */ }
     saveView();
+    if (twoButtonPan) {
+      // El evento "contextmenu" del botón derecho puede llegar justo después
+      // de este pointerup; se limpia la bandera un tick más tarde para que
+      // el listener de contextmenu de abajo alcance a verla en true.
+      setTimeout(() => { twoButtonPan = false; }, 0);
+    }
   };
   wrap.addEventListener('pointerup', endPan);
   wrap.addEventListener('pointerleave', endPan);
+  wrap.addEventListener('contextmenu', (e) => {
+    if (twoButtonPan) e.preventDefault();
+  });
 
   wrap.addEventListener('click', (e) => {
     if (tool !== 'lupa' || e.target.closest('#board-toolbar')) return;
@@ -322,7 +348,10 @@ function buildCard(item) {
 
   const rotateCls = ROTATE_CLASSES[item.id % ROTATE_CLASSES.length];
   const el = document.createElement('div');
-  el.className = `absolute flex flex-col overflow-hidden rounded-xl shadow-md ring-1 ${palette.ring} ${palette.bg} ${rotateCls}`;
+  // Sin overflow-hidden aquí: la tachuela sobresale por encima del borde
+  // superior y no debe recortarse. Lo que sí debe recortarse a las esquinas
+  // redondeadas (header/body/pie) vive en `inner`, más abajo.
+  el.className = `absolute flex flex-col rounded-xl shadow-md ring-1 ${palette.ring} ${palette.bg} ${rotateCls}`;
   el.style.left = item.pos_x + 'px';
   el.style.top = item.pos_y + 'px';
   el.style.width = item.width + 'px';
@@ -335,6 +364,10 @@ function buildCard(item) {
   pin.innerHTML = icon('pin', 'h-5 w-5');
   el.appendChild(pin);
 
+  const inner = document.createElement('div');
+  inner.className = 'flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl';
+  el.appendChild(inner);
+
   const header = document.createElement('div');
   header.className = `flex shrink-0 touch-none items-center gap-1 ${palette.header} px-2 py-1.5 cursor-grab active:cursor-grabbing`;
   header.innerHTML = `
@@ -344,7 +377,7 @@ function buildCard(item) {
     ${canEdit ? `<button type="button" data-cycle-color title="Cambiar color" class="h-4 w-4 shrink-0 rounded-full ring-1 ring-black/10 ${palette.swatch}"></button>` : ''}
     ${canEdit ? `<button type="button" data-del title="Eliminar" class="shrink-0 rounded p-1 text-slate-500 hover:bg-black/10">${icon('trash', 'h-3.5 w-3.5')}</button>` : ''}
   `;
-  el.appendChild(header);
+  inner.appendChild(header);
 
   // Nota: el <textarea> ya es su propio contenedor de scroll (con ajuste de línea
   // nativo del navegador) — envolverlo además en un div con overflow-auto duplica
@@ -357,7 +390,7 @@ function buildCard(item) {
     : item.type === 'note'
       ? 'min-h-0 flex-1 p-2'
       : 'min-h-0 flex-1 overflow-auto p-2';
-  el.appendChild(body);
+  inner.appendChild(body);
 
   if (item.type === 'note') buildNoteBody(body, item, canEdit);
   else if (item.type === 'checklist') buildChecklistBody(body, item, canEdit);
@@ -367,12 +400,14 @@ function buildCard(item) {
     const foot = document.createElement('div');
     foot.className = 'shrink-0 truncate border-t border-black/5 px-2 py-1 text-[10px] text-slate-500';
     foot.textContent = item.creator_name;
-    el.appendChild(foot);
+    inner.appendChild(foot);
   }
 
   if (canEdit && item.type !== 'drawing') {
+    // El área sensible (24x24) es más grande que el ícono (16x16) para que
+    // agarrar la esquina no requiera precisión de pixel.
     const handle = document.createElement('div');
-    handle.className = 'absolute bottom-0 right-0 h-4 w-4 touch-none cursor-nwse-resize text-slate-400';
+    handle.className = 'absolute -bottom-1 -right-1 z-10 flex h-6 w-6 touch-none cursor-nwse-resize items-end justify-end p-1 text-slate-400';
     handle.innerHTML = '<svg viewBox="0 0 24 24" class="h-4 w-4"><path d="M21 21H15M21 21V15M21 21L13 13" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>';
     el.appendChild(handle);
     wireResize(el, handle, item);
@@ -625,7 +660,9 @@ function wireResize(el, handle, item) {
     saveField(item, { width: parseInt(el.style.width, 10), height: parseInt(el.style.height, 10) });
   };
   handle.addEventListener('pointerdown', (e) => {
-    if (tool !== 'cruceta') return;
+    // El asa de redimensionar es un blanco pequeño y deliberado: funciona
+    // sin importar la herramienta activa (a diferencia de arrastrar/dibujar,
+    // que si se bloquean fuera de "cruceta" para no chocar con paneo/zoom).
     resizing = true;
     boardBusy = true;
     startX = e.clientX;
@@ -638,3 +675,42 @@ function wireResize(el, handle, item) {
     e.stopPropagation();
   });
 }
+
+/* ================= Atajos de teclado ================= */
+// Registrados una sola vez a nivel de módulo (mismo patrón que archivos.js):
+// como el router nunca "desmonta" un módulo, un listener puesto dentro de
+// render()/paint() se duplicaría cada vez que se vuelve a entrar al Pizarrón.
+let toolBeforeSpace = null;
+
+function shortcutsBlocked() {
+  const active = document.activeElement;
+  const isTyping = active && (['INPUT', 'TEXTAREA'].includes(active.tagName) || active.isContentEditable);
+  return isTyping || !document.getElementById('board-canvas');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (shortcutsBlocked()) return;
+  if (e.code === 'Space') {
+    // Mantener espacio activa "mano" temporalmente (como Figma/Photoshop);
+    // se restaura la herramienta anterior al soltar. e.repeat evita
+    // reprocesar mientras la tecla sigue presionada.
+    e.preventDefault();
+    if (toolBeforeSpace === null) {
+      toolBeforeSpace = tool;
+      if (tool !== 'mano') { tool = 'mano'; applyToolUI(); }
+    }
+    return;
+  }
+  if (!e.repeat && !e.ctrlKey && !e.metaKey && !e.altKey && e.key.toLowerCase() === 's') {
+    tool = 'cruceta';
+    applyToolUI();
+  }
+});
+
+document.addEventListener('keyup', (e) => {
+  if (e.code !== 'Space' || toolBeforeSpace === null) return;
+  if (!document.getElementById('board-canvas')) { toolBeforeSpace = null; return; }
+  tool = toolBeforeSpace;
+  toolBeforeSpace = null;
+  applyToolUI();
+});
