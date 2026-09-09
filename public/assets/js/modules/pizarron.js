@@ -21,6 +21,15 @@ const PALETTE = {
 const MIN_W = 180;
 const MIN_H = 140;
 
+// Navegación del canvas (zoom/pan) — no es dato del tablero, así que vive
+// solo en el cliente (localStorage por scope), nunca se manda al backend.
+const SCALE_MIN = 0.4;
+const SCALE_MAX = 2.5;
+const ZOOM_BUTTON_STEP = 1.2;
+const WHEEL_SCALE_FACTOR = 0.0015;
+const PAN_STEP_PX = 120;
+const ROTATE_CLASSES = ['-rotate-1', 'rotate-0', 'rotate-1'];
+
 let scope = 'private';
 let boardData = null;
 let maxZ = 1;
@@ -29,6 +38,10 @@ let pollTimer = null;
 // nota o dibujar un trazo no pasa por ningún elemento "enfocable" — sin esta
 // bandera un repintado de fondo destruiría la tarjeta en pleno arrastre.
 let boardBusy = false;
+let view = { scale: 1, tx: 0, ty: 0 };
+// 'cruceta' (seleccionar/arrastrar) | 'mano' (mover la vista) | 'lupa' (zoom).
+// No se persiste: cada carga del módulo arranca en cruceta, el modo seguro.
+let tool = 'cruceta';
 
 export async function render(root, context) {
   await load(root);
@@ -49,8 +62,22 @@ export async function render(root, context) {
   pollTimer = setInterval(tick, POLL_MS);
 }
 
+function loadView(forScope) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`pizarron:view:${forScope}`));
+    if (saved && Number.isFinite(saved.scale) && Number.isFinite(saved.tx) && Number.isFinite(saved.ty)) return saved;
+  } catch { /* localStorage no disponible o valor corrupto: usar default */ }
+  return { scale: 1, tx: 0, ty: 0 };
+}
+
+function saveView() {
+  try { localStorage.setItem(`pizarron:view:${scope}`, JSON.stringify(view)); } catch { /* modo privado del navegador, etc. */ }
+}
+
 async function load(root) {
   root.innerHTML = spinner();
+  view = loadView(scope);
+  tool = 'cruceta';
   try {
     boardData = await apiGet('board/list', { scope });
   } catch (e) {
@@ -87,9 +114,9 @@ function paint(root) {
         </div>
       </div>
 
-      <div id="board-wrap" class="relative h-[72vh] overflow-auto rounded-2xl bg-slate-50 shadow-inner ring-1 ring-slate-200">
+      <div id="board-wrap" class="relative h-[72vh] touch-none overflow-hidden rounded-2xl bg-slate-50 shadow-inner ring-1 ring-slate-200">
         <div id="board-canvas" class="relative"
-             style="width:1400px;height:900px;background-image:radial-gradient(circle,#cbd5e1 1px,transparent 1px);background-size:22px 22px;">
+             style="width:1400px;height:900px;transform-origin:0 0;background-image:radial-gradient(circle,#cbd5e1 1px,transparent 1px);background-size:22px 22px;">
         </div>
         ${!boardData.items.length ? `
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -97,6 +124,24 @@ function paint(root) {
             ${scope === 'private' ? 'Tu pizarrón está vacío. Agrega una nota, lista o dibujo.' : 'El pizarrón público está vacío. Sé el primero en pegar algo.'}
           </p>
         </div>` : ''}
+        <div class="pointer-events-none absolute inset-0">
+          <div id="board-toolbar" class="pointer-events-auto absolute bottom-3 left-3 flex flex-wrap items-center gap-2">
+            <div class="flex gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
+              <button type="button" data-tool="cruceta" title="Seleccionar" class="rounded-lg px-2.5 py-1.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100">${icon('crosshair', 'h-4 w-4')}</button>
+              <button type="button" data-tool="mano" title="Mover la vista" class="rounded-lg px-2.5 py-1.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100">${icon('hand', 'h-4 w-4')}</button>
+              <button type="button" data-tool="lupa" title="Zoom" class="rounded-lg px-2.5 py-1.5 text-sm font-semibold transition text-slate-600 hover:bg-slate-100">${icon('search', 'h-4 w-4')}</button>
+            </div>
+            <div class="flex items-center gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
+              <button type="button" id="btn-zoom-out" title="Alejar" class="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100">${icon('minus', 'h-4 w-4')}</button>
+              <button type="button" id="btn-zoom-reset" title="Restablecer vista" class="w-12 rounded-lg py-1 text-center text-xs font-semibold text-slate-500 hover:bg-slate-100"><span id="zoom-pct">100%</span></button>
+              <button type="button" id="btn-zoom-in" title="Acercar" class="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100">${icon('plus', 'h-4 w-4')}</button>
+            </div>
+            <div class="flex items-center gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
+              <button type="button" id="btn-pan-left" title="Izquierda" class="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100">${icon('chevron-left', 'h-4 w-4')}</button>
+              <button type="button" id="btn-pan-right" title="Derecha" class="rounded-lg p-1.5 text-slate-600 hover:bg-slate-100">${icon('chevron-left', 'h-4 w-4 rotate-180')}</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>`;
 
@@ -111,6 +156,126 @@ function paint(root) {
 
   const canvas = root.querySelector('#board-canvas');
   boardData.items.forEach((item) => canvas.appendChild(buildCard(item)));
+
+  const wrap = root.querySelector('#board-wrap');
+  wrap.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
+  wrap.querySelector('#btn-zoom-in').addEventListener('click', () => {
+    const r = wrap.getBoundingClientRect();
+    zoomAt(r.width / 2, r.height / 2, view.scale * ZOOM_BUTTON_STEP);
+  });
+  wrap.querySelector('#btn-zoom-out').addEventListener('click', () => {
+    const r = wrap.getBoundingClientRect();
+    zoomAt(r.width / 2, r.height / 2, view.scale / ZOOM_BUTTON_STEP);
+  });
+  wrap.querySelector('#btn-zoom-reset').addEventListener('click', () => {
+    view = { scale: 1, tx: 0, ty: 0 };
+    applyTransform(true);
+    saveView();
+  });
+  wrap.querySelector('#btn-pan-left').addEventListener('click', () => panBy(PAN_STEP_PX, 0));
+  wrap.querySelector('#btn-pan-right').addEventListener('click', () => panBy(-PAN_STEP_PX, 0));
+  wireCanvasNav(wrap);
+  applyTransform(false);
+  applyToolUI();
+}
+
+/* ================= Navegación del canvas (zoom / pan) ================= */
+function applyTransform(animated) {
+  const canvas = document.getElementById('board-canvas');
+  if (!canvas) return;
+  canvas.classList.toggle('transition-transform', !!animated);
+  canvas.classList.toggle('duration-150', !!animated);
+  canvas.classList.toggle('ease-out', !!animated);
+  canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
+  const pct = document.getElementById('zoom-pct');
+  if (pct) pct.textContent = Math.round(view.scale * 100) + '%';
+}
+
+function applyToolUI() {
+  const wrap = document.getElementById('board-wrap');
+  if (wrap) {
+    wrap.classList.remove('cursor-grab', 'cursor-grabbing', 'cursor-zoom-in');
+    if (tool === 'mano') wrap.classList.add('cursor-grab');
+    else if (tool === 'lupa') wrap.classList.add('cursor-zoom-in');
+  }
+  document.querySelectorAll('#board-toolbar [data-tool]').forEach((b) => {
+    const active = b.dataset.tool === tool;
+    b.className = `rounded-lg px-2.5 py-1.5 text-sm font-semibold transition ${active ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`;
+  });
+}
+
+function selectTool(next) {
+  if (tool === next) return;
+  tool = next;
+  applyToolUI();
+}
+
+/** Hace zoom manteniendo fijo el punto (screenX, screenY), relativo a #board-wrap. */
+function zoomAt(screenX, screenY, newScaleRaw) {
+  const newScale = Math.min(SCALE_MAX, Math.max(SCALE_MIN, newScaleRaw));
+  if (newScale === view.scale) return;
+  const canvasX = (screenX - view.tx) / view.scale;
+  const canvasY = (screenY - view.ty) / view.scale;
+  view.tx = screenX - canvasX * newScale;
+  view.ty = screenY - canvasY * newScale;
+  view.scale = newScale;
+  applyTransform(true);
+  saveView();
+}
+
+function panBy(dx, dy) {
+  view.tx += dx;
+  view.ty += dy;
+  applyTransform(true);
+  saveView();
+}
+
+/** Rueda del mouse (zoom, cualquier herramienta), arrastre con la mano y clic con la lupa. */
+function wireCanvasNav(wrap) {
+  wrap.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, view.scale * Math.exp(-e.deltaY * WHEEL_SCALE_FACTOR));
+  }, { passive: false });
+
+  let panning = false;
+  let startX = 0, startY = 0, startTx = 0, startTy = 0;
+  wrap.addEventListener('pointerdown', (e) => {
+    if (tool !== 'mano' || e.target.closest('#board-toolbar')) return;
+    panning = true;
+    boardBusy = true;
+    wrap.classList.remove('cursor-grab');
+    wrap.classList.add('cursor-grabbing');
+    startX = e.clientX;
+    startY = e.clientY;
+    startTx = view.tx;
+    startTy = view.ty;
+    wrap.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  wrap.addEventListener('pointermove', (e) => {
+    if (!panning) return;
+    view.tx = startTx + (e.clientX - startX);
+    view.ty = startTy + (e.clientY - startY);
+    applyTransform(false);
+  });
+  const endPan = (e) => {
+    if (!panning) return;
+    panning = false;
+    boardBusy = false;
+    wrap.classList.remove('cursor-grabbing');
+    if (tool === 'mano') wrap.classList.add('cursor-grab');
+    try { wrap.releasePointerCapture(e.pointerId); } catch { /* ya liberado */ }
+    saveView();
+  };
+  wrap.addEventListener('pointerup', endPan);
+  wrap.addEventListener('pointerleave', endPan);
+
+  wrap.addEventListener('click', (e) => {
+    if (tool !== 'lupa' || e.target.closest('#board-toolbar')) return;
+    const r = wrap.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, view.scale * ZOOM_BUTTON_STEP);
+  });
 }
 
 async function createItem(type) {
@@ -155,14 +320,20 @@ function buildCard(item) {
   const canEdit = scope === 'private' || item.created_by === boardData.me || boardData.can_manage;
   const palette = PALETTE[item.color] || PALETTE.amber;
 
+  const rotateCls = ROTATE_CLASSES[item.id % ROTATE_CLASSES.length];
   const el = document.createElement('div');
-  el.className = `absolute flex flex-col overflow-hidden rounded-xl shadow-md ring-1 ${palette.ring} ${palette.bg}`;
+  el.className = `absolute flex flex-col overflow-hidden rounded-xl shadow-md ring-1 ${palette.ring} ${palette.bg} ${rotateCls}`;
   el.style.left = item.pos_x + 'px';
   el.style.top = item.pos_y + 'px';
   el.style.width = item.width + 'px';
   el.style.height = item.height + 'px';
   el.style.zIndex = String(item.z_index);
   el.dataset.id = item.id;
+
+  const pin = document.createElement('div');
+  pin.className = 'pointer-events-none absolute -top-2.5 left-1/2 z-10 -translate-x-1/2 text-red-500 drop-shadow-sm';
+  pin.innerHTML = icon('pin', 'h-5 w-5');
+  el.appendChild(pin);
 
   const header = document.createElement('div');
   header.className = `flex shrink-0 touch-none items-center gap-1 ${palette.header} px-2 py-1.5 cursor-grab active:cursor-grabbing`;
@@ -363,10 +534,16 @@ function buildDrawingBody(body, item, canEdit) {
 
   let current = null;
   const toLocal = (e) => {
+    // getBoundingClientRect() ya viene escalada por el zoom del canvas
+    // (#board-canvas tiene un transform: scale ancestro); el SVG no declara
+    // viewBox, así que su sistema de coordenadas interno es en píxeles sin
+    // escalar — hay que revertir la escala para que el trazo caiga donde
+    // realmente está el cursor.
     const r = svg.getBoundingClientRect();
-    return [Math.round(e.clientX - r.left), Math.round(e.clientY - r.top)];
+    return [Math.round((e.clientX - r.left) / view.scale), Math.round((e.clientY - r.top) / view.scale)];
   };
   svg.addEventListener('pointerdown', (e) => {
+    if (tool !== 'cruceta') return;
     current = { color: penColor, width: penWidth, points: [toLocal(e)] };
     strokes.push(current);
     renderStrokes();
@@ -401,8 +578,11 @@ function wireDrag(el, header, item) {
 
   const onMove = (e) => {
     if (!dragging) return;
-    el.style.left = Math.max(0, startLeft + (e.clientX - startX)) + 'px';
-    el.style.top = Math.max(0, startTop + (e.clientY - startY)) + 'px';
+    // El delta del puntero llega en píxeles de pantalla; #board-canvas puede
+    // estar escalado (zoom), así que hay que revertir la escala para que la
+    // tarjeta se mueva 1:1 con el cursor a cualquier nivel de zoom.
+    el.style.left = Math.max(0, startLeft + (e.clientX - startX) / view.scale) + 'px';
+    el.style.top = Math.max(0, startTop + (e.clientY - startY) / view.scale) + 'px';
   };
   const onUp = () => {
     if (!dragging) return;
@@ -413,7 +593,7 @@ function wireDrag(el, header, item) {
     saveField(item, { pos_x: parseInt(el.style.left, 10), pos_y: parseInt(el.style.top, 10), z_index: item.z_index });
   };
   header.addEventListener('pointerdown', (e) => {
-    if (e.target.closest('input, button')) return;
+    if (tool !== 'cruceta' || e.target.closest('input, button')) return;
     dragging = true;
     boardBusy = true;
     bringToFront(el, item);
@@ -433,8 +613,8 @@ function wireResize(el, handle, item) {
 
   const onMove = (e) => {
     if (!resizing) return;
-    el.style.width = Math.max(MIN_W, startW + (e.clientX - startX)) + 'px';
-    el.style.height = Math.max(MIN_H, startH + (e.clientY - startY)) + 'px';
+    el.style.width = Math.max(MIN_W, startW + (e.clientX - startX) / view.scale) + 'px';
+    el.style.height = Math.max(MIN_H, startH + (e.clientY - startY) / view.scale) + 'px';
   };
   const onUp = () => {
     if (!resizing) return;
@@ -445,6 +625,7 @@ function wireResize(el, handle, item) {
     saveField(item, { width: parseInt(el.style.width, 10), height: parseInt(el.style.height, 10) });
   };
   handle.addEventListener('pointerdown', (e) => {
+    if (tool !== 'cruceta') return;
     resizing = true;
     boardBusy = true;
     startX = e.clientX;
