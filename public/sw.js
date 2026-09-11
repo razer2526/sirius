@@ -27,6 +27,8 @@ const SHELL = [
   'assets/js/services_catalog.json',
   'assets/js/forms.js',
   'assets/js/assistant.js',
+  'assets/js/marketing_panel.js',
+  'assets/js/marketing_icons.js',
   'assets/js/modules/dashboard.js',
   'assets/js/modules/admision.js',
   'assets/js/modules/wizard_admision.js',

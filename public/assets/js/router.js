@@ -20,10 +20,20 @@ export function currentModuleKey() {
   return hash.split('/')[0] || 'dashboard';
 }
 
+/** Rutas que cambiaron de lugar: sin esto un marcador viejo caería en el fallback
+ *  silencioso de "primer módulo disponible", que parece un bug de permisos. */
+const MOVED_ROUTES = {
+  marketing: 'apps/marketing',
+};
+
 async function renderRoute() {
   const root = document.getElementById('module-root');
   const hash = window.location.hash.replace(/^#\//, '');
   const [key, ...args] = hash.split('/');
+  if (MOVED_ROUTES[key]) {
+    navigate(MOVED_ROUTES[key]);
+    return;
+  }
   const moduleKey = key || 'dashboard';
 
   const mod = appState.modules.find((m) => m.key === moduleKey);

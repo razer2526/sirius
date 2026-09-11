@@ -14,6 +14,7 @@ import {
   inputCls, labelCls, debounce, fmtDateTime, fullName, calcAge,
 } from '../ui.js';
 import { renderCoverageMap } from '../coverage_map.js';
+import { renderMarketing } from '../marketing_panel.js';
 
 let ctx;
 let catalog = null;
@@ -24,14 +25,20 @@ const TOOLS = [
   { key: 'cotizador',   label: 'Cotizador',   icon: 'calculator', color: 'bg-emerald-100 text-emerald-700', desc: 'Generar cotizaciones para pacientes' },
   { key: 'comisiones',  label: 'Comisiones',  icon: 'link', color: 'bg-amber-100 text-amber-700', desc: 'Comisiones de médicos y concierge con convenio' },
   { key: 'cobertura',   label: 'Cobertura',   icon: 'map-pin', color: 'bg-sky-100 text-sky-700', desc: 'Verificar cobertura de la unidad móvil por código postal' },
+  { key: 'marketing',   label: 'Marketing',   icon: 'camera', color: 'bg-pink-100 text-pink-700', desc: 'Planear las publicaciones de redes sociales' },
 ];
 
 export async function render(root, context) {
   ctx = context;
+  const [tool, category, type, action] = context.args;
+
+  // Marketing va antes del catálogo: es el único que no necesita doc_templates.json,
+  // y esperar esa descarga para nada retrasaría la entrada al panel.
+  if (tool === 'marketing') return renderMarketing(root, ctx, category);
+
   if (!catalog) {
     catalog = await fetch('assets/js/doc_templates.json').then((r) => r.json());
   }
-  const [tool, category, type, action] = context.args;
 
   if (!tool) return gridTools(root);
   if (tool === 'cotizador') return renderCotizador(root, category);
