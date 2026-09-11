@@ -25,8 +25,8 @@ Están numerados porque el orden de lectura importa.
 | # | Documento | Qué contiene | Léelo si… |
 |---|---|---|---|
 | 01 | [Arquitectura](01-arquitectura.md) | El núcleo: configuración, sesión, permisos, papelera genérica, capa de IA, front controller, SPA. Con firmas de función reales. | Siempre. Es la base de todo lo demás. |
-| 02 | [Modelo de datos](02-modelo-de-datos.md) | Las 47 tablas por dominio, y los tres patrones de esquema (doble motor, migraciones, seeds). | Vas a diseñar el esquema nuevo. |
-| 03 | [Módulos](03-modulos.md) | Los 23 módulos: qué hace cada uno, sus acciones, sus permisos, y **qué tan rescatable es**. | Quieres saber qué ya existe y no reinventar. |
+| 02 | [Modelo de datos](02-modelo-de-datos.md) | Las 48 tablas por dominio, y los tres patrones de esquema (doble motor, migraciones, seeds). | Vas a diseñar el esquema nuevo. |
+| 03 | [Módulos](03-modulos.md) | Los 22 módulos: qué hace cada uno, sus acciones, sus permisos, y **qué tan rescatable es**. | Quieres saber qué ya existe y no reinventar. |
 | 04 | [Patrones reusables](04-patrones-reusables.md) | Los 23 patrones transversales, cada uno con el archivo donde mejor se ve. | **El documento más valioso.** Son decisiones ya validadas. |
 | 05 | [Operación y despliegue](05-operacion-y-despliegue.md) | Build sin Node, CI, service worker, instalador, seguridad de archivos, y qué restricciones vienen del hosting compartido. | Vas a montar la infraestructura del producto nuevo. |
 | 06 | [El producto nuevo](06-producto-nuevo.md) | **Propuesta, no descripción.** Qué rescatar, multi-tenant, multi-giro, suscripciones, y los errores conocidos que no hay que repetir. | Siempre, junto con el 01. |
@@ -64,13 +64,13 @@ Todas verificadas contra el código, no estimadas.
 
 | | |
 |---|---|
-| **PHP** (sin `vendor/`) | 20,999 líneas |
-| **JavaScript** | 17,525 líneas |
-| **Total** | ~38,500 líneas |
-| Tablas en el esquema | 47 (definidas dos veces: MySQL y SQLite) |
-| Módulos registrados | 23 |
+| **PHP** (sin `vendor/`) | 21,261 líneas |
+| **JavaScript** | 18,066 líneas |
+| **Total** | ~39,300 líneas |
+| Tablas en el esquema | 48 (definidas dos veces: MySQL y SQLite) |
+| Módulos registrados | 22 |
 | Handlers de API | 32 archivos, 33 rutas |
-| Archivos de módulo JS | 24 (23 módulos + `wizard_admision.js`, variante de Admisión) |
+| Archivos de módulo JS | 23 (22 módulos + `wizard_admision.js`, variante de Admisión) |
 | Dependencias de backend | **0** — sin Composer, sin framework |
 | Dependencias de frontend | **0** — sin bundler, sin librerías, sin CDN |
 

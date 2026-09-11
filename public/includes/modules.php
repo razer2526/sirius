@@ -76,11 +76,6 @@ return [
             'manage' => 'Gestionar y cancelar citas de cualquier usuario',
         ],
     ],
-    'marketing' => [
-        'label' => 'Marketing',
-        'icon'  => 'camera',
-        'phase' => 2,
-    ],
     'whatsapp' => [
         'label' => 'WhatsApp',
         'icon'  => 'chat',
@@ -98,6 +93,7 @@ return [
             'cotizador'   => 'Usar el Cotizador',
             'comisiones'  => 'Usar Comisiones',
             'cobertura'   => 'Usar Cobertura',
+            'marketing'   => 'Usar Marketing',
             'review'      => 'Revisar y liberar estudios',
             'delete'      => 'Eliminar estudios membretados',
         ],

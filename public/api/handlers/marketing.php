@@ -1,13 +1,15 @@
 <?php
 /**
- * Handler marketing: calendario de planeación de contenido (Facebook), su
- * portafolio histórico y el asistente de IA que arma un borrador del mes y
- * ayuda a redactar captions. Reutiliza ai_generate() de includes/ai.php tal
- * cual — el mismo cliente multiproveedor que ya usa el Asistente Sirius.
+ * Handler marketing: calendario de planeación de contenido para redes, su
+ * portafolio histórico, la biblioteca de recursos y el copiloto de IA que arma
+ * un borrador del mes, redacta captions y propone acciones sobre las
+ * publicaciones. Reutiliza ai_generate() de includes/ai.php tal cual — el mismo
+ * cliente multiproveedor que ya usa el Asistente Sirius.
  *
- * Sin integración con Canva ni con Facebook: canva_url es solo un campo de
- * texto (liga al diseño) y "publicada" es un estatus que la propia persona de
- * marketing marca a mano tras publicar manualmente.
+ * Sin integración con Canva ni con las plataformas de redes: canva_url es solo
+ * una liga al diseño y "publicada" es un estatus que la propia persona de
+ * marketing marca a mano. Es una herramienta de organización y planeación, no
+ * de publicación ni de métricas.
  */
 
 require_once __DIR__ . '/../../includes/ai.php';
@@ -16,7 +18,32 @@ const MARKETING_MAX_SIZE = 8 * 1024 * 1024;
 const MARKETING_DIR = __DIR__ . '/../../uploads/marketing/';
 const CONTENT_POST_STATUSES = ['idea', 'diseno', 'programada', 'publicada'];
 const CONTENT_POST_CATEGORIES = ['organico', 'ads', 'story', 'efemeride', 'promocion'];
+const CONTENT_POST_CHANNELS = ['facebook', 'instagram', 'tiktok', 'google_ads'];
 const CONTENT_COLOR_KEYS = ['amber', 'pink', 'sky', 'emerald', 'violet', 'slate', 'indigo', 'rose'];
+
+/**
+ * Normaliza las redes a la forma que guarda la columna: CSV con comas centinela
+ * (",facebook,instagram,"), para que un LIKE futuro no confunda "tiktok" dentro
+ * de otro nombre. Cadena vacía = sin red asignada.
+ */
+function content_channels_in($value): string
+{
+    $list = is_array($value) ? $value : explode(',', (string)$value);
+    $clean = [];
+    foreach ($list as $c) {
+        $c = trim((string)$c);
+        if (in_array($c, CONTENT_POST_CHANNELS, true) && !in_array($c, $clean, true)) {
+            $clean[] = $c;
+        }
+    }
+    return $clean ? ',' . implode(',', $clean) . ',' : '';
+}
+
+/** CSV con centinelas => arreglo limpio para el cliente. */
+function content_channels_out($stored): array
+{
+    return array_values(array_filter(explode(',', (string)$stored), static fn($c) => $c !== ''));
+}
 
 function handle_marketing(string $action): void
 {
@@ -72,18 +99,24 @@ function handle_marketing(string $action): void
             $emoji = mb_substr(trim((string)($b['emoji'] ?? '')), 0, 40);
             $color = in_array($b['color'] ?? '', CONTENT_COLOR_KEYS, true) ? $b['color'] : 'sky';
             $title = mb_substr($title, 0, 150);
+            $channels = content_channels_in($b['channels'] ?? []);
+            $postTime = trim((string)($b['post_time'] ?? ''));
+            if ($postTime !== '' && !preg_match('/^\d{2}:\d{2}(:\d{2})?$/', $postTime)) {
+                json_error('Hora no válida', 422);
+            }
+            $postTime = $postTime === '' ? null : mb_substr($postTime, 0, 5) . ':00';
 
             if ($id > 0) {
                 find_content_post($id);
                 db()->prepare(
-                    'UPDATE content_posts SET post_date=?, title=?, category=?, status=?, caption=?, canva_url=?, emoji=?, color=? WHERE id=?'
-                )->execute([$postDate, $title, $category, $status, $caption ?: null, $canvaUrl ?: null, $emoji ?: null, $color, $id]);
+                    'UPDATE content_posts SET post_date=?, post_time=?, title=?, category=?, channels=?, status=?, caption=?, canva_url=?, emoji=?, color=? WHERE id=?'
+                )->execute([$postDate, $postTime, $title, $category, $channels, $status, $caption ?: null, $canvaUrl ?: null, $emoji ?: null, $color, $id]);
                 log_activity('marketing', 'post_update', "Actualizó la publicación \"$title\"", 'content_post', $id);
             } else {
                 db()->prepare(
-                    'INSERT INTO content_posts (post_date, title, category, status, caption, canva_url, emoji, color, created_by)
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-                )->execute([$postDate, $title, $category, $status, $caption ?: null, $canvaUrl ?: null, $emoji ?: null, $color, (int)$me['id']]);
+                    'INSERT INTO content_posts (post_date, post_time, title, category, channels, status, caption, canva_url, emoji, color, created_by)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$postDate, $postTime, $title, $category, $channels, $status, $caption ?: null, $canvaUrl ?: null, $emoji ?: null, $color, (int)$me['id']]);
                 $id = (int)db()->lastInsertId();
                 log_activity('marketing', 'post_create', "Creó la publicación \"$title\"", 'content_post', $id);
             }
@@ -133,6 +166,60 @@ function handle_marketing(string $action): void
             }
             db()->prepare('UPDATE content_posts SET thumbnail_file = ? WHERE id = ?')->execute([$name, $id]);
             json_ok(['post' => content_post_out(find_content_post($id))]);
+        }
+
+        /* ---- Biblioteca de recursos ---- */
+        case 'assets_list': {
+            $st = db()->query('SELECT * FROM marketing_assets ORDER BY created_at DESC, id DESC');
+            json_ok(['assets' => array_map('marketing_asset_out', $st->fetchAll())]);
+        }
+
+        case 'asset_upload': {
+            if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                json_error('No se recibió la imagen', 422);
+            }
+            $file = $_FILES['file'];
+            if ($file['size'] > MARKETING_MAX_SIZE) {
+                json_error('La imagen supera 8 MB', 422);
+            }
+            $allowed = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
+            $info = @getimagesize($file['tmp_name']);
+            if (!$info || !isset($allowed[$info[2]])) {
+                json_error('Solo se aceptan imágenes PNG, JPG, GIF o WEBP', 422);
+            }
+            if (!is_uploaded_file($file['tmp_name'])) {
+                json_error('Subida no válida', 422);
+            }
+            if (!is_dir(MARKETING_DIR)) {
+                @mkdir(MARKETING_DIR, 0775, true);
+            }
+            $stored = 'asset-' . date('YmdHis') . '-' . bin2hex(random_bytes(6)) . '.' . $allowed[$info[2]];
+            if (!move_uploaded_file($file['tmp_name'], MARKETING_DIR . $stored)) {
+                json_error('No se pudo guardar la imagen', 500);
+            }
+            @chmod(MARKETING_DIR . $stored, 0644);
+            $name = mb_substr(trim((string)($_POST['name'] ?? $file['name'])), 0, 150) ?: $stored;
+            db()->prepare('INSERT INTO marketing_assets (name, stored_name, mime, size, created_by) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$name, $stored, $info['mime'] ?? 'image/*', (int)$file['size'], (int)$me['id']]);
+            $assetId = (int)db()->lastInsertId();
+            log_activity('marketing', 'asset_upload', "Subió el recurso \"$name\"", 'marketing_asset', $assetId);
+            $st = db()->prepare('SELECT * FROM marketing_assets WHERE id = ?');
+            $st->execute([$assetId]);
+            json_ok(['asset' => marketing_asset_out($st->fetch())]);
+        }
+
+        case 'asset_delete': {
+            $assetId = (int)(request_body()['id'] ?? 0);
+            $st = db()->prepare('SELECT * FROM marketing_assets WHERE id = ?');
+            $st->execute([$assetId]);
+            $asset = $st->fetch();
+            if (!$asset) {
+                json_error('Recurso no encontrado', 404);
+            }
+            @unlink(MARKETING_DIR . basename($asset['stored_name']));
+            db()->prepare('DELETE FROM marketing_assets WHERE id = ?')->execute([$assetId]);
+            log_activity('marketing', 'asset_delete', "Eliminó el recurso \"{$asset['name']}\"", 'marketing_asset', $assetId);
+            json_ok();
         }
 
         /* ---- Catálogo de fechas conmemorativas ---- */
@@ -277,9 +364,8 @@ function handle_marketing(string $action): void
             }
             [$from, $to, , $commemorative, $existing] = marketing_month_context($year, $month);
             $systemPrompt = marketing_system_prompt_month($year, $month, $commemorative, $existing)
-                . "\nConversas con la persona de marketing para resolver dudas puntuales o ajustar ideas. Sé breve. "
-                . "Si propones una publicación concreta para agregar al calendario, incluye además de tu respuesta "
-                . "normal una línea aparte con el formato SUGERENCIA: AAAA-MM-DD | Título | categoria | ángulo.";
+                . "\nConversas con la persona de marketing para resolver dudas puntuales o ajustar ideas. Sé breve."
+                . marketing_actions_prompt();
             $history = marketing_chat_history($b['history'] ?? [], $message);
 
             try {
@@ -289,7 +375,18 @@ function handle_marketing(string $action): void
                 json_error($e->getMessage(), 502);
             }
             log_activity('marketing', 'chat', mb_substr($message, 0, 120));
-            json_ok(['reply' => $reply, 'suggestions' => marketing_parse_suggestions($reply, $from, $to)]);
+            // SUGERENCIA: se sigue aceptando como alias de "ACCION: crear" — es el
+            // formato que aún usa el prompt de generate_month_draft.
+            $legacy = array_map(static fn($s) => [
+                'verb' => 'crear', 'post_date' => $s['post_date'], 'title' => $s['title'],
+                'category' => $s['category'], 'channels' => [], 'angle' => $s['angle'],
+                'label' => "Agregar \"" . mb_substr($s['title'], 0, 60) . "\" el {$s['post_date']}",
+            ], marketing_parse_suggestions($reply, $from, $to));
+
+            json_ok([
+                'reply'   => $reply,
+                'actions' => array_merge(marketing_parse_actions($reply, $existing), $legacy),
+            ]);
         }
     }
 }
@@ -312,8 +409,10 @@ function content_post_out(array $row): array
     return [
         'id'            => (int)$row['id'],
         'post_date'     => $row['post_date'],
+        'post_time'     => $row['post_time'] ?? null,
         'title'         => $row['title'],
         'category'      => $row['category'],
+        'channels'      => content_channels_out($row['channels'] ?? ''),
         'status'        => $row['status'],
         'caption'       => $row['caption'],
         'canva_url'     => $row['canva_url'],
@@ -323,6 +422,18 @@ function content_post_out(array $row): array
         'creator_name'  => $row['creator_name'] ?? null,
         'created_at'    => $row['created_at'],
         'updated_at'    => $row['updated_at'],
+    ];
+}
+
+function marketing_asset_out(array $row): array
+{
+    return [
+        'id'         => (int)$row['id'],
+        'name'       => $row['name'],
+        'url'        => 'marketing_asset.php?asset=' . (int)$row['id'],
+        'mime'       => $row['mime'],
+        'size'       => (int)$row['size'],
+        'created_at' => $row['created_at'],
     ];
 }
 
@@ -340,7 +451,9 @@ function marketing_month_context(int $year, int $month): array
     $st->execute([$month]);
     $commemorative = $st->fetchAll();
 
-    $st2 = db()->prepare('SELECT post_date, title FROM content_posts WHERE post_date BETWEEN ? AND ? ORDER BY post_date');
+    // El id va incluido a propósito: los verbos mover/estado/caption del copiloto
+    // operan sobre publicaciones concretas, y sin el id el modelo se los inventaría.
+    $st2 = db()->prepare('SELECT id, post_date, title, status FROM content_posts WHERE post_date BETWEEN ? AND ? ORDER BY post_date');
     $st2->execute([$from, $to]);
     $existing = $st2->fetchAll();
 
@@ -362,10 +475,83 @@ function marketing_system_prompt_month(int $year, int $month, array $commemorati
     if ($existing) {
         $prompt .= "\nPUBLICACIONES YA PLANEADAS ESE MES (no las repitas ni sugieras esas mismas fechas):\n";
         foreach ($existing as $e) {
-            $prompt .= "- {$e['post_date']}: {$e['title']}\n";
+            $prompt .= "- [id {$e['id']}] {$e['post_date']} ({$e['status']}): {$e['title']}\n";
         }
     }
     return $prompt;
+}
+
+/** Gramática de acciones que el copiloto puede proponer. Nada se aplica solo: cada
+ *  línea válida se convierte en un botón que la persona presiona — misma regla que
+ *  ya sigue assistant_tools.php, donde las herramientas del modelo son de solo
+ *  lectura justamente para no tener que confirmar. */
+function marketing_actions_prompt(): string
+{
+    $cats = implode('|', CONTENT_POST_CATEGORIES);
+    $chans = implode('|', CONTENT_POST_CHANNELS);
+    $states = implode('|', CONTENT_POST_STATUSES);
+    return "\nTú NO puedes aplicar cambios: solo los PROPONES, y la persona decide si los acepta con un botón.\n"
+        . "Nunca digas que ya hiciste, moviste o cambiaste algo — di que lo propones o lo sugieres.\n"
+        . "CUANDO PROPONGAS CAMBIOS CONCRETOS, escríbelos como líneas sueltas con este formato exacto,\n"
+        . "además de tu respuesta normal en texto. Usa solo ids que aparezcan arriba:\n"
+        . "ACCION: crear | AAAA-MM-DD | Título | $cats | redes separadas por coma ($chans) | ángulo breve\n"
+        . "ACCION: mover | id | AAAA-MM-DD\n"
+        . "ACCION: estado | id | $states\n"
+        . "ACCION: caption | id | el texto del caption en una sola línea\n";
+}
+
+/**
+ * Extrae las acciones propuestas. Lo que no valide (verbo desconocido, id que no
+ * existe, enum fuera de catálogo) se ignora y se queda como texto plano: nunca se
+ * convierte en un botón que prometa algo que fallaría al presionarlo.
+ */
+function marketing_parse_actions(string $text, array $existing): array
+{
+    $byId = [];
+    foreach ($existing as $e) {
+        $byId[(int)$e['id']] = $e;
+    }
+    $out = [];
+    foreach (explode("\n", $text) as $line) {
+        $line = trim($line);
+        if (stripos($line, 'ACCION:') !== 0) {
+            continue;
+        }
+        $parts = array_map('trim', explode('|', trim(substr($line, strlen('ACCION:')))));
+        $verb = strtolower(array_shift($parts) ?? '');
+
+        if ($verb === 'crear' && count($parts) >= 5) {
+            [$date, $title, $category, $channels, $angle] = $parts;
+            if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $title === '') {
+                continue;
+            }
+            $out[] = [
+                'verb'      => 'crear',
+                'post_date' => $date,
+                'title'     => mb_substr($title, 0, 150),
+                'category'  => in_array($category, CONTENT_POST_CATEGORIES, true) ? $category : 'organico',
+                'channels'  => content_channels_out(content_channels_in($channels)),
+                'angle'     => mb_substr($angle, 0, 500),
+                'label'     => "Agregar \"" . mb_substr($title, 0, 60) . "\" el $date",
+            ];
+            continue;
+        }
+
+        $id = (int)($parts[0] ?? 0);
+        if (!isset($byId[$id])) {
+            continue;
+        }
+        $title = mb_substr($byId[$id]['title'], 0, 60);
+
+        if ($verb === 'mover' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $parts[1] ?? '')) {
+            $out[] = ['verb' => 'mover', 'id' => $id, 'post_date' => $parts[1], 'label' => "Mover \"$title\" al {$parts[1]}"];
+        } elseif ($verb === 'estado' && in_array($parts[1] ?? '', CONTENT_POST_STATUSES, true)) {
+            $out[] = ['verb' => 'estado', 'id' => $id, 'status' => $parts[1], 'label' => "Marcar \"$title\" como {$parts[1]}"];
+        } elseif ($verb === 'caption' && trim($parts[1] ?? '') !== '') {
+            $out[] = ['verb' => 'caption', 'id' => $id, 'caption' => mb_substr($parts[1], 0, 4000), 'label' => "Escribir el caption de \"$title\""];
+        }
+    }
+    return $out;
 }
 
 /** Extrae las líneas "SUGERENCIA: fecha | título | categoria | ángulo" de una respuesta del modelo. */

@@ -55,7 +55,7 @@ $routes = [
     'papelera'      => ['papelera.php', 'papelera'],
     'push'          => ['push.php', null],
     'branding'      => ['branding.php', 'configuracion'],
-    'marketing'     => ['marketing.php', 'marketing'],
+    'marketing'     => ['marketing.php', 'apps'],
 ];
 
 $r = (string)($_GET['r'] ?? '');

@@ -1,6 +1,6 @@
 # 02 · Modelo de datos
 
-Las 47 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
+Las 48 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
 
 Todo el esquema vive en **un solo archivo**: `public/install/schema.php` (~1,730 líneas), con cuatro funciones:
 
@@ -114,7 +114,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 
 ## Inventario de tablas
 
-47 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
+48 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
 
 ### A · Identidad, sesión y permisos
 

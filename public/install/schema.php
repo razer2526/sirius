@@ -702,8 +702,10 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
             'content_posts' => "CREATE TABLE IF NOT EXISTS content_posts (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 post_date DATE NOT NULL,
+                post_time TIME NULL,
                 title VARCHAR(150) NOT NULL,
                 category VARCHAR(30) NOT NULL DEFAULT 'organico',
+                channels VARCHAR(120) NOT NULL DEFAULT '',
                 status ENUM('idea','diseno','programada','publicada') NOT NULL DEFAULT 'idea',
                 caption TEXT NULL,
                 canva_url VARCHAR(500) NULL,
@@ -724,6 +726,17 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 emoji_suggestion VARCHAR(8) NULL,
                 category VARCHAR(30) NULL,
                 INDEX idx_commemdate_month_day (month, day)
+            )$suffix",
+            'marketing_assets' => "CREATE TABLE IF NOT EXISTS marketing_assets (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(150) NOT NULL,
+                stored_name VARCHAR(80) NOT NULL,
+                mime VARCHAR(60) NOT NULL,
+                size INT UNSIGNED NOT NULL DEFAULT 0,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_mktasset_created (created_at),
+                CONSTRAINT fk_mktasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
         ];
     } else {
@@ -1279,8 +1292,10 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
             'content_posts' => "CREATE TABLE IF NOT EXISTS content_posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 post_date TEXT NOT NULL,
+                post_time TEXT NULL,
                 title TEXT NOT NULL,
                 category TEXT NOT NULL DEFAULT 'organico',
+                channels TEXT NOT NULL DEFAULT '',
                 status TEXT NOT NULL DEFAULT 'idea',
                 caption TEXT NULL,
                 canva_url TEXT NULL,
@@ -1298,6 +1313,15 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 label TEXT NOT NULL,
                 emoji_suggestion TEXT NULL,
                 category TEXT NULL
+            )",
+            'marketing_assets' => "CREATE TABLE IF NOT EXISTS marketing_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                stored_name TEXT NOT NULL,
+                mime TEXT NOT NULL,
+                size INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
         ];
     }
@@ -1350,6 +1374,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_postalcode_cp ON postal_codes (cp)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_contentpost_date ON content_posts (post_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_commemdate_month_day ON commemorative_dates (month, day)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mktasset_created ON marketing_assets (created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');
@@ -1424,6 +1449,13 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // (no viene del catálogo SEPOMEX) — distingue esas filas en la UI, aunque
         // el reimport nunca las toca porque no aparecen en el CSV semilla.
         "ALTER TABLE postal_codes ADD COLUMN is_custom " . ($isMysql ? 'TINYINT(1) NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0'),
+        // Hora del día de una publicación de Marketing (NULL = sin hora definida).
+        "ALTER TABLE content_posts ADD COLUMN post_time " . ($isMysql ? 'TIME NULL' : 'TEXT NULL'),
+        // Redes de una publicación, como CSV con comas centinela: ",facebook,instagram,".
+        // Se guarda desnormalizado a propósito: posts_list ya devuelve el mes completo
+        // en una sola llamada, así que contar y filtrar por red es trabajo del cliente
+        // y nunca llega a ser una consulta. Cadena vacía = sin red asignada.
+        "ALTER TABLE content_posts ADD COLUMN channels " . ($isMysql ? "VARCHAR(120) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''"),
     ];
     $applied = 0;
     foreach ($migrations as $sql) {
@@ -1467,7 +1499,42 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // tabla aún no existe en una instalación muy vieja sin sirius_schema_tables() corrido antes; no debería pasar
     }
 
-    return ["Migraciones aplicadas: $applied"];
+    $log = ["Migraciones aplicadas: $applied"];
+
+    // Marketing dejó de ser módulo del sidebar y pasó a ser una herramienta dentro de
+    // Apps, así que quien tenía el módulo debe terminar con el módulo 'apps' y el flag
+    // 'marketing'. Se hace en PHP y no en SQL porque mezclar el JSON de flags exigiría
+    // JSON_SET (solo MySQL) o JSON1 (puede no estar compilado en SQLite), y la columna
+    // puede venir NULL o con JSON inválido, que SQL no sabe recuperar.
+    try {
+        $old = $pdo->query("SELECT user_id, flags FROM user_permissions WHERE module_key = 'marketing'")->fetchAll();
+        if ($old) {
+            $find   = $pdo->prepare("SELECT flags FROM user_permissions WHERE user_id = ? AND module_key = 'apps'");
+            $update = $pdo->prepare("UPDATE user_permissions SET flags = ? WHERE user_id = ? AND module_key = 'apps'");
+            $insert = $pdo->prepare("INSERT INTO user_permissions (user_id, module_key, flags) VALUES (?, 'apps', ?)");
+            foreach ($old as $row) {
+                $userId = (int)$row['user_id'];
+                $find->execute([$userId]);
+                $appsRow = $find->fetch();
+                if ($appsRow === false) {
+                    $insert->execute([$userId, json_encode(['marketing' => true])]);
+                    continue;
+                }
+                $flags = json_decode((string)$appsRow['flags'], true);
+                if (!is_array($flags)) {
+                    $flags = [];
+                }
+                $flags['marketing'] = true;
+                $update->execute([json_encode($flags), $userId]);
+            }
+            $pdo->exec("DELETE FROM user_permissions WHERE module_key = 'marketing'");
+            $log[] = 'Permisos de Marketing migrados a Apps: ' . count($old);
+        }
+    } catch (Throwable $e) {
+        $log[] = 'Aviso: no se pudieron migrar los permisos de Marketing (' . $e->getMessage() . ')';
+    }
+
+    return $log;
 }
 
 /** Siembra los valores por defecto de settings si no existen ya. */
