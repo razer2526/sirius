@@ -45,7 +45,7 @@ El sidebar, la matriz de permisos, el ruteo, el título de la pantalla y el resa
 │  │  ├─ index.php       asistente visual de primera instalación
 │  │  ├─ schema.php      todo el esquema + migraciones + seeds (~1,730 líneas)
 │  │  └─ setup.php       runner de migraciones por URL (?key=)
-│  ├─ assets/js/         núcleo SPA + widgets compartidos + modules/ (24 archivos)
+│  ├─ assets/js/         núcleo SPA + widgets compartidos + modules/ (23 archivos)
 │  ├─ uploads/           contenido de usuario, bloqueado por .htaccess
 │  └─ vendor/            FPDF y PHPMailer copiados a mano
 ├─ src/tailwind.css      única entrada de CSS
@@ -161,7 +161,7 @@ Un `return [...]` puro, `clave_de_módulo => definición`, memoizado. Campos de 
 | `group` | `'admin_tools'` lo agrupa en una sección aparte del sidebar |
 | `hidden` | alcanzable por URL y con permiso verificado, pero no listado en el sidebar |
 
-Hoy hay **23 módulos** registrados.
+Hoy hay **22 módulos** registrados.
 
 ### El modelo de dos niveles
 

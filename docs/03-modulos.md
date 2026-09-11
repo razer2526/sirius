@@ -1,6 +1,6 @@
 # 03 · Módulos
 
-Los 23 módulos de Sirius: qué hace cada uno, sus acciones de API, sus permisos, y **qué tan rescatable es**.
+Los 22 módulos de Sirius: qué hace cada uno, sus acciones de API, sus permisos, y **qué tan rescatable es**.
 
 La clasificación es lo importante de este documento:
 
@@ -14,14 +14,14 @@ La clasificación es lo importante de este documento:
 
 | Clasificación | Módulos | Total |
 |---|---|---|
-| 🟢 Genérico | tareas · pizarrón · archivos · inventario · marketing · whatsapp · whatsapp_config · usuarios · membretes · log · backup · api · papelera · configuración | **14** |
+| 🟢 Genérico | tareas · pizarrón · archivos · inventario · whatsapp · whatsapp_config · usuarios · membretes · log · backup · api · papelera · configuración | **13** |
 | 🟡 Semi-genérico | dashboard · admisión · calendario · catálogo de estudios · vinculación · cobertura | **6** |
 | 🔴 Específico | expedientes · plantillas de estudios | **2** |
 | Contenedor mixto | apps (5 sub-herramientas de distinta clasificación) | **1** |
 
 Más tres handlers sin módulo, todos genéricos: `auth`, `assistant`, `push`.
 
-**El titular: de 23 módulos, 20 se rescatan** — 14 casi textuales y 6 con renombres. Solo 2 se descartan.
+**El titular: de 22 módulos, 19 se rescatan** — 13 casi textuales y 6 con renombres. Solo 2 se descartan. (Marketing ya no cuenta aparte: vive dentro de Apps como sub-app.)
 
 ### Los renombres que convierten 🟡 en 🟢
 
@@ -136,18 +136,6 @@ Agenda por día, semana y mes, coloreada por servicio, con estatus, invitados ex
 
 Todo es agendamiento genérico salvo las constantes `APPT_SERVICES` / `SERVICE_LABELS`.
 
-### 🟢 `marketing` — Marketing
-`modules/marketing.js` + `handlers/marketing.php`
-
-Calendario de planeación de contenido: publicaciones con estatus, categoría, color y miniatura, vista de portafolio histórico, catálogo editable de efemérides, y un asistente de IA que redacta el borrador de un mes completo, sugiere textos por publicación y ofrece chat libre.
-
-**Sin integración con Canva ni con la API de Meta a propósito** — `canva_url` es un campo de liga y "publicada" se marca a mano. La decisión fue deliberada: Canva ya tiene su propio planificador, y publicar automático exigiría revisión de app de Meta.
-
-**Acciones:** `posts_list`, `post_save`, `post_delete`, `thumbnail_upload`, `commemorative_dates_list`, `commemorative_date_save`, `commemorative_date_delete`, `generate_month_draft`, `suggest_caption`, `chat`
-**Flags:** ninguno
-
-Cualquier negocio planea contenido. Nada clínico en el esquema.
-
 ### 🟢 `whatsapp` — WhatsApp
 `modules/whatsapp.js` + `handlers/whatsapp.php` + `whatsapp_webhook.php` + `whatsapp_media.php`
 
@@ -168,10 +156,13 @@ Bandeja compartida omnicanal genérica. El único acoplamiento es `link_patient`
 | **cotizador** | `cotizador` | Arma cotizaciones buscando en el catálogo de precios, con renglones, totales e historial. | 🟡 |
 | **comisiones** | `comisiones` | Calcula comisiones por periodo: la tasa del médico depende del grupo del estudio, y el concierge gana un % independiente sobre el mismo monto. Con alternado renglón por renglón, estados de cuenta y extracción por IA. | 🟡 |
 | **cobertura** | `cobertura` | Consulta pública de código postal: colonias y si la unidad móvil cubre esa zona. | 🟡 |
+| **marketing** | `marketing` | Panel de planeación de redes: calendario en vistas mes/semana/día con la barra del día seleccionado, filtros por red (Facebook, Instagram, TikTok, Google Ads), biblioteca de recursos, lista de "qué sigue" y un copiloto de IA que **propone** acciones (crear, mover, cambiar estatus, redactar caption) que la persona aplica con un botón. **Sin integración con Canva ni con las plataformas de redes a propósito**: es organización y planeación, no publicación ni métricas. | 🟢 |
 
 `review` y `delete` no son sub-apps sino flags transversales (revisar y liberar estudios, borrar estudios membretados).
 
 **El contenedor como arquitectura es 🟡 rescatable**: un "cajón de herramientas" con flags por herramienta bajo un solo permiso de módulo es un buen patrón. Pero es también el módulo que más urge partir: 139 KB en un archivo.
+
+Marketing es la excepción sana a ese problema: su panel vive en `assets/js/marketing_panel.js` y apps.js solo lo importa, en vez de crecer el archivo contenedor. **Ese es el patrón a seguir para las demás sub-apps.**
 
 ---
 
