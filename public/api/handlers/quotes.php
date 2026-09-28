@@ -24,7 +24,7 @@ function handle_quotes(string $action): void
                 $where .= ' AND name LIKE ?';
                 $params[] = '%' . $q . '%';
             }
-            $st = db()->prepare("SELECT id, name, category, public_price FROM quote_studies WHERE $where ORDER BY name LIMIT 25");
+            $st = db()->prepare("SELECT id, name, category, turnaround, specimen, public_price FROM quote_studies WHERE $where ORDER BY name LIMIT 25");
             $st->execute($params);
             $items = $st->fetchAll();
             foreach ($items as &$it) {
@@ -109,9 +109,15 @@ function handle_quotes(string $action): void
                     continue;
                 }
                 $lineTotal = round($unitPrice * $quantity, 2);
+                // El tiempo de entrega y el espécimen se guardan copiados, no por
+                // referencia al catálogo: una cotización es un documento que ya se
+                // entregó. Si se resolvieran por join, editar el catálogo cambiaría
+                // cotizaciones viejas, y borrar un estudio las dejaría sin datos.
                 $lines[] = [
                     'study_id'   => isset($it['study_id']) ? (int)$it['study_id'] : null,
                     'name'       => $name,
+                    'turnaround' => mb_substr(trim((string)($it['turnaround'] ?? '')), 0, 60) ?: null,
+                    'specimen'   => mb_substr(trim((string)($it['specimen'] ?? '')), 0, 60) ?: null,
                     'unit_price' => $unitPrice,
                     'quantity'   => $quantity,
                     'line_total' => $lineTotal,

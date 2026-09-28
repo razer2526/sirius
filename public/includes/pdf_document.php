@@ -2434,11 +2434,112 @@ function render_quote_pdf(array $quote, ?string $path = null): string
         $pdf->SetTextColor(...PDF_INK);
     }
 
+    render_quote_logistics_page($pdf, $items);
+
     if ($path) {
         $pdf->Output('F', $path);
         return $path;
     }
     return $pdf->Output('S');
+}
+
+/**
+ * Segunda hoja de la cotización: qué muestra hay que traer y cuándo estarán los
+ * resultados. Va aparte a propósito — la primera hoja es la cotización de precios
+ * de siempre y no se toca; ésta es la de logística, que es lo que el paciente
+ * pregunta por teléfono.
+ *
+ * Los datos salen de la copia guardada en el renglón. Para cotizaciones anteriores
+ * a que existieran esos campos se resuelven contra el catálogo como último recurso;
+ * si el estudio ya se eliminó, queda en "—" en vez de reventar.
+ */
+function render_quote_logistics_page(SiriusDocPDF $pdf, array $items): void
+{
+    if (!$items) {
+        return;
+    }
+
+    $faltantes = [];
+    foreach ($items as $item) {
+        if (!array_key_exists('turnaround', $item) && !empty($item['study_id'])) {
+            $faltantes[] = (int)$item['study_id'];
+        }
+    }
+    $catalogo = [];
+    if ($faltantes) {
+        try {
+            $in = implode(',', array_fill(0, count($faltantes), '?'));
+            $st = db()->prepare("SELECT id, turnaround, specimen FROM quote_studies WHERE id IN ($in)");
+            $st->execute($faltantes);
+            foreach ($st->fetchAll() as $row) {
+                $catalogo[(int)$row['id']] = $row;
+            }
+        } catch (Throwable $e) {
+            // Sin respaldo del catálogo la hoja igual se imprime, solo con guiones.
+        }
+    }
+
+    $pdf->AddPage();
+    $pdf->pageTitle('Indicaciones de toma y entrega');
+
+    $pdf->SetFont('Helvetica', '', 8.6);
+    $pdf->SetTextColor(...PDF_MUTED);
+    $pdf->MultiCell($pdf->usableWidth(), 4.4, pdf_t(
+        'Tiempo estimado de entrega de resultados y tipo de muestra por estudio. Los tiempos se cuentan a '
+        . 'partir de la toma y pueden variar si el estudio requiere repetición o confirmación.'
+    ), 0, 'L');
+    $pdf->Ln(4);
+    $pdf->SetTextColor(...PDF_INK);
+
+    $w = $pdf->usableWidth();
+    $wTiempo = 42.0;
+    $wMuestra = 46.0;
+    $wEstudio = $w - $wTiempo - $wMuestra;
+
+    $head = static function (SiriusDocPDF $p) use ($wEstudio, $wTiempo, $wMuestra): void {
+        $p->SetFillColor(...PDF_HEAD_BG);
+        $p->SetFont('Helvetica', 'B', 7.5);
+        $p->SetTextColor(75, 85, 99);
+        $p->Cell($wEstudio, 6.4, pdf_t('  ESTUDIO'), 0, 0, 'L', true);
+        $p->Cell($wTiempo, 6.4, pdf_t('TIEMPO DE ENTREGA'), 0, 0, 'C', true);
+        $p->Cell($wMuestra, 6.4, pdf_t('ESPÉCIMEN'), 0, 1, 'C', true);
+        $p->SetTextColor(...PDF_INK);
+    };
+    $head($pdf);
+
+    $i = 0;
+    foreach ($items as $item) {
+        $sid = !empty($item['study_id']) ? (int)$item['study_id'] : 0;
+        $fallback = $catalogo[$sid] ?? [];
+        $name = (string)($item['name'] ?? '');
+        $tiempo = trim((string)($item['turnaround'] ?? $fallback['turnaround'] ?? '')) ?: '—';
+        $muestra = trim((string)($item['specimen'] ?? $fallback['specimen'] ?? '')) ?: '—';
+
+        $lineas = $pdf->wrapLines($name, $wEstudio - 4, 'Helvetica', '', 8.8) ?: [''];
+        $h = max(7.0, count($lineas) * 4.2 + 2.8);
+        $pdf->ensureSpace($h, $head);
+
+        $zebra = $i % 2 === 1;
+        if ($zebra) {
+            $pdf->SetFillColor(...PDF_ZEBRA);
+        }
+        $y = $pdf->GetY();
+        $x = $pdf->GetX();
+        if ($zebra) {
+            $pdf->Rect($x, $y, $w, $h, 'F');
+        }
+
+        $pdf->SetFont('Helvetica', '', 8.8);
+        $pdf->SetXY($x + 2, $y + 1.4);
+        $pdf->MultiCell($wEstudio - 4, 4.2, pdf_t($name), 0, 'L');
+
+        $pdf->SetXY($x + $wEstudio, $y + ($h - 4.2) / 2);
+        $pdf->Cell($wTiempo, 4.2, pdf_t($tiempo), 0, 0, 'C');
+        $pdf->Cell($wMuestra, 4.2, pdf_t($muestra), 0, 0, 'C');
+
+        $pdf->SetXY($x, $y + $h);
+        $i++;
+    }
 }
 
 /**
