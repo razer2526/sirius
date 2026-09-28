@@ -67,6 +67,8 @@ function handle_catalog(string $action): void
             }
             $category = trim((string)($b['category'] ?? '')) ?: null;
             $commissionGroup = in_array($b['commission_group'] ?? '', ['molecular', 'clinico'], true) ? $b['commission_group'] : null;
+            $turnaround = mb_substr(trim((string)($b['turnaround'] ?? '')), 0, 60) ?: null;
+            $specimen = mb_substr(trim((string)($b['specimen'] ?? '')), 0, 60) ?: null;
             $price = max(0, (float)($b['public_price'] ?? 0));
             $isActive = !empty($b['is_active']) ? 1 : 0;
             $id = (int)($b['id'] ?? 0);
@@ -75,13 +77,13 @@ function handle_catalog(string $action): void
             if ($id > 0) {
                 find_quote_study($id);
                 $pdo->prepare(
-                    'UPDATE quote_studies SET name = ?, category = ?, commission_group = ?, public_price = ?, is_active = ? WHERE id = ?'
-                )->execute([$name, $category, $commissionGroup, $price, $isActive, $id]);
+                    'UPDATE quote_studies SET name = ?, category = ?, commission_group = ?, turnaround = ?, specimen = ?, public_price = ?, is_active = ? WHERE id = ?'
+                )->execute([$name, $category, $commissionGroup, $turnaround, $specimen, $price, $isActive, $id]);
                 log_activity('catalogo_estudios', 'study_update', "Editó estudio \"$name\"", 'quote_study', $id);
             } else {
                 $pdo->prepare(
-                    'INSERT INTO quote_studies (name, category, commission_group, public_price, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-                )->execute([$name, $category, $commissionGroup, $price, $isActive, (int)$me['id']]);
+                    'INSERT INTO quote_studies (name, category, commission_group, turnaround, specimen, public_price, is_active, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                )->execute([$name, $category, $commissionGroup, $turnaround, $specimen, $price, $isActive, (int)$me['id']]);
                 $id = (int)$pdo->lastInsertId();
                 log_activity('catalogo_estudios', 'study_create', "Creó estudio \"$name\"", 'quote_study', $id);
             }
@@ -128,7 +130,7 @@ function handle_catalog(string $action): void
 
         /** Todo el catálogo, para exportar (el navegador arma el JSON/CSV). */
         case 'export_all': {
-            $items = db()->query('SELECT id, name, category, commission_group, public_price, is_active FROM quote_studies ORDER BY name')->fetchAll();
+            $items = db()->query('SELECT id, name, category, commission_group, turnaround, specimen, public_price, is_active FROM quote_studies ORDER BY name')->fetchAll();
             foreach ($items as &$it) {
                 $it['id'] = (int)$it['id'];
                 $it['public_price'] = (float)$it['public_price'];
@@ -161,8 +163,11 @@ function handle_catalog(string $action): void
             }
 
             $colName = $mapping['name'];
-            $colCategory = $mapping['category'] ?? null;
-            $colPrice = $mapping['public_price'] ?? null;
+            // Solo se tocan las columnas que el admin mapeó de verdad. Antes el UPDATE
+            // escribía category y public_price siempre, así que importar un archivo de
+            // solo precios borraba la categoría de todo el catálogo sin avisar.
+            $optional = ['category', 'turnaround', 'specimen', 'public_price'];
+            $mapped = array_values(array_filter($optional, static fn($c) => !empty($mapping[$c])));
 
             $prepared = [];
             foreach ($rows as $row) {
@@ -170,10 +175,16 @@ function handle_catalog(string $action): void
                 if ($name === '') {
                     continue;
                 }
-                $category = $colCategory ? trim((string)($row[$colCategory] ?? '')) : '';
-                $priceRaw = $colPrice ? (string)($row[$colPrice] ?? '') : '0';
-                $price = (float)preg_replace('/[^0-9.\-]/', '', str_replace(',', '', $priceRaw));
-                $prepared[] = ['name' => $name, 'category' => $category ?: null, 'public_price' => max(0, $price)];
+                $rec = ['name' => $name];
+                foreach ($mapped as $col) {
+                    $raw = trim((string)($row[$mapping[$col]] ?? ''));
+                    if ($col === 'public_price') {
+                        $rec[$col] = max(0, (float)preg_replace('/[^0-9.\-]/', '', str_replace(',', '', $raw)));
+                    } else {
+                        $rec[$col] = mb_substr($raw, 0, 100) ?: null;
+                    }
+                }
+                $prepared[] = $rec;
             }
             if (!$prepared) {
                 json_error('No se encontró ninguna fila con nombre de estudio', 422);
@@ -184,29 +195,37 @@ function handle_catalog(string $action): void
             try {
                 $inserted = 0;
                 $updated = 0;
+                $insCols = array_merge(['name'], $mapped);
+                $insSql = 'INSERT INTO quote_studies (' . implode(', ', $insCols) . ', is_active, created_by) VALUES ('
+                    . rtrim(str_repeat('?, ', count($insCols)), ', ') . ', 1, ?)';
+                $insValues = static fn(array $r, int $userId) => array_merge(
+                    array_map(static fn($c) => $r[$c] ?? null, $insCols),
+                    [$userId]
+                );
+
                 if ($mode === 'reemplazar') {
                     $pdo->exec('DELETE FROM quote_studies');
-                    $ins = $pdo->prepare(
-                        'INSERT INTO quote_studies (name, category, public_price, is_active, created_by) VALUES (?, ?, ?, 1, ?)'
-                    );
+                    $ins = $pdo->prepare($insSql);
                     foreach ($prepared as $r) {
-                        $ins->execute([$r['name'], $r['category'], $r['public_price'], (int)$me['id']]);
+                        $ins->execute($insValues($r, (int)$me['id']));
                         $inserted++;
                     }
                 } else {
                     $find = $pdo->prepare('SELECT id FROM quote_studies WHERE LOWER(name) = LOWER(?)');
-                    $ins = $pdo->prepare(
-                        'INSERT INTO quote_studies (name, category, public_price, is_active, created_by) VALUES (?, ?, ?, 1, ?)'
-                    );
-                    $upd = $pdo->prepare('UPDATE quote_studies SET category = ?, public_price = ? WHERE id = ?');
+                    $ins = $pdo->prepare($insSql);
+                    $upd = $mapped
+                        ? $pdo->prepare('UPDATE quote_studies SET ' . implode(', ', array_map(static fn($c) => "$c = ?", $mapped)) . ' WHERE id = ?')
+                        : null;
                     foreach ($prepared as $r) {
                         $find->execute([$r['name']]);
                         $existing = $find->fetch();
                         if ($existing) {
-                            $upd->execute([$r['category'], $r['public_price'], $existing['id']]);
+                            if ($upd) {
+                                $upd->execute(array_merge(array_map(static fn($c) => $r[$c] ?? null, $mapped), [$existing['id']]));
+                            }
                             $updated++;
                         } else {
-                            $ins->execute([$r['name'], $r['category'], $r['public_price'], (int)$me['id']]);
+                            $ins->execute($insValues($r, (int)$me['id']));
                             $inserted++;
                         }
                     }

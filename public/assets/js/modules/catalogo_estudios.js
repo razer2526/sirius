@@ -14,6 +14,19 @@ let filters = { q: '', category: '', page: 1 };
 let listState = { items: [], total: 0, per_page: 50, categories: [] };
 let selected = new Set();
 
+// Sugerencias, no lista cerrada: son datalist para que se pueda escribir cualquier
+// otra cosa. Un laboratorio no comunica el tiempo de entrega como un número, y la
+// lista de especímenes siempre termina teniendo excepciones.
+const TURNAROUND_SUGGESTIONS = [
+  'Mismo día', '24 horas', '48 horas', '72 horas',
+  '3 a 5 días hábiles', '5 a 7 días hábiles', '1 a 2 semanas',
+];
+const SPECIMEN_SUGGESTIONS = [
+  'Sangre total', 'Suero', 'Plasma', 'Heces', 'Orina', 'Orina de 24 horas',
+  'Exudado nasofaríngeo', 'Exudado faríngeo', 'Biopsia', 'Pieza quirúrgica',
+  'Expectoración', 'Citología', 'Líquido cefalorraquídeo', 'Raspado de piel',
+];
+
 export async function render(root, ctx) {
   const [view] = ctx.args;
   if (view === 'importar') return renderImport(root);
@@ -175,8 +188,8 @@ function paintList(box, load) {
                        class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
               </th>
               <th class="px-4 py-3">Estudio</th>
-              <th class="hidden px-4 py-3 sm:table-cell">Categoría</th>
-              <th class="hidden px-4 py-3 lg:table-cell">Comisión</th>
+              <th class="hidden px-4 py-3 sm:table-cell">Tiempo de entrega</th>
+              <th class="hidden px-4 py-3 lg:table-cell">Espécimen</th>
               <th class="px-4 py-3 text-right">Precio público</th>
               <th class="px-4 py-3 text-center">Estado</th>
               <th class="px-4 py-3 text-right">Acciones</th>
@@ -190,8 +203,8 @@ function paintList(box, load) {
                          class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
                 </td>
                 <td class="px-4 py-3 font-medium text-slate-800">${escapeHtml(it.name)}</td>
-                <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(it.category || '—')}</td>
-                <td class="hidden px-4 py-3 text-slate-500 lg:table-cell">${escapeHtml(commissionGroupLabel(it.commission_group))}</td>
+                <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(it.turnaround || '—')}</td>
+                <td class="hidden px-4 py-3 text-slate-500 lg:table-cell">${escapeHtml(it.specimen || '—')}</td>
                 <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(it.public_price).toFixed(2)}</td>
                 <td class="px-4 py-3 text-center">
                   <span class="rounded-full px-2.5 py-1 text-xs font-semibold ${it.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}">
@@ -284,6 +297,20 @@ function openStudyModal(study, load) {
           <input type="number" id="s-price" min="0" step="0.01" value="${study?.public_price ?? 0}" class="${inputCls}">
         </div>
       </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="${labelCls}">Tiempo de entrega</label>
+          <input type="text" id="s-turnaround" list="s-turn-list" placeholder="Ej. 24 horas"
+                 value="${escapeHtml(study?.turnaround || '')}" class="${inputCls}">
+          <datalist id="s-turn-list">${TURNAROUND_SUGGESTIONS.map((t) => `<option value="${escapeHtml(t)}">`).join('')}</datalist>
+        </div>
+        <div>
+          <label class="${labelCls}">Espécimen</label>
+          <input type="text" id="s-specimen" list="s-spec-list" placeholder="Ej. Suero"
+                 value="${escapeHtml(study?.specimen || '')}" class="${inputCls}">
+          <datalist id="s-spec-list">${SPECIMEN_SUGGESTIONS.map((s) => `<option value="${escapeHtml(s)}">`).join('')}</datalist>
+        </div>
+      </div>
       <div>
         <label class="${labelCls}">Grupo de comisión (convenio médico/concierge)</label>
         <select id="s-commission-group" class="${inputCls}">
@@ -315,6 +342,8 @@ function openStudyModal(study, load) {
               name,
               category: wrap.querySelector('#s-category').value.trim(),
               commission_group: wrap.querySelector('#s-commission-group').value,
+              turnaround: wrap.querySelector('#s-turnaround').value.trim(),
+              specimen: wrap.querySelector('#s-specimen').value.trim(),
               public_price: parseFloat(wrap.querySelector('#s-price').value || '0'),
               is_active: wrap.querySelector('#s-active').checked,
             });
@@ -342,7 +371,7 @@ async function exportCatalog(format) {
     blob = new Blob([JSON.stringify(items, null, 2)], { type: 'application/json' });
     fileName = `catalogo-estudios-${stamp}.json`;
   } else {
-    const cols = ['id', 'name', 'category', 'commission_group', 'public_price', 'is_active'];
+    const cols = ['id', 'name', 'category', 'commission_group', 'turnaround', 'specimen', 'public_price', 'is_active'];
     const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = [cols.join(',')].concat(items.map((it) => cols.map((c) => esc(it[c])).join(',')));
     blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' });
@@ -435,7 +464,18 @@ function renderImport(root) {
           <label class="${labelCls}">Precio público *</label>
           <select id="map-price" class="${inputCls}"><option value="">— Elige —</option>${opts(guessColumn(['precio', 'price', 'costo']))}</select>
         </div>
+        <div>
+          <label class="${labelCls}">Tiempo de entrega (opcional)</label>
+          <select id="map-turnaround" class="${inputCls}"><option value="">— Ninguna —</option>${opts(guessColumn(['tiempo', 'turnaround', 'entrega', 'dias']))}</select>
+        </div>
+        <div>
+          <label class="${labelCls}">Espécimen (opcional)</label>
+          <select id="map-specimen" class="${inputCls}"><option value="">— Ninguna —</option>${opts(guessColumn(['especimen', 'specimen', 'muestra']))}</select>
+        </div>
       </div>
+      <p class="mt-2 text-xs text-slate-400">
+        Las columnas que dejes en "Ninguna" no se tocan: los estudios que ya existan conservan lo que tengan capturado.
+      </p>
 
       <div class="mt-4 overflow-x-auto rounded-xl ring-1 ring-slate-200">
         <table class="w-full text-left text-xs">
@@ -475,6 +515,8 @@ function renderImport(root) {
       const mapping = {
         name: box.querySelector('#map-name').value,
         category: box.querySelector('#map-category').value || null,
+        turnaround: box.querySelector('#map-turnaround').value || null,
+        specimen: box.querySelector('#map-specimen').value || null,
         public_price: box.querySelector('#map-price').value || null,
       };
       if (!mapping.name) { toast('Elige la columna del nombre del estudio', 'error'); return; }

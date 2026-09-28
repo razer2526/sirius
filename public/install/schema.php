@@ -444,6 +444,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 name VARCHAR(200) NOT NULL,
                 category VARCHAR(100) NULL,
                 commission_group VARCHAR(20) NULL,
+                turnaround VARCHAR(60) NULL,
+                specimen VARCHAR(60) NULL,
                 public_price DECIMAL(10,2) NOT NULL DEFAULT 0,
                 is_active TINYINT(1) NOT NULL DEFAULT 1,
                 created_by INT UNSIGNED NULL,
@@ -1083,6 +1085,8 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 name TEXT NOT NULL,
                 category TEXT NULL,
                 commission_group TEXT NULL,
+                turnaround TEXT NULL,
+                specimen TEXT NULL,
                 public_price REAL NOT NULL DEFAULT 0,
                 is_active INTEGER NOT NULL DEFAULT 1,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
@@ -1412,6 +1416,11 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE episodes ADD COLUMN results_delivered_at " . ($isMysql ? 'DATETIME NULL' : 'TEXT NULL'),
         "ALTER TABLE episodes ADD COLUMN linked_doctor_id " . ($isMysql ? 'INT UNSIGNED NULL' : 'INTEGER NULL'),
         "ALTER TABLE quote_studies ADD COLUMN commission_group {$varchar(20)}",
+        // Tiempo de entrega y tipo de muestra: texto libre porque un laboratorio no
+        // comunica esto como número ("mismo día", "3 a 5 días hábiles") y la lista de
+        // especímenes siempre tiene excepciones. Alimentan la segunda hoja de la cotización.
+        "ALTER TABLE quote_studies ADD COLUMN turnaround {$varchar(60)}",
+        "ALTER TABLE quote_studies ADD COLUMN specimen {$varchar(60)}",
         // Identifica una admisión capturada por el wizard sin conexión: si el
         // outbox reintenta el mismo envío (recarga, doble sync), el índice único
         // hace que la segunda inserción falle en vez de duplicar al paciente.

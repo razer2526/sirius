@@ -1475,7 +1475,7 @@ function paintQuoteList(box, load, isAdmin) {
 
 /** Arma una cotización: buscador de estudios, lista editable, cliente y descuento. */
 function renderQuoteForm(root) {
-  const lines = [];   // { study_id, name, unit_price, quantity }
+  const lines = [];   // { study_id, name, unit_price, quantity, turnaround, specimen }
   let saving = false;
 
   root.innerHTML = `
@@ -1551,6 +1551,8 @@ function renderQuoteForm(root) {
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
               <tr>
                 <th class="px-3 py-2">Estudio</th>
+                <th class="hidden px-3 py-2 md:table-cell">Tiempo de entrega</th>
+                <th class="hidden px-3 py-2 md:table-cell">Espécimen</th>
                 <th class="px-3 py-2 w-24 text-center">Cantidad</th>
                 <th class="px-3 py-2 w-28 text-right">P. Unitario</th>
                 <th class="px-3 py-2 w-28 text-right">Importe</th>
@@ -1560,7 +1562,14 @@ function renderQuoteForm(root) {
             <tbody class="divide-y divide-slate-100">
               ${lines.map((l, i) => `
                 <tr>
-                  <td class="px-3 py-2 text-slate-700">${escapeHtml(l.name)}</td>
+                  <td class="px-3 py-2 text-slate-700">
+                    ${escapeHtml(l.name)}
+                    <span class="mt-0.5 block text-xs text-slate-400 md:hidden">
+                      ${escapeHtml(l.turnaround || '—')} · ${escapeHtml(l.specimen || '—')}
+                    </span>
+                  </td>
+                  <td class="hidden px-3 py-2 text-slate-500 md:table-cell">${escapeHtml(l.turnaround || '—')}</td>
+                  <td class="hidden px-3 py-2 text-slate-500 md:table-cell">${escapeHtml(l.specimen || '—')}</td>
                   <td class="px-3 py-2"><input type="number" min="1" step="1" value="${l.quantity}" data-qty="${i}" class="w-full rounded border-0 bg-slate-50 px-2 py-1 text-center text-sm ring-1 ring-inset ring-slate-300 focus:ring-2 focus:ring-indigo-500 outline-none"></td>
                   <td class="px-3 py-2 text-right text-slate-600">$${l.unit_price.toFixed(2)}</td>
                   <td class="px-3 py-2 text-right font-semibold text-slate-800">$${(l.unit_price * l.quantity).toFixed(2)}</td>
@@ -1613,7 +1622,12 @@ function renderQuoteForm(root) {
     } else {
       studyBox.innerHTML = items.map((s, i) => `
         <button type="button" data-idx="${i}" class="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left hover:bg-indigo-50">
-          <span class="min-w-0 truncate text-sm font-medium text-slate-800">${escapeHtml(s.name)}</span>
+          <span class="min-w-0">
+            <span class="block truncate text-sm font-medium text-slate-800">${escapeHtml(s.name)}</span>
+            <span class="block truncate text-xs text-slate-400">
+              ${escapeHtml(s.turnaround || 'Sin tiempo de entrega')} · ${escapeHtml(s.specimen || 'Sin espécimen')}
+            </span>
+          </span>
           <span class="shrink-0 text-xs font-semibold text-slate-500">$${s.public_price.toFixed(2)}</span>
         </button>`).join('');
       studyBox.querySelectorAll('button').forEach((b) =>
@@ -1621,7 +1635,10 @@ function renderQuoteForm(root) {
           const s = items[+b.dataset.idx];
           const existing = lines.find((l) => l.study_id === s.id);
           if (existing) existing.quantity += 1;
-          else lines.push({ study_id: s.id, name: s.name, unit_price: s.public_price, quantity: 1 });
+          else lines.push({
+            study_id: s.id, name: s.name, unit_price: s.public_price, quantity: 1,
+            turnaround: s.turnaround || null, specimen: s.specimen || null,
+          });
           paintLines();
           studyBox.classList.add('hidden');
           studyInput.value = '';
@@ -1679,7 +1696,10 @@ function renderQuoteForm(root) {
         quote_date: root.querySelector('#q-date').value,
         discount_pct: parseFloat(root.querySelector('#q-discount').value || '0'),
         notes: root.querySelector('#q-notes').value.trim(),
-        items: lines.map((l) => ({ study_id: l.study_id, name: l.name, unit_price: l.unit_price, quantity: l.quantity })),
+        items: lines.map((l) => ({
+          study_id: l.study_id, name: l.name, unit_price: l.unit_price, quantity: l.quantity,
+          turnaround: l.turnaround, specimen: l.specimen,
+        })),
       });
       modal({
         title: 'Cotización guardada',
