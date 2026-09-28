@@ -48,6 +48,13 @@ let resultFilters = { q: '', sample_date: '', due_date: '', status: '' };
 // Filtro de fecha de entrega exclusivo de la sección "Completadas", independiente
 // del filtro "Entrega" de arriba (ese solo agrupa hoy/mañana/posteriores).
 let completedDueFilter = '';
+// Las completadas se acumulan sin límite: se muestran de 9 en 9 para no pintar
+// cientos de tarjetas. `lastResultSig` detecta cuándo cambió lo que se está
+// viendo (filtros o fecha de entrega) para volver a empezar en 9 — así el
+// contador se reinicia solo, sin tener que acordarse de hacerlo en cada filtro.
+const COMPLETED_PAGE = 9;
+let completedShown = COMPLETED_PAGE;
+let lastResultSig = '';
 let pollTimer = null;
 
 export async function render(root, context) {
@@ -424,6 +431,7 @@ async function paintResultados(view) {
       <div id="results-sections"></div>
     </div>`;
   wireResultToolbar(view);
+  lastResultSig = ''; // al volver a entrar a la pestaña, las completadas arrancan de nuevo en 9
   paintResultSections(view);
 }
 
@@ -528,12 +536,21 @@ function paintResultSections(view) {
     { title: 'Entrega de resultados posteriores', items: pending.filter((r) => !r.due_date || r.due_date > tm) },
   ];
 
+  // Si cambió lo que se está viendo, la lista de completadas vuelve a empezar en 9.
+  const sig = JSON.stringify([resultFilters, completedDueFilter]);
+  if (sig !== lastResultSig) {
+    completedShown = COMPLETED_PAGE;
+    lastResultSig = sig;
+  }
+
   const hasAnyCompleted = resultsData.items.some((r) => resultIsComplete(r));
   let completedHtml = '';
   if (hasAnyCompleted && resultFilters.status !== 'pendiente') {
     let completed = applyResultFilters(resultsData.items.filter((r) => resultIsComplete(r)), { skipDueDate: true });
     if (completedDueFilter) completed = completed.filter((r) => r.due_date === completedDueFilter);
     completed = [...completed].sort((a, b) => (b.due_date || '').localeCompare(a.due_date || ''));
+    const visible = completed.slice(0, completedShown);
+    const restantes = completed.length - visible.length;
     completedHtml = `
       <div class="mb-6 last:mb-0">
         <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -542,12 +559,19 @@ function paintResultSections(view) {
             <input id="rf-completed-due" type="date" value="${completedDueFilter}" title="Filtrar por fecha de entrega"
                    class="rounded-lg border-0 bg-slate-50 px-2 py-1 text-xs ring-1 ring-inset ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
             ${completedDueFilter ? `<button id="rf-completed-clear" type="button" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">Quitar</button>` : ''}
-            <span class="text-xs text-slate-400">${completed.length}</span>
+            <span class="text-xs text-slate-400">${visible.length} de ${completed.length}</span>
           </div>
         </div>
         ${completed.length
-          ? `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${completed.map((r) => resultCard(r)).join('')}</div>`
+          ? `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">${visible.map((r) => resultCard(r)).join('')}</div>`
           : `<p class="text-xs text-slate-400">Sin resultados completados con esa fecha de entrega.</p>`}
+        ${restantes > 0 ? `
+          <div class="mt-3 flex justify-center">
+            <button id="rf-completed-more" type="button"
+                    class="rounded-lg px-4 py-2 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 transition hover:bg-indigo-50">
+              Ver más (${restantes} restante${restantes === 1 ? '' : 's'})
+            </button>
+          </div>` : ''}
       </div>`;
   }
 
@@ -568,6 +592,10 @@ function paintResultSections(view) {
   });
   view.querySelector('#rf-completed-clear')?.addEventListener('click', () => {
     completedDueFilter = '';
+    paintResultSections(view);
+  });
+  view.querySelector('#rf-completed-more')?.addEventListener('click', () => {
+    completedShown += COMPLETED_PAGE;
     paintResultSections(view);
   });
   wireResultEvents(view);
