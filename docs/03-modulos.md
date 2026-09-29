@@ -254,6 +254,6 @@ Los tres con `null` en la tabla de rutas: cualquier usuario autenticado. **Todos
 |---|---|---|
 | `auth` | `session` | El endpoint de arranque de la SPA: devuelve usuario, módulos visibles, el registro completo (solo si puede ver `usuarios`), banderas de capacidad del servidor y el token CSRF |
 | `assistant` | `status`, `chat`, `dx` | La burbuja flotante de IA |
-| `push` | `vapid_key`, `subscribe`, `unsubscribe`, `list`, `unread_count`, `mark_read`, `mark_all_read`, `pending` | Notificaciones push |
+| `push` | `vapid_key`, `subscribe`, `unsubscribe`, `list`, `unread_count`, `mark_read`, `mark_all_read`, `pending`, `test` | Notificaciones push |
 
 Sigue con [04 · Patrones reusables](04-patrones-reusables.md) — que es donde está lo bueno.

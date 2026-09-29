@@ -123,7 +123,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 | `users` | Cuentas del personal. Raíz de casi toda FK del esquema. | `username` UNIQUE, `password_hash`, `role` ENUM(`estandar`,`administrador`,`developper`), `is_active`, `assignable`, `theme` | 🟢 |
 | `user_permissions` | Permisos por usuario y módulo. PK `(user_id, module_key)`. | `module_key` VARCHAR(40), **`flags` JSON** | 🟢 |
 | `remember_tokens` | Tokens de "recordarme", selector/validador. | `selector` UNIQUE, `validator_hash` CHAR(64), `expires_at` | 🟢 |
-| `push_subscriptions` | Endpoints de Web Push por usuario y dispositivo. | `endpoint` UNIQUE (en MySQL índice de prefijo 255), `p256dh`, `auth` | 🟢 |
+| `push_subscriptions` | Endpoints de Web Push por usuario y dispositivo. | `endpoint` VARCHAR(1000) UNIQUE (en MySQL índice de prefijo 255), `p256dh`, `auth`, **`last_notified_id`** (hasta qué notificación ya se entregó a ese dispositivo) | 🟢 |
 
 ### B · Pacientes y expediente clínico
 
