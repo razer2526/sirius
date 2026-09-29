@@ -81,12 +81,12 @@ La variante `wizard` es una versión de una pregunta por pantalla y 10 campos, p
 ### 🔴 `expedientes` — Expedientes
 `modules/expedientes.js` + `handlers/patients.php` + `handlers/consultations.php`
 
-Expediente clínico: búsqueda con debounce, vista de detalle con historial de episodios, consultas de seguimiento en dos etapas (enfermería captura, el profesional asignado completa la parte médica), edición inline, borrado suave, documentos por paciente, exportación imprimible, gráfica de progreso de peso y medidas, y una silueta corporal interactiva. "Dx Assist" manda el expediente a la IA para sugerencias de diagnóstico diferencial.
+Expediente clínico: búsqueda con debounce, vista de detalle con historial de episodios, consultas de seguimiento en dos etapas (enfermería captura, el profesional asignado completa la parte médica), edición inline, borrado suave, documentos por paciente, exportación imprimible, y una pestaña de progreso con tablas comparativas y una gráfica de evolución por métrica en unidades reales. "Dx Assist" manda el expediente a la IA para sugerencias de diagnóstico diferencial.
 
 **Acciones:** `list`, `get`, `update`, `delete`, `doc_list`, `doc_delete` · consultas: `create`, `update`, `complete_doctor`
 **Flags:** `dx_assist`, `edit`, `delete`
 
-El esqueleto CRM (persona buscable + historial + documentos) es genérico, pero los campos clínicos, el cierre en dos etapas, la silueta y Dx Assist son medicina.
+El esqueleto CRM (persona buscable + historial + documentos) es genérico, pero los campos clínicos, el cierre en dos etapas, la comparativa de progreso y Dx Assist son medicina.
 
 ### 🟢 `inventario` — Inventario
 `modules/inventario.js` + `handlers/inventory.php`

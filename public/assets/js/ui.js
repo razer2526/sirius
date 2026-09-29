@@ -211,7 +211,7 @@ export function formValues(formEl) {
 
 /* ---- Formato ---- */
 /** Interpreta fechas SQL como hora local (una fecha sin hora en new Date() sería UTC). */
-function parseLocal(str) {
+export function parseLocal(str) {
   let s = String(str).replace(' ', 'T');
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) s += 'T00:00:00';
   return new Date(s);
