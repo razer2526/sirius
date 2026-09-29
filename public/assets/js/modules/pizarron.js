@@ -378,6 +378,7 @@ function buildCard(item) {
     <span class="shrink-0 text-slate-500">${icon('move', 'h-3.5 w-3.5')}</span>
     <input type="text" value="${escapeHtml(item.title || '')}" placeholder="Título" ${canEdit ? '' : 'readonly tabindex="-1"'}
            class="min-w-0 flex-1 truncate border-0 bg-transparent text-xs font-bold text-slate-700 outline-none placeholder:font-normal placeholder:text-slate-400">
+    <button type="button" data-share title="Compartir como imagen" aria-label="Compartir como imagen" class="shrink-0 rounded p-1 text-slate-500 hover:bg-black/10">${icon('share', 'h-3.5 w-3.5')}</button>
     ${canEdit ? `<button type="button" data-cycle-color title="Cambiar color" class="h-4 w-4 shrink-0 rounded-full ring-1 ring-black/10 ${palette.swatch}"></button>` : ''}
     ${canEdit ? `<button type="button" data-del title="Eliminar" class="shrink-0 rounded p-1 text-slate-500 hover:bg-black/10">${icon('trash', 'h-3.5 w-3.5')}</button>` : ''}
   `;
@@ -416,6 +417,17 @@ function buildCard(item) {
     el.appendChild(handle);
     wireResize(el, handle, item);
   }
+
+  // Compartir no edita nada: lo tiene cualquiera que pueda ver la tarjeta, no solo quien puede
+  // modificarla. El módulo se carga la primera vez que se pulsa (no engorda la carga del pizarrón).
+  header.querySelector('[data-share]').addEventListener('click', async () => {
+    try {
+      const { shareCard } = await import('../board_share.js');
+      await shareCard(item);
+    } catch (e) {
+      toast(e.message || 'No se pudo preparar la imagen', 'error');
+    }
+  });
 
   if (canEdit) {
     wireDrag(el, header, item);

@@ -36,11 +36,11 @@ export const FONTS = [
   { key: 'marker',       label: 'Permanent Marker', css: "'Permanent Marker', 'Comic Sans MS', cursive" },
   { key: 'mono',         label: 'Roboto Mono',      css: "'Roboto Mono', ui-monospace, Consolas, monospace" },
 ];
-const FONT_BY_KEY = Object.fromEntries(FONTS.map((f) => [f.key, f]));
+export const FONT_BY_KEY = Object.fromEntries(FONTS.map((f) => [f.key, f]));
 // El primer nombre de la pila calculada -> clave.
 const FONT_KEY_BY_NAME = Object.fromEntries(FONTS.map((f) => [f.label.toLowerCase(), f.key]));
 
-const BASE = { font: 'inter', size: 14, color: '#1e293b' };
+export const BASE = { font: 'inter', size: 14, color: '#1e293b' };
 const SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64];
 const COLORS = [
   '#1e293b', '#dc2626', '#ea580c', '#ca8a04',
