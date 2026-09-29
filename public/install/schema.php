@@ -740,6 +740,21 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_mktasset_created (created_at),
                 CONSTRAINT fk_mktasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            // Imágenes pegadas en las notas del pizarrón. item_id NO lleva FOREIGN KEY ni ON DELETE
+            // CASCADE a propósito: un usuario estándar que borra una nota hace DELETE y DESPUÉS la
+            // archiva en la papelera; con cascada las filas de imágenes desaparecerían antes de
+            // archivar y la nota restaurada volvería con las imágenes rotas.
+            'board_assets' => "CREATE TABLE IF NOT EXISTS board_assets (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                item_id INT UNSIGNED NOT NULL,
+                stored_name VARCHAR(80) NOT NULL,
+                mime VARCHAR(60) NOT NULL,
+                size INT UNSIGNED NOT NULL DEFAULT 0,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_boardasset_item (item_id),
+                CONSTRAINT fk_boardasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -1327,6 +1342,19 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            // Imágenes pegadas en las notas del pizarrón. item_id NO lleva FOREIGN KEY ni ON DELETE
+            // CASCADE a propósito: un usuario estándar que borra una nota hace DELETE y DESPUÉS la
+            // archiva en la papelera; con cascada las filas de imágenes desaparecerían antes de
+            // archivar y la nota restaurada volvería con las imágenes rotas.
+            'board_assets' => "CREATE TABLE IF NOT EXISTS board_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                item_id INTEGER NOT NULL,
+                stored_name TEXT NOT NULL,
+                mime TEXT NOT NULL,
+                size INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
         ];
     }
 
@@ -1379,6 +1407,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_contentpost_date ON content_posts (post_date)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_commemdate_month_day ON commemorative_dates (month, day)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mktasset_created ON marketing_assets (created_at)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_boardasset_item ON board_assets (item_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');

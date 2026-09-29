@@ -25,7 +25,7 @@ Están numerados porque el orden de lectura importa.
 | # | Documento | Qué contiene | Léelo si… |
 |---|---|---|---|
 | 01 | [Arquitectura](01-arquitectura.md) | El núcleo: configuración, sesión, permisos, papelera genérica, capa de IA, front controller, SPA. Con firmas de función reales. | Siempre. Es la base de todo lo demás. |
-| 02 | [Modelo de datos](02-modelo-de-datos.md) | Las 48 tablas por dominio, y los tres patrones de esquema (doble motor, migraciones, seeds). | Vas a diseñar el esquema nuevo. |
+| 02 | [Modelo de datos](02-modelo-de-datos.md) | Las 49 tablas por dominio, y los tres patrones de esquema (doble motor, migraciones, seeds). | Vas a diseñar el esquema nuevo. |
 | 03 | [Módulos](03-modulos.md) | Los 22 módulos: qué hace cada uno, sus acciones, sus permisos, y **qué tan rescatable es**. | Quieres saber qué ya existe y no reinventar. |
 | 04 | [Patrones reusables](04-patrones-reusables.md) | Los 23 patrones transversales, cada uno con el archivo donde mejor se ve. | **El documento más valioso.** Son decisiones ya validadas. |
 | 05 | [Operación y despliegue](05-operacion-y-despliegue.md) | Build sin Node, CI, service worker, instalador, seguridad de archivos, y qué restricciones vienen del hosting compartido. | Vas a montar la infraestructura del producto nuevo. |

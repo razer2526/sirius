@@ -111,7 +111,7 @@ Incluye además un tablero aparte de "Resultados por entregar" — que en realid
 ### 🟢 `pizarron` — Pizarrón
 `modules/pizarron.js` + `handlers/board.php`
 
-Lienzo libre con notas adhesivas con formato (tipografía, tamaño, negritas, alineación, color y renglones de pendiente con casilla, `board_note_editor.js`), listas y dibujos a mano alzada, arrastrables y redimensionables, en seis colores, con navegación de pan/zoom y tres herramientas (cruceta, mano, lupa). Cada usuario tiene su pizarrón privado; en el público cualquiera agrega pero solo el autor (o quien tenga `manage`) edita y borra.
+Lienzo libre con notas adhesivas con formato (tipografía, tamaño, negritas, alineación, color y renglones de pendiente con casilla e imágenes pegadas del portapapeles, `board_note_editor.js`), listas y dibujos a mano alzada, arrastrables y redimensionables, en seis colores, con navegación de pan/zoom y tres herramientas (cruceta, mano, lupa). Cada usuario tiene su pizarrón privado; en el público cualquiera agrega pero solo el autor (o quien tenga `manage`) edita y borra.
 
 **Acciones:** `list`, `save`, `delete` · **Flags:** `manage`
 

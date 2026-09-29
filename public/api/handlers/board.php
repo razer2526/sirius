@@ -15,6 +15,11 @@ const BOARD_ALIGNS = ['left', 'center', 'right', 'justify'];
 const BOARD_NOTE_MAX_BLOCKS = 200;
 const BOARD_NOTE_MAX_RUNS = 300;
 const BOARD_NOTE_MAX_CHARS = 20000;
+const BOARD_NOTE_MAX_IMAGES = 20;
+// Imágenes pegadas en notas: el cliente las reduce antes de subir; este tope es la red de seguridad.
+const BOARD_ASSET_MAX_SIZE = 8 * 1024 * 1024;
+const BOARD_ASSETS_PER_ITEM = 40;
+const BOARD_ASSET_DIR = __DIR__ . '/../../uploads/board/';
 
 function handle_board(string $action): void
 {
@@ -64,12 +69,15 @@ function handle_board(string $action): void
             }
 
             $fields = [];
+            $clean = null;
             if (array_key_exists('title', $b)) {
                 $t = trim((string)$b['title']);
                 $fields['title'] = $t !== '' ? mb_substr($t, 0, 120) : null;
             }
             if (array_key_exists('content', $b)) {
-                $fields['content'] = json_encode(board_validate_content($type, $b['content']), JSON_UNESCAPED_UNICODE);
+                // $id es 0 en una nota nueva: aún no puede tener imágenes.
+                $clean = board_validate_content($type, $b['content'], $id);
+                $fields['content'] = json_encode($clean, JSON_UNESCAPED_UNICODE);
             }
             if (array_key_exists('color', $b)) {
                 $fields['color'] = in_array($b['color'], BOARD_COLORS, true) ? $b['color'] : 'amber';
@@ -84,6 +92,9 @@ function handle_board(string $action): void
                 if ($fields) {
                     $sets = implode(', ', array_map(fn($k) => "$k = ?", array_keys($fields)));
                     db()->prepare("UPDATE board_items SET $sets WHERE id = ?")->execute([...array_values($fields), $id]);
+                }
+                if ($clean !== null && $type === 'note') {
+                    board_prune_assets($id, $clean);
                 }
                 json_ok(['id' => $id]);
             }
@@ -125,6 +136,47 @@ function handle_board(string $action): void
             json_ok(['id' => $id]);
         }
 
+        case 'asset_upload': {
+            // Multipart: los datos vienen en $_POST/$_FILES, no en el cuerpo JSON.
+            $item = find_board_item((int)($_POST['item_id'] ?? 0));
+            require_board_access($item, $me, $canManage);
+            if ($item['type'] !== 'note') {
+                json_error('Solo las notas admiten imágenes', 422);
+            }
+            if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                json_error('No se recibió la imagen', 422);
+            }
+            $file = $_FILES['file'];
+            if ($file['size'] > BOARD_ASSET_MAX_SIZE) {
+                json_error('La imagen supera 8 MB', 422);
+            }
+            // getimagesize lee el contenido real: renombrar un archivo a .png no lo vuelve imagen.
+            $allowed = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
+            $info = @getimagesize($file['tmp_name']);
+            if (!$info || !isset($allowed[$info[2]])) {
+                json_error('Solo se aceptan imágenes PNG, JPG, GIF o WEBP', 422);
+            }
+            if (!is_uploaded_file($file['tmp_name'])) {
+                json_error('Subida no válida', 422);
+            }
+            if (count(board_item_asset_ids((int)$item['id'], false)) >= BOARD_ASSETS_PER_ITEM) {
+                json_error('Esta nota ya tiene demasiadas imágenes', 422);
+            }
+            if (!is_dir(BOARD_ASSET_DIR)) {
+                @mkdir(BOARD_ASSET_DIR, 0775, true);
+            }
+            $stored = 'img-' . date('YmdHis') . '-' . bin2hex(random_bytes(6)) . '.' . $allowed[$info[2]];
+            if (!move_uploaded_file($file['tmp_name'], BOARD_ASSET_DIR . $stored)) {
+                json_error('No se pudo guardar la imagen', 500);
+            }
+            @chmod(BOARD_ASSET_DIR . $stored, 0644);
+            db()->prepare('INSERT INTO board_assets (item_id, stored_name, mime, size, created_by) VALUES (?, ?, ?, ?, ?)')
+                ->execute([(int)$item['id'], $stored, $info['mime'] ?? 'image/*', (int)$file['size'], (int)$me['id']]);
+            $assetId = (int)db()->lastInsertId();
+            board_item_asset_ids((int)$item['id'], false, true);
+            json_ok(['asset' => ['id' => $assetId, 'url' => 'board_asset.php?id=' . $assetId]]);
+        }
+
         case 'delete': {
             $b = request_body();
             $item = find_board_item((int)($b['id'] ?? 0));
@@ -132,6 +184,8 @@ function handle_board(string $action): void
             $scopeLabel = $item['scope'] === 'public' ? 'público' : 'privado';
             if ($canManage) {
                 db()->prepare('DELETE FROM board_items WHERE id = ?')->execute([$item['id']]);
+                // Solo aquí: la papelera (rama de abajo) conserva los archivos para poder restaurar la nota.
+                board_delete_assets((int)$item['id']);
                 log_activity(
                     'pizarron', 'item_delete',
                     'Eliminó ' . board_type_label($item['type']) . ' del pizarrón ' . $scopeLabel,
@@ -171,12 +225,12 @@ function board_next_z(string $scope, ?int $ownerId): int
  * del cliente ya en coordenadas locales de la tarjeta, así que solo se acotan
  * cantidades y rangos (nunca se confía en la forma exacta que mande el navegador).
  */
-function board_validate_content(string $type, $content): array
+function board_validate_content(string $type, $content, int $itemId = 0): array
 {
     $content = is_array($content) ? $content : [];
     switch ($type) {
         case 'note':
-            return board_validate_note($content);
+            return board_validate_note($content, $itemId);
 
         case 'checklist':
             $items = [];
@@ -225,7 +279,7 @@ function board_validate_content(string $type, $content): array
  * Una nota sin la clave "blocks" es del formato anterior ({text}) y se conserva
  * tal cual: un cliente con la versión vieja en caché sigue pudiendo guardarla.
  */
-function board_validate_note(array $content): array
+function board_validate_note(array $content, int $itemId = 0): array
 {
     if (!array_key_exists('blocks', $content)) {
         return ['text' => mb_substr(trim((string)($content['text'] ?? '')), 0, 4000)];
@@ -233,10 +287,22 @@ function board_validate_note(array $content): array
 
     $blocks = [];
     $chars = 0;
+    $images = 0;
     foreach (array_slice((array)$content['blocks'], 0, BOARD_NOTE_MAX_BLOCKS) as $b) {
         if (!is_array($b)) {
             continue;
         }
+        // Una imagen solo se puede referenciar si su archivo se subió A ESTA nota: no se
+        // puede colar el id de la imagen de otra (ni del pizarrón privado de alguien más).
+        if (($b['t'] ?? '') === 'img') {
+            $assetId = (int)($b['asset'] ?? 0);
+            if ($assetId > 0 && $images < BOARD_NOTE_MAX_IMAGES && in_array($assetId, board_item_asset_ids($itemId), true)) {
+                $blocks[] = ['t' => 'img', 'asset' => $assetId];
+                $images++;
+            }
+            continue;
+        }
+
         $type = $b['t'] ?? 'p';
         if ($type !== 'p' && $type !== 'todo') {
             continue;
@@ -283,6 +349,61 @@ function board_validate_note(array $content): array
         $blocks[] = $block;
     }
     return ['v' => 2, 'blocks' => $blocks];
+}
+
+/** Ids de las imágenes subidas a una nota (una consulta por petición y nota). */
+function board_item_asset_ids(int $itemId, bool $useCache = true, bool $forget = false): array
+{
+    static $cache = [];
+    if ($forget) {
+        unset($cache[$itemId]);
+        return [];
+    }
+    if ($itemId <= 0) {
+        return [];
+    }
+    if (!$useCache || !isset($cache[$itemId])) {
+        $st = db()->prepare('SELECT id FROM board_assets WHERE item_id = ?');
+        $st->execute([$itemId]);
+        $cache[$itemId] = array_map('intval', array_column($st->fetchAll(), 'id'));
+    }
+    return $cache[$itemId];
+}
+
+/**
+ * Borra las imágenes de una nota que ya no aparecen en su contenido. Solo las de más de un
+ * día: una imagen recién subida existe en el servidor unos instantes antes de que el
+ * autoguardado la registre en la nota, y un guardado intermedio no debe llevársela.
+ */
+function board_prune_assets(int $itemId, array $content): void
+{
+    $used = [];
+    foreach ((array)($content['blocks'] ?? []) as $blk) {
+        if (is_array($blk) && ($blk['t'] ?? '') === 'img') {
+            $used[(int)$blk['asset']] = true;
+        }
+    }
+    $cutoff = date('Y-m-d H:i:s', time() - 86400);
+    $st = db()->prepare('SELECT id, stored_name FROM board_assets WHERE item_id = ? AND created_at < ?');
+    $st->execute([$itemId, $cutoff]);
+    foreach ($st->fetchAll() as $row) {
+        if (isset($used[(int)$row['id']])) {
+            continue;
+        }
+        @unlink(BOARD_ASSET_DIR . basename($row['stored_name']));
+        db()->prepare('DELETE FROM board_assets WHERE id = ?')->execute([(int)$row['id']]);
+    }
+}
+
+/** Borrado definitivo de una nota: se van también sus archivos. */
+function board_delete_assets(int $itemId): void
+{
+    $st = db()->prepare('SELECT stored_name FROM board_assets WHERE item_id = ?');
+    $st->execute([$itemId]);
+    foreach ($st->fetchAll() as $row) {
+        @unlink(BOARD_ASSET_DIR . basename($row['stored_name']));
+    }
+    db()->prepare('DELETE FROM board_assets WHERE item_id = ?')->execute([$itemId]);
 }
 
 function board_type_label(string $type): string
