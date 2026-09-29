@@ -85,7 +85,7 @@ self.addEventListener('fetch', (e) => {
       || path.endsWith('print.php') || path.endsWith('documento.php') || path.endsWith('cotizacion.php')
       || path.endsWith('comision.php')
       || path.endsWith('documento_expediente.php') || path.endsWith('membrete_prueba.php')
-      || path.endsWith('respaldo.php') || path.endsWith('archivo.php')
+      || path.endsWith('respaldo.php') || path.endsWith('archivo.php') || path.endsWith('board_asset.php')
       || path.endsWith('whatsapp_webhook.php') || path.endsWith('whatsapp_media.php')
       || path.endsWith('manifest.php')
       || path.includes('/install/') || path.includes('/uploads/')) {

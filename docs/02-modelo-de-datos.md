@@ -1,6 +1,6 @@
 # 02 · Modelo de datos
 
-Las 48 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
+Las 49 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
 
 Todo el esquema vive en **un solo archivo**: `public/install/schema.php` (~1,730 líneas), con cuatro funciones:
 
@@ -114,7 +114,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 
 ## Inventario de tablas
 
-48 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
+49 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
 
 ### A · Identidad, sesión y permisos
 
@@ -204,7 +204,8 @@ Inventario por lotes con caducidad es genérico (farmacia, alimentos, químicos)
 
 | Tabla | Qué es | Rescate |
 |---|---|---|
-| `board_items` | Notas, listas y dibujos en un lienzo. `scope` ENUM(`private`,`public`), `type` ENUM(`note`,`checklist`,`drawing`), **`content` JSON**, geometría `pos_x/pos_y/width/height/z_index`. | 🟢 |
+| `board_items` | Notas, listas y dibujos en un lienzo. `scope` ENUM(`private`,`public`), `type` ENUM(`note`,`checklist`,`drawing`), **`content` JSON** (una nota guarda bloques `{v:2, blocks:[…]}`, nunca HTML), geometría `pos_x/pos_y/width/height/z_index`. | 🟢 |
+| `board_assets` | Imágenes pegadas en notas: `item_id` (sin FK a propósito: la papelera hace DELETE antes de archivar y una cascada dejaría la nota restaurada sin imágenes), `stored_name`, `mime`, `size`. Los archivos van en `uploads/board/`, servidos solo por `board_asset.php`. | 🟢 |
 | `file_folders` | Carpetas jerárquicas, auto-FK `parent_id`. | 🟢 |
 | `files` | Metadatos; el binario vive en disco bajo `stored_name`. | 🟢 |
 

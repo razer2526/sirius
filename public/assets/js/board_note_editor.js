@@ -21,7 +21,7 @@
  * el estilo CALCULADO de cada nodo de texto.
  */
 
-import { icon, escapeHtml, debounce } from './ui.js';
+import { icon, escapeHtml, debounce, toast } from './ui.js';
 
 /* ================= Tipografías ================= */
 
@@ -119,7 +119,37 @@ function paintTodoState(block) {
   txt.classList.toggle('opacity-60', done);
 }
 
-function buildBlockEl(block) {
+const imageUrl = (asset) => `board_asset.php?id=${encodeURIComponent(asset)}`;
+
+/** Imagen dentro de la nota: bloque no editable (se borra entero, no letra por letra). */
+function buildImageBlock(asset, editable) {
+  const el = document.createElement('div');
+  el.dataset.b = 'img';
+  el.dataset.asset = String(asset);
+  el.contentEditable = 'false';
+  el.className = 'relative my-1 w-fit max-w-full';
+  const img = document.createElement('img');
+  img.src = imageUrl(asset);
+  img.alt = 'Imagen de la nota';
+  img.draggable = false;
+  img.className = 'block max-h-72 max-w-full rounded-md';
+  el.appendChild(img);
+  if (editable) {
+    // Visible siempre (no solo al pasar el cursor): en pantalla táctil no existe el hover.
+    const rm = document.createElement('button');
+    rm.type = 'button';
+    rm.dataset.rmImg = '';
+    rm.title = 'Quitar imagen';
+    rm.setAttribute('aria-label', 'Quitar imagen');
+    rm.className = 'absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white hover:bg-black/75';
+    rm.innerHTML = icon('x', 'h-3.5 w-3.5');
+    el.appendChild(rm);
+  }
+  return el;
+}
+
+function buildBlockEl(block, editable = false) {
+  if (block.t === 'img') return buildImageBlock(block.asset, editable);
   const align = ['center', 'right', 'justify'].includes(block.align) ? block.align : 'left';
   if (block.t === 'todo') {
     const el = document.createElement('div');
@@ -147,9 +177,11 @@ function buildBlockEl(block) {
   return el;
 }
 
-function fillDoc(root, blocks) {
+function fillDoc(root, blocks, editable) {
   root.innerHTML = '';
-  (blocks.length ? blocks : [{ t: 'p', runs: [] }]).forEach((b) => root.appendChild(buildBlockEl(b)));
+  (blocks.length ? blocks : [{ t: 'p', runs: [] }]).forEach((b) => root.appendChild(buildBlockEl(b, editable)));
+  // Después de una imagen tiene que haber un renglón donde poder seguir escribiendo.
+  if (editable && root.lastElementChild.dataset.b === 'img') root.appendChild(buildBlockEl({ t: 'p', runs: [] }));
 }
 
 /** El elemento que contiene el texto de un bloque (en un pendiente, el de la derecha de la casilla). */
@@ -241,6 +273,13 @@ function serializeDoc(root) {
   };
 
   root.childNodes.forEach((node) => {
+    if (node.nodeType === 1 && node.dataset.b === 'img') {
+      flushStray();
+      // El aviso de "Subiendo imagen…" todavía no tiene id: no se guarda.
+      const asset = parseInt(node.dataset.asset, 10);
+      if (asset > 0) blocks.push({ t: 'img', asset });
+      return;
+    }
     const isBlock = node.nodeType === 1 && (node.dataset.b || BLOCKISH.has(node.nodeName));
     if (!isBlock) {
       if (node.nodeType === 3 && !node.textContent) return;
@@ -328,6 +367,9 @@ function blocksInSelection(root) {
 // Una sola nota se edita a la vez (la que tiene el foco); el menú es uno por pizarrón.
 let active = null;
 let menu = null;
+// La ventana de selección de archivo le quita el foco al editor (y el menú se retira), así
+// que la nota y el renglón de destino se recuerdan aquí hasta que se elija el archivo.
+let imageTarget = null;
 
 /**
  * @param {HTMLElement} body   contenedor de la nota dentro de la tarjeta
@@ -340,7 +382,7 @@ export function mountNoteEditor(body, item, { canEdit, cardEl, onSave }) {
   // Base tipográfica INLINE (no clases de Tailwind): v4 calcula sus colores en oklch,
   // y el serializador necesita rgb() para compararlos contra la base.
   root.style.cssText = `color:${BASE.color};font-family:${FONT_BY_KEY[BASE.font].css};font-size:${BASE.size}px;line-height:1.5;`;
-  fillDoc(root, toBlocks(item.content));
+  fillDoc(root, toBlocks(item.content), canEdit);
   body.appendChild(root);
 
   if (!canEdit) {
@@ -353,7 +395,7 @@ export function mountNoteEditor(body, item, { canEdit, cardEl, onSave }) {
   placeholder.textContent = 'Escribe aquí…';
   body.appendChild(placeholder);
   const syncPlaceholder = () => {
-    const empty = root.children.length === 1 && root.textContent === '' && root.firstElementChild.dataset.b !== 'todo';
+    const empty = root.children.length === 1 && root.textContent === '' && !root.querySelector('[data-b="todo"], [data-b="img"]');
     placeholder.classList.toggle('hidden', !empty);
   };
   syncPlaceholder();
@@ -369,6 +411,7 @@ export function mountNoteEditor(body, item, { canEdit, cardEl, onSave }) {
   const ed = {
     root,
     cardEl,
+    itemId: item.id,
     flush() {
       if (!dirty) return;
       dirty = false;
@@ -409,19 +452,141 @@ export function mountNoteEditor(body, item, { canEdit, cardEl, onSave }) {
   // Solo texto plano: pegar HTML ajeno traería estilos y estructura que no son de la nota.
   root.addEventListener('paste', (e) => {
     e.preventDefault();
+    // Una captura de pantalla o una imagen copiada llega como archivo en el portapapeles.
+    const image = [...(e.clipboardData ? e.clipboardData.files : [])].find((f) => f.type.startsWith('image/'));
+    if (image) {
+      insertImage(ed, image, blockAtSelection(root));
+      return;
+    }
     const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
     if (text) document.execCommand('insertText', false, text);
   });
-  root.addEventListener('drop', (e) => e.preventDefault());
+  root.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const image = [...(e.dataTransfer ? e.dataTransfer.files : [])].find((f) => f.type.startsWith('image/'));
+    if (image) insertImage(ed, image, blockAtSelection(root));
+  });
 
   // Casilla de un pendiente. Se cancela el mousedown para no mover el cursor ni el foco.
-  root.addEventListener('mousedown', (e) => { if (e.target.closest('.todo-box')) e.preventDefault(); });
+  root.addEventListener('mousedown', (e) => { if (e.target.closest('.todo-box, [data-rm-img]')) e.preventDefault(); });
   root.addEventListener('click', (e) => {
-    const box = e.target.closest('.todo-box');
+    const rm = e.target.closest('[data-rm-img]');
+    if (rm && root.contains(rm)) {
+      removeImageWithUndo(ed, rm.closest('[data-b="img"]'));
+      return;
+    }    const box = e.target.closest('.todo-box');
     if (!box || !root.contains(box)) return;
     const block = box.closest('[data-b="todo"]');
     block.dataset.done = block.dataset.done === '1' ? '0' : '1';
     paintTodoState(block);
+    ed.touch(true);
+  });
+}
+
+/* ---- Imágenes ---- */
+
+const IMAGE_MAX_SIDE = 1600;
+const IMAGE_KEEP_BELOW = 1.5 * 1024 * 1024;
+
+/**
+ * Reduce la imagen antes de subirla: una captura de pantalla 4K pesa varios MB y no
+ * tiene por qué ocupar eso en el servidor. Un GIF se sube tal cual (recomprimirlo mataría
+ * la animación) y una imagen que ya es chica no se toca.
+ */
+async function prepareImage(file) {
+  if (file.type === 'image/gif') return file;
+  let bmp;
+  try { bmp = await createImageBitmap(file); } catch { return file; }
+  const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(bmp.width, bmp.height));
+  if (scale === 1 && file.size <= IMAGE_KEEP_BELOW) { if (bmp.close) bmp.close(); return file; }
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bmp.width * scale));
+  canvas.height = Math.max(1, Math.round(bmp.height * scale));
+  canvas.getContext('2d').drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  if (bmp.close) bmp.close();
+  // JPEG solo si el original ya era JPEG: PNG y WEBP pueden tener transparencia.
+  const type = file.type === 'image/jpeg' ? 'image/jpeg' : 'image/png';
+  const blob = await new Promise((resolve) => canvas.toBlob(resolve, type, 0.85));
+  return blob && blob.size < file.size ? blob : file;
+}
+
+async function uploadImage(itemId, blob, name) {
+  const fd = new FormData();
+  fd.append('file', blob, name || 'imagen.png');
+  fd.append('item_id', String(itemId));
+  const res = await fetch('api/index.php?r=board/asset_upload', {
+    method: 'POST',
+    headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
+    body: fd,
+  });
+  let json;
+  try { json = await res.json(); } catch { throw new Error('Respuesta no válida del servidor'); }
+  if (!json.ok) throw new Error(json.error || 'No se pudo subir la imagen');
+  return json.data.asset;
+}
+
+/** Inserta una imagen después de `target` (o en su lugar, si es un renglón vacío). */
+async function insertImage(ed, file, target) {
+  const { root } = ed;
+  if (!file.type.startsWith('image/')) return;
+  const wait = document.createElement('div');
+  wait.dataset.b = 'img';
+  wait.contentEditable = 'false';
+  wait.className = 'my-1 w-fit rounded-md bg-black/5 px-3 py-2 text-xs text-slate-500';
+  wait.textContent = 'Subiendo imagen…';
+
+  const usable = target && target.parentNode === root;
+  if (usable && target.dataset.b !== 'todo' && target.dataset.b !== 'img' && target.textContent === '') target.replaceWith(wait);
+  else if (usable) target.after(wait);
+  else root.appendChild(wait);
+
+  try {
+    const blob = await prepareImage(file);
+    const asset = await uploadImage(ed.itemId, blob, file.name);
+    // Si el pizarrón se repintó mientras subía, este nodo ya no está: la imagen queda
+    // huérfana en el servidor y se limpia sola pasado un día.
+    if (!wait.isConnected) return;
+    const block = buildImageBlock(asset.id, true);
+    wait.replaceWith(block);
+    if (!block.nextElementSibling) block.after(buildBlockEl({ t: 'p', runs: [] }));
+    ed.touch(true);
+  } catch (err) {
+    wait.remove();
+    if (!root.children.length) root.appendChild(buildBlockEl({ t: 'p', runs: [] }));
+    toast(err.message || 'No se pudo subir la imagen', 'error');
+  }
+}
+
+const UNDO_MS = 8000;
+
+/**
+ * Quitar una imagen es fácil de hacer sin querer (el × está sobre la imagen), así que
+ * durante unos segundos el lugar queda ocupado por un aviso con "Deshacer". El aviso no
+ * tiene id de imagen y por eso no se serializa; el archivo sigue en el servidor (solo
+ * se limpia pasado un día y sin referencias), así que deshacer también sirve ya guardado.
+ */
+function removeImageWithUndo(ed, block) {
+  const { root } = ed;
+  const notice = document.createElement('div');
+  notice.dataset.b = 'img';
+  notice.contentEditable = 'false';
+  notice.className = 'my-1 flex w-fit items-center gap-2 rounded-md bg-black/5 px-3 py-1.5 text-xs text-slate-600';
+  const undo = document.createElement('button');
+  undo.type = 'button';
+  undo.className = 'font-semibold text-indigo-600 hover:underline';
+  undo.textContent = 'Deshacer';
+  notice.append(document.createTextNode('Imagen quitada'), undo);
+  block.replaceWith(notice);
+  ed.touch(true);
+
+  const timer = setTimeout(() => {
+    notice.remove();
+    if (!root.children.length) root.appendChild(buildBlockEl({ t: 'p', runs: [] }));
+  }, UNDO_MS);
+  undo.addEventListener('mousedown', (e) => e.preventDefault());
+  undo.addEventListener('click', () => {
+    clearTimeout(timer);
+    notice.replaceWith(block);
     ed.touch(true);
   });
 }
@@ -499,6 +664,7 @@ function convertBlocks(ed, blocks, to) {
   const { root } = ed;
   const saved = saveSel(root);
   blocks.forEach((b) => {
+    if (b.dataset.b === 'img') return;
     const from = b.dataset.b === 'todo' ? 'todo' : 'p';
     if (from === to) return;
     const src = contentOf(b);
@@ -586,6 +752,7 @@ function toggleTodo(ed) {
     const b = blockAtSelection(ed.root);
     if (b) blocks = [b];
   }
+  blocks = blocks.filter((b) => b.dataset.b !== 'img');
   if (!blocks.length) return;
   const allTodo = blocks.every((b) => b.dataset.b === 'todo');
   convertBlocks(ed, blocks, allTodo ? 'p' : 'todo');
@@ -611,7 +778,9 @@ function menuHtml() {
       <button type="button" data-cmd="align-center" title="Centrar" class="${BTN}">${icon('align-center', 'h-4 w-4')}</button>
       <button type="button" data-cmd="align-right" title="Alinear a la derecha" class="${BTN}">${icon('align-right', 'h-4 w-4')}</button>
       <button type="button" data-cmd="align-justify" title="Justificar" class="${BTN}">${icon('align-justify', 'h-4 w-4')}</button>
+      <button type="button" data-cmd="image" title="Insertar imagen (o pégala con Ctrl+V)" class="${BTN}">${icon('image', 'h-4 w-4')}</button>
     </div>
+    <input type="file" accept="image/*" data-image-input class="hidden">
     <div data-pop="font" class="absolute hidden w-44 rounded-xl bg-white p-1 shadow-lg ring-1 ring-slate-200">
       ${FONTS.map((f) => `
         <button type="button" data-font="${f.key}" class="flex w-full items-center rounded-lg px-2.5 py-1.5 text-left text-[15px] text-slate-700 hover:bg-slate-100"
@@ -635,6 +804,13 @@ export function attachNoteMenu(wrap) {
   wrap.appendChild(el);
   menu = { el };
 
+  const fileInput = el.querySelector('[data-image-input]');
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files && fileInput.files[0];
+    fileInput.value = '';
+    if (file && imageTarget) insertImage(imageTarget.ed, file, imageTarget.block);
+    imageTarget = null;
+  });
   // Pulsar un botón le quitaría el foco (y con él la selección) al editor: el formato
   // se aplicaría a nada. Se cancela en pointerdown Y mousedown porque cada navegador
   // decide el foco en uno u otro.
@@ -708,7 +884,10 @@ function runCommand(cmd, btn, ed) {
     case 'align-right': exec('justifyRight'); break;
     case 'align-justify': exec('justifyFull'); break;
     case 'todo': toggleTodo(ed); return;
-    default: return;
+    case 'image':
+      imageTarget = { ed, block: blockAtSelection(ed.root) };
+      menu.el.querySelector('[data-image-input]').click();
+      return;    default: return;
   }
   ed.touch();
 }
