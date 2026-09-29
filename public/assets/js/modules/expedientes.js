@@ -7,8 +7,7 @@ import {
 } from '../ui.js';
 import { SERVICES, PATIENT_FIELDS, CLINICAL_FIELDS, loadCatalog } from '../services.js';
 import { sectionsHtml, initSections, fillSections, collectSections, dataRowsHtml } from '../forms.js';
-import { renderProgressChart } from '../progress_chart.js';
-import { renderBodySilhouette } from '../body_silhouette.js';
+import { progressChartHtml, progressChartBodyHtml } from '../progress_chart.js';
 
 let ctx;
 let catalog = null;
@@ -230,7 +229,7 @@ async function renderDetail(root, patientId) {
       <div id="visits-section">${visitsSectionHtml(episodes)}</div>
     </div>`;
 
-  wireVisits(root, p, episodes, patientId);
+  wireVisits(root, episodes, patientId);
 
   root.querySelector('#btn-new-consult').addEventListener('click', () => openConsultModal(p, episodes, patientId));
   refreshPatientDocsCount(root, patientId);
@@ -465,6 +464,9 @@ function deliveryRowHtml(e) {
 // sobreviva a los re-render (marcar entrega, guardar una edición…).
 let activeEpisodeId = null;
 let activeTab = 'admision';
+// Métrica graficada en la pestaña de Progreso. También vive aquí: volver a la
+// pestaña no debería resetear lo que el nutriólogo estaba viendo.
+let progressMetric = null;
 
 /** Consultas de más antigua a más nueva: "Consulta 1" debe ser la primera visita. */
 function consultsAsc(e) {
@@ -487,6 +489,9 @@ function normalizeVisitState(episodes) {
     ep = episodes[0];
     activeEpisodeId = ep.id;
     activeTab = 'admision';
+    // Otro episodio puede no tener capturada esa métrica: arrastrarla pintaría
+    // una gráfica vacía sin explicación.
+    progressMetric = null;
   }
   const valid = ['admision', ...consultsAsc(ep).map((c) => `c:${c.id}`), ...(hasProgressTab(ep) ? ['progreso'] : [])];
   if (!valid.includes(activeTab)) activeTab = 'admision';
@@ -627,18 +632,19 @@ function consultPanelHtml(c, e) {
 }
 
 /** Cablea el bloque de visitas. Se vuelve a llamar tras cada cambio de pestaña. */
-function wireVisits(root, patient, episodes, patientId) {
+function wireVisits(root, episodes, patientId) {
   const box = root.querySelector('#visits-section');
   if (!box) return;
   const rerender = () => {
     box.innerHTML = visitsSectionHtml(episodes);
-    wireVisits(root, patient, episodes, patientId);
+    wireVisits(root, episodes, patientId);
   };
   const reload = () => renderDetail(root, patientId);
 
   box.querySelector('#episode-select')?.addEventListener('change', (ev) => {
     activeEpisodeId = +ev.target.value;
     activeTab = 'admision';
+    progressMetric = null;
     rerender();
   });
   box.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
@@ -712,7 +718,16 @@ function wireVisits(root, patient, episodes, patientId) {
     } catch (e) { toast(e.message, 'error'); }
   });
 
-  box.querySelector('[data-open-progress-viz]')?.addEventListener('click', () => openProgressVizModal(patient, ep));
+  // El <select> de la gráfica se cablea aquí, no al pintarlo: wireVisits es lo
+  // único que se vuelve a ejecutar después de cada rerender(). Se repinta solo
+  // el cuerpo para no destruir el <select> dentro de su propio handler.
+  box.querySelector('#progress-metric')?.addEventListener('change', (ev) => {
+    progressMetric = ev.target.value;
+    const visits = progressVisits(ep);
+    const metric = progressChartMetrics(ep, visits).find((m) => m.key === progressMetric);
+    const body = box.querySelector('#progress-chart-body');
+    if (metric && body) body.innerHTML = progressChartBodyHtml(visits, metric);
+  });
 }
 
 /* ================= Pestaña de Progreso ================= */
@@ -723,6 +738,7 @@ const PROGRESS_GROUPS = [
   ['cp_antro', 'Antropometría'],
   ['cp_pli', 'Plicometría'],
   ['cp_bio', 'Bioimpedancia'],
+  ['cp_sv', 'Signos vitales'],
 ];
 
 /** Métricas numéricas de un grupo del catálogo, con su etiqueta. */
@@ -731,8 +747,22 @@ function progressMetrics(service, sectionId) {
   const sec = secs.find((s) => s.id === sectionId);
   if (!sec) return [];
   return sec.fields
-    .filter((f) => f.t === 'number' || f.t === 'calc')
+    // La talla se copia de la admisión y no se edita en la sesión: es constante
+    // por diseño, así que en una comparativa solo estorba.
+    .filter((f) => (f.t === 'number' || f.t === 'calc') && !f.readonly)
     .map((f) => [f.k, f.l]);
+}
+
+/** Métricas graficables de un episodio: las que tienen al menos dos capturas. */
+function progressChartMetrics(e, visits) {
+  const out = [];
+  PROGRESS_GROUPS.forEach(([id, title]) => {
+    progressMetrics(e.service, id).forEach(([k, label]) => {
+      const capturas = visits.filter((v) => numOrNull(v.data[k]) !== null).length;
+      if (capturas >= 2) out.push({ key: k, label, group: title });
+    });
+  });
+  return out;
 }
 
 /** Una columna por visita: la admisión y cada consulta, de más antigua a más nueva. */
@@ -762,8 +792,15 @@ function progressPanelHtml(e) {
       Todavía no hay con qué comparar: se necesita al menos una consulta subsecuente además de la admisión.</p>`;
   }
 
+  const metrics = progressChartMetrics(e, visits);
+  if (!metrics.some((m) => m.key === progressMetric)) {
+    progressMetric = metrics.find((m) => m.key === 'peso_kg')?.key || metrics[0]?.key || null;
+  }
+
   return `
     <div class="space-y-5">
+      ${progressChartHtml(visits, metrics, progressMetric)}
+
       ${PROGRESS_GROUPS.map(([id, title]) => {
         const metrics = progressMetrics(e.service, id)
           // Sólo se listan las métricas con algún dato capturado: una tabla llena
@@ -804,34 +841,7 @@ function progressPanelHtml(e) {
             </div>
           </div>`;
       }).join('')}
-
-      <div class="rounded-xl bg-slate-50 px-4 py-3">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Gráfica y silueta</p>
-          ${actionBtn(`data-open-progress-viz="${e.id}"`, 'activity', 'Ver progreso visual',
-            'bg-indigo-600 text-white ring-indigo-600 hover:bg-indigo-500')}
-        </div>
-      </div>
     </div>`;
-}
-
-/** Modal con la gráfica multicapa y la silueta comparativa (ver progress_chart.js / body_silhouette.js). */
-function openProgressVizModal(patient, e) {
-  const visits = progressVisits(e);
-  const box = document.createElement('div');
-  box.className = 'space-y-6';
-
-  const chartWrap = document.createElement('div');
-  chartWrap.innerHTML = '<p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Gráfica de evolución</p>';
-  chartWrap.appendChild(renderProgressChart(visits));
-
-  const siloWrap = document.createElement('div');
-  siloWrap.className = 'border-t border-slate-100 pt-5';
-  siloWrap.innerHTML = '<p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Comparación corporal</p>';
-  siloWrap.appendChild(renderBodySilhouette(visits, { sex: patient.sex }));
-
-  box.append(chartWrap, siloWrap);
-  modal({ title: 'Progreso visual', content: box, size: 'max-w-4xl', actions: [{ label: 'Cerrar' }] });
 }
 
 /* ================= Dx Assist ================= */
