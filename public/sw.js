@@ -5,7 +5,7 @@
  * - /api/, login.php, print.php: network-only — datos clínicos JAMÁS se cachean.
  * En cada deploy, subir la versión del cache.
  */
-const CACHE = 'sirius-shell-2578eca';
+const CACHE = 'sirius-shell-a6b0089';
 
 const SHELL = [
   'offline.html',
