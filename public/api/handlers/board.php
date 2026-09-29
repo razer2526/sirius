@@ -9,6 +9,12 @@
 
 const BOARD_TYPES = ['note', 'checklist', 'drawing'];
 const BOARD_COLORS = ['amber', 'pink', 'sky', 'emerald', 'violet', 'slate'];
+// Claves de tipografía que el editor de notas sabe dibujar (ver board_note_editor.js).
+const BOARD_FONTS = ['inter', 'nunito', 'lora', 'playfair', 'merriweather', 'caveat', 'marker', 'mono'];
+const BOARD_ALIGNS = ['left', 'center', 'right', 'justify'];
+const BOARD_NOTE_MAX_BLOCKS = 200;
+const BOARD_NOTE_MAX_RUNS = 300;
+const BOARD_NOTE_MAX_CHARS = 20000;
 
 function handle_board(string $action): void
 {
@@ -170,7 +176,7 @@ function board_validate_content(string $type, $content): array
     $content = is_array($content) ? $content : [];
     switch ($type) {
         case 'note':
-            return ['text' => mb_substr(trim((string)($content['text'] ?? '')), 0, 4000)];
+            return board_validate_note($content);
 
         case 'checklist':
             $items = [];
@@ -208,6 +214,75 @@ function board_validate_content(string $type, $content): array
             return ['strokes' => $strokes];
     }
     return [];
+}
+
+/**
+ * Nota con formato: una lista de bloques (párrafo o renglón de pendiente) hechos
+ * de tramos con estilo. El contenido NUNCA es HTML: el cliente arma nodos con
+ * textContent y asigna estilos desde estos valores ya acotados, así que una nota
+ * en el pizarrón público no puede ejecutar nada en el navegador de quien la mira.
+ *
+ * Una nota sin la clave "blocks" es del formato anterior ({text}) y se conserva
+ * tal cual: un cliente con la versión vieja en caché sigue pudiendo guardarla.
+ */
+function board_validate_note(array $content): array
+{
+    if (!array_key_exists('blocks', $content)) {
+        return ['text' => mb_substr(trim((string)($content['text'] ?? '')), 0, 4000)];
+    }
+
+    $blocks = [];
+    $chars = 0;
+    foreach (array_slice((array)$content['blocks'], 0, BOARD_NOTE_MAX_BLOCKS) as $b) {
+        if (!is_array($b)) {
+            continue;
+        }
+        $type = $b['t'] ?? 'p';
+        if ($type !== 'p' && $type !== 'todo') {
+            continue;
+        }
+
+        $runs = [];
+        foreach (array_slice((array)($b['runs'] ?? []), 0, BOARD_NOTE_MAX_RUNS) as $r) {
+            if (!is_array($r) || $chars >= BOARD_NOTE_MAX_CHARS) {
+                continue;
+            }
+            $s = (string)($r['s'] ?? '');
+            if ($s === '') {
+                continue;
+            }
+            $s = mb_substr($s, 0, BOARD_NOTE_MAX_CHARS - $chars);
+            $chars += mb_strlen($s);
+
+            $run = ['s' => $s];
+            foreach (['b', 'i', 'u'] as $flag) {
+                if (!empty($r[$flag])) {
+                    $run[$flag] = true;
+                }
+            }
+            if (isset($r['c']) && preg_match('/^#[0-9a-fA-F]{6}$/', (string)$r['c'])) {
+                $run['c'] = strtolower($r['c']);
+            }
+            if (isset($r['f']) && in_array($r['f'], BOARD_FONTS, true)) {
+                $run['f'] = $r['f'];
+            }
+            if (isset($r['z']) && is_numeric($r['z'])) {
+                $run['z'] = max(8, min(96, (int)round((float)$r['z'])));
+            }
+            $runs[] = $run;
+        }
+
+        $block = [
+            't'     => $type,
+            'align' => in_array($b['align'] ?? '', BOARD_ALIGNS, true) ? $b['align'] : 'left',
+            'runs'  => $runs,
+        ];
+        if ($type === 'todo') {
+            $block['done'] = !empty($b['done']);
+        }
+        $blocks[] = $block;
+    }
+    return ['v' => 2, 'blocks' => $blocks];
 }
 
 function board_type_label(string $type): string

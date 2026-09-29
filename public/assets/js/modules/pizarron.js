@@ -6,6 +6,9 @@
 
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, confirmDialog, debounce, spinner, isUserBusy } from '../ui.js';
+import {
+  ensureBoardFonts, mountNoteEditor, attachNoteMenu, repositionNoteMenu, trackNoteMenu,
+} from '../board_note_editor.js';
 
 const POLL_MS = 20000;
 
@@ -44,6 +47,7 @@ let view = { scale: 1, tx: 0, ty: 0 };
 let tool = 'cruceta';
 
 export async function render(root, context) {
+  ensureBoardFonts();
   await load(root);
 
   const tick = async () => {
@@ -105,9 +109,6 @@ function paint(root) {
           <button id="btn-add-note" type="button" class="flex items-center gap-1.5 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-400">
             ${icon('plus', 'h-4 w-4')} Nota
           </button>
-          <button id="btn-add-checklist" type="button" class="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500">
-            ${icon('check-square', 'h-4 w-4')} Lista
-          </button>
           <button id="btn-add-drawing" type="button" class="flex items-center gap-1.5 rounded-lg bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500">
             ${icon('edit-3', 'h-4 w-4')} Dibujo
           </button>
@@ -121,7 +122,7 @@ function paint(root) {
         ${!boardData.items.length ? `
         <div class="pointer-events-none absolute inset-0 flex items-center justify-center">
           <p class="rounded-xl bg-white/90 px-5 py-3 text-sm font-medium text-slate-500 shadow-sm ring-1 ring-slate-200">
-            ${scope === 'private' ? 'Tu pizarrón está vacío. Agrega una nota, lista o dibujo.' : 'El pizarrón público está vacío. Sé el primero en pegar algo.'}
+            ${scope === 'private' ? 'Tu pizarrón está vacío. Agrega una nota o un dibujo.' : 'El pizarrón público está vacío. Sé el primero en pegar algo.'}
           </p>
         </div>` : ''}
         <div class="pointer-events-none absolute inset-0">
@@ -151,13 +152,13 @@ function paint(root) {
     load(root);
   }));
   root.querySelector('#btn-add-note').addEventListener('click', () => createItem('note'));
-  root.querySelector('#btn-add-checklist').addEventListener('click', () => createItem('checklist'));
   root.querySelector('#btn-add-drawing').addEventListener('click', () => createItem('drawing'));
 
   const canvas = root.querySelector('#board-canvas');
   boardData.items.forEach((item) => canvas.appendChild(buildCard(item)));
 
   const wrap = root.querySelector('#board-wrap');
+  attachNoteMenu(wrap);
   wrap.querySelectorAll('[data-tool]').forEach((b) => b.addEventListener('click', () => selectTool(b.dataset.tool)));
   wrap.querySelector('#btn-zoom-in').addEventListener('click', () => {
     const r = wrap.getBoundingClientRect();
@@ -189,6 +190,9 @@ function applyTransform(animated) {
   canvas.style.transform = `translate(${view.tx}px, ${view.ty}px) scale(${view.scale})`;
   const pct = document.getElementById('zoom-pct');
   if (pct) pct.textContent = Math.round(view.scale * 100) + '%';
+  // El menú de la nota vive fuera del canvas escalado: hay que recolocarlo (y, si hay
+  // animación, seguirlo cuadro a cuadro: la tarjeta se mueve mientras dura).
+  if (animated) trackNoteMenu(); else repositionNoteMenu();
 }
 
 function applyToolUI() {
@@ -388,11 +392,11 @@ function buildCard(item) {
   body.className = item.type === 'drawing'
     ? 'flex min-h-0 flex-1 flex-col gap-1 overflow-hidden p-1.5'
     : item.type === 'note'
-      ? 'min-h-0 flex-1 p-2'
+      ? 'relative min-h-0 flex-1 p-2'
       : 'min-h-0 flex-1 overflow-auto p-2';
   inner.appendChild(body);
 
-  if (item.type === 'note') buildNoteBody(body, item, canEdit);
+  if (item.type === 'note') buildNoteBody(body, item, canEdit, el);
   else if (item.type === 'checklist') buildChecklistBody(body, item, canEdit);
   else buildDrawingBody(body, item, canEdit);
 
@@ -435,16 +439,13 @@ function buildCard(item) {
   return el;
 }
 
-function buildNoteBody(body, item, canEdit) {
-  const ta = document.createElement('textarea');
-  ta.value = item.content.text || '';
-  ta.placeholder = 'Escribe aquí…';
-  ta.readOnly = !canEdit;
-  ta.className = 'h-full w-full resize-none break-words border-0 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400';
-  body.appendChild(ta);
-  if (canEdit) {
-    ta.addEventListener('input', debounce(() => saveField(item, { content: { text: ta.value } }), 600));
-  }
+/** La nota es un editor con formato (ver board_note_editor.js); aquí solo se le conecta el guardado. */
+function buildNoteBody(body, item, canEdit, cardEl) {
+  mountNoteEditor(body, item, {
+    canEdit,
+    cardEl,
+    onSave: (content) => saveField(item, { content }),
+  });
 }
 
 function buildChecklistBody(body, item, canEdit) {
@@ -618,6 +619,7 @@ function wireDrag(el, header, item) {
     // tarjeta se mueva 1:1 con el cursor a cualquier nivel de zoom.
     el.style.left = Math.max(0, startLeft + (e.clientX - startX) / view.scale) + 'px';
     el.style.top = Math.max(0, startTop + (e.clientY - startY) / view.scale) + 'px';
+    repositionNoteMenu();
   };
   const onUp = () => {
     if (!dragging) return;
@@ -650,6 +652,7 @@ function wireResize(el, handle, item) {
     if (!resizing) return;
     el.style.width = Math.max(MIN_W, startW + (e.clientX - startX) / view.scale) + 'px';
     el.style.height = Math.max(MIN_H, startH + (e.clientY - startY) / view.scale) + 'px';
+    repositionNoteMenu();
   };
   const onUp = () => {
     if (!resizing) return;
