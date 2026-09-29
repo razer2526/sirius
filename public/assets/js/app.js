@@ -5,6 +5,7 @@ import { icon, toast, escapeHtml, fmtRelative } from './ui.js';
 import { initRouter, currentModuleKey } from './router.js';
 import { initAssistant } from './assistant.js';
 import { initInstallCapture } from './pwa_install.js';
+import { syncPushSubscription, urlBase64ToUint8Array, pushTestResultHtml, initLogoutUnsubscribe } from './push_sync.js';
 
 /**
  * El navegador puede disparar "beforeinstallprompt" en cualquier momento después
@@ -48,6 +49,8 @@ async function boot() {
   const swReg = await registerServiceWorker();
   keepSessionAlive();
   initNotificationBell(swReg);
+  syncPushSubscription(swReg);
+  initLogoutUnsubscribe(swReg);
 }
 
 /**
@@ -179,12 +182,6 @@ async function registerServiceWorker() {
   }
 }
 
-function urlBase64ToUint8Array(base64) {
-  const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
-  const raw = atob(padded.replace(/-/g, '+').replace(/_/g, '/'));
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
-}
-
 const NOTIF_TYPE_META = {
   '#/tareas':     { icon: 'check-square', cls: 'bg-indigo-50 text-indigo-600' },
   '#/calendario': { icon: 'calendar',     cls: 'bg-sky-50 text-sky-600' },
@@ -226,7 +223,17 @@ function initNotificationBell(swReg) {
   const pushBannerHtml = async () => {
     if (!swReg || !('PushManager' in window) || !('Notification' in window)) return '';
     const sub = await swReg.pushManager.getSubscription();
-    if (sub || Notification.permission === 'denied') return '';
+    if (sub) {
+      return `
+      <div class="mb-1 rounded-lg bg-slate-50 px-3 py-2.5">
+        <button id="notif-test-push" type="button" class="flex w-full items-center gap-2 text-left text-sm font-semibold text-slate-700 hover:text-indigo-600">
+          <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-white text-slate-500 ring-1 ring-slate-200">${icon('bell', 'h-3.5 w-3.5')}</span>
+          Enviar notificación de prueba
+        </button>
+        <div id="notif-test-result" class="mt-2 hidden space-y-1 text-xs"></div>
+      </div>`;
+    }
+    if (Notification.permission === 'denied') return '';
     return `
       <button id="notif-enable-push" type="button"
               class="mb-1 flex w-full items-center gap-2.5 rounded-lg bg-indigo-50 px-3 py-2.5 text-left hover:bg-indigo-100">
@@ -256,6 +263,26 @@ function initNotificationBell(swReg) {
     } catch (e) {
       console.error('push subscribe:', e);
       toast('No se pudieron activar las notificaciones', 'error');
+    }
+  };
+
+  /** Manda una notificación de verdad y muestra qué respondió el servicio de push de cada
+   *  dispositivo del usuario: es la forma de saber, sin adivinar, si uno en concreto funciona. */
+  const testPush = async () => {
+    const btn = panel.querySelector('#notif-test-push');
+    const box = panel.querySelector('#notif-test-result');
+    if (!btn || !box) return;
+    btn.disabled = true;
+    box.classList.remove('hidden');
+    box.innerHTML = '<p class="text-slate-400">Enviando…</p>';
+    try {
+      const sub = await swReg.pushManager.getSubscription();
+      const r = await apiPost('push/test', { endpoint: sub ? sub.endpoint : '' });
+      box.innerHTML = pushTestResultHtml(r);
+    } catch (e) {
+      box.innerHTML = `<p class="text-red-600">${escapeHtml(e.message || 'No se pudo enviar la prueba')}</p>`;
+    } finally {
+      btn.disabled = false;
     }
   };
 
@@ -323,6 +350,7 @@ function initNotificationBell(swReg) {
       + `<div class="max-h-80 overflow-y-auto">${waSectionHtml(conversations)}${notifs.map(notifRowHtml).join('')}</div>`;
 
     panel.querySelector('#notif-enable-push')?.addEventListener('click', enablePush);
+    panel.querySelector('#notif-test-push')?.addEventListener('click', testPush);
     panel.querySelectorAll('[data-notif-id]').forEach((a) => {
       a.addEventListener('click', () => apiPost('push/mark_read', { id: Number(a.dataset.notifId) }).catch(() => {}));
     });

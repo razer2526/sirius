@@ -75,6 +75,10 @@ function webpush_send(string $endpoint, string $subject): int
     $headers = [
         'Authorization: vapid t=' . $jwt . ', k=' . $keys['public_key'],
         'TTL: 86400',
+        // Sin esto FCM trata el push como prioridad normal y lo retiene mientras el
+        // teléfono está en reposo (Doze): llega tarde, o casi nunca hasta que el equipo
+        // se despierta. Un aviso de la clínica no puede esperar a eso.
+        'Urgency: high',
         'Content-Length: 0',
     ];
 
@@ -198,26 +202,50 @@ function webpush_subject(): string
  * con un push vacío. Las suscripciones que el navegador ya dio de baja
  * (404/410) se limpian solas.
  */
-function webpush_notify(int $userId, string $title, string $body, ?string $url = null): void
+function webpush_notify(int $userId, string $title, string $body, ?string $url = null): array
 {
     $pdo = db();
     $pdo->prepare('INSERT INTO notifications (user_id, title, body, url) VALUES (?, ?, ?, ?)')
         ->execute([$userId, mb_substr($title, 0, 200), mb_substr($body, 0, 500), $url]);
+    return webpush_wake_devices($userId);
+}
 
+/**
+ * Manda un push vacío a cada dispositivo suscrito del usuario y devuelve el resultado de
+ * cada uno: [['host' => 'fcm.googleapis.com', 'code' => 201], …]. Antes esto era invisible:
+ * un dispositivo con la suscripción rota podía pasar semanas sin recibir nada sin dejar rastro.
+ *
+ * Se borran las suscripciones que no tienen arreglo desde el servidor: 404/410 (el navegador
+ * la dio de baja) y 403 (la llave VAPID ya no coincide con la de la suscripción). El cliente
+ * la vuelve a crear solo en su próximo inicio (ver syncPushSubscription en app.js). Los demás
+ * fallos (5xx, timeout, 0) pueden ser pasajeros, así que se registran pero no se borra nada.
+ */
+function webpush_wake_devices(int $userId): array
+{
+    $pdo = db();
     $st = $pdo->prepare('SELECT id, endpoint FROM push_subscriptions WHERE user_id = ?');
     $st->execute([$userId]);
     $subject = webpush_subject();
+    $results = [];
     foreach ($st->fetchAll() as $sub) {
+        $host = (string)(parse_url($sub['endpoint'], PHP_URL_HOST) ?: 'desconocido');
         try {
             $code = webpush_send($sub['endpoint'], $subject);
         } catch (Throwable $e) {
-            error_log('webpush_notify: ' . $e->getMessage());
+            error_log('webpush: ' . $e->getMessage());
+            $results[] = ['id' => (int)$sub['id'], 'host' => $host, 'code' => 0];
             continue;
         }
-        if (in_array($code, [404, 410], true)) {
+        $results[] = ['id' => (int)$sub['id'], 'host' => $host, 'code' => $code];
+        if ($code < 200 || $code >= 300) {
+            // Solo el host: el endpoint completo es una credencial de envío.
+            error_log("webpush: el servicio $host respondió $code (usuario $userId, suscripción {$sub['id']})");
+        }
+        if (in_array($code, [403, 404, 410], true)) {
             $pdo->prepare('DELETE FROM push_subscriptions WHERE id = ?')->execute([$sub['id']]);
         }
     }
+    return $results;
 }
 
 /**

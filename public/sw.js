@@ -28,6 +28,7 @@ const SHELL = [
   'assets/js/forms.js',
   'assets/js/progress_chart.js',
   'assets/js/board_note_editor.js',
+  'assets/js/push_sync.js',
   'assets/js/assistant.js',
   'assets/js/marketing_panel.js',
   'assets/js/marketing_icons.js',
@@ -120,36 +121,79 @@ self.addEventListener('sync', (e) => {
 
 /**
  * Push notifications: el push que llega del servidor no trae contenido (ver
- * includes/webpush.php) — solo despierta al navegador. Aquí se pide lo pendiente
- * con la sesión que ya trae el navegador (petición del mismo origen, con cookie),
- * para no tener que cifrar el payload del push (RFC 8291), que es la parte más
- * propensa a errores de cualquier implementación casera. Sin sesión activa
- * (expiró, o el push llega igual sin nadie habiendo abierto la app en un rato),
- * se muestra un aviso genérico en vez de perder la notificación.
+ * includes/webpush.php) — solo despierta al navegador. Aquí se pide a push/pending la
+ * siguiente notificación que ESTE dispositivo aún no ha mostrado (el servidor manda un push
+ * por notificación, así que cada push entrega una) con la sesión que ya trae el navegador.
+ *
+ * Regla que este handler nunca rompe: cada push termina mostrando algo. Chrome lo exige
+ * (userVisibleOnly): si no se muestra nada, muestra su propio aviso ("se actualizó en segundo
+ * plano") y, si se repite, puede retirar el permiso. Antes, sin sesión o sin nada pendiente
+ * el handler terminaba en silencio y la notificación simplemente se perdía.
+ *
+ * Tres casos, y solo uno es "no mostrar el contenido":
+ *  - hay notificación → se muestra (con su tag: no se duplica ni se apila);
+ *  - no se pudo saber (sesión vencida, 401, sin red) → aviso genérico visible. El contenido no
+ *    se muestra a nadie sin sesión (equipos compartidos), pero la persona se entera de que hay
+ *    algo esperando, y como el servidor no avanza el marcador de este dispositivo, la
+ *    notificación real sigue pendiente para cuando haya sesión;
+ *  - sesión válida pero nada que entregar → aviso silencioso que se retira solo (rara vez pasa:
+ *    ya se leyó en otro lado, o la sesión es de otra persona en un equipo compartido).
  */
-self.addEventListener('push', (e) => {
-  e.waitUntil(
-    fetch('api/index.php?r=push/pending', { credentials: 'same-origin' })
-      .then((r) => r.json())
-      .then((json) => {
-        const items = (json.ok && json.data && json.data.items) || [];
-        if (!items.length) return null;
-        return Promise.all(items.map((n) => self.registration.showNotification(n.title, {
-          body: n.body || '',
-          icon: 'assets/img/icons/icon-192.png',
-          badge: 'assets/img/icons/icon-192.png',
-          tag: 'sirius-' + n.id,
-          data: { url: n.url || './' },
-        })));
-      })
-      .catch(() => self.registration.showNotification('Sirius', {
-        body: 'Tienes novedades pendientes.',
-        icon: 'assets/img/icons/icon-192.png',
-        data: { url: './' },
-      }))
-  );
-});
+const PUSH_ICON = 'assets/img/icons/icon-192.png';
 
+async function handlePush() {
+  let items = null; // null = no se pudo saber
+  try {
+    const sub = await self.registration.pushManager.getSubscription();
+    const endpoint = sub ? sub.endpoint : '';
+    const res = await fetch('api/index.php?r=push/pending&endpoint=' + encodeURIComponent(endpoint), {
+      credentials: 'same-origin',
+      cache: 'no-store',
+    });
+    const json = await res.json();
+    if (json && json.ok && json.data && Array.isArray(json.data.items)) items = json.data.items;
+  } catch {
+    // Sin red o respuesta que no es JSON: se trata igual que una sesión vencida.
+  }
+
+  if (items === null) {
+    return self.registration.showNotification('Sirius', {
+      body: 'Tienes novedades en Sirius. Ábrelo para verlas.',
+      icon: PUSH_ICON,
+      badge: PUSH_ICON,
+      tag: 'sirius-novedades', // tag fijo: varios pushes seguidos no apilan varios avisos
+      data: { url: './' },
+    });
+  }
+
+  if (items.length) {
+    return Promise.all(items.map((n) => self.registration.showNotification(n.title, {
+      body: n.body || '',
+      icon: PUSH_ICON,
+      badge: PUSH_ICON,
+      tag: 'sirius-' + n.id,
+      data: { url: n.url || './' },
+    })));
+  }
+
+  // Con una ventana visible Chrome no exige mostrar nada.
+  const wins = await clients.matchAll({ type: 'window', includeUncontrolled: true });
+  if (wins.some((w) => w.visibilityState === 'visible')) return undefined;
+  await self.registration.showNotification('Sirius', {
+    body: 'Sin novedades pendientes.',
+    icon: PUSH_ICON,
+    tag: 'sirius-idle',
+    silent: true,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const idle = await self.registration.getNotifications({ tag: 'sirius-idle' });
+  idle.forEach((n) => n.close());
+  return undefined;
+}
+
+self.addEventListener('push', (e) => {
+  e.waitUntil(handlePush());
+});
 self.addEventListener('notificationclick', (e) => {
   e.notification.close();
   const url = (e.notification.data && e.notification.data.url) || './';

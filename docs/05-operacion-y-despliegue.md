@@ -109,7 +109,13 @@ const CACHE = 'sirius-shell-93d833b';   // el CI reescribe el SHA en cada despli
 
 **Sin `skipWaiting()` en la instalación.** Un service worker nuevo se queda esperando hasta que la página le manda `{type:'SKIP_WAITING'}` — lo hace el botón "Buscar actualizaciones" en Configuración. **Al usuario nunca se le actualiza la app a media sesión.** Buena decisión, vale la pena conservarla.
 
-**Push sin payload, a propósito**: el servidor manda una notificación vacía para no tener que implementar el cifrado del RFC 8291. Al recibirla, el worker consulta `api/index.php?r=push/pending` con `credentials:'same-origin'` (montándose en la cookie de sesión) y muestra una notificación por pendiente.
+**Push sin payload, a propósito**: el servidor manda una notificación vacía (con `Urgency: high`, o FCM la retiene con el teléfono en reposo) para no tener que implementar el cifrado del RFC 8291. Ese diseño también evita que el contenido llegue a quien esté usando un equipo compartido sin ser el destinatario. Al recibirla, el worker consulta `api/index.php?r=push/pending&endpoint=…` con `credentials:'same-origin'` (montándose en la cookie de sesión).
+
+**Una entrega por push y por dispositivo.** `push_subscriptions.last_notified_id` es el marcador de cada dispositivo: `pending` devuelve la siguiente notificación sin leer con id mayor a ese marcador y lo avanza con un compare-and-swap. Antes usaba `read_at`, y con dos dispositivos solo el primero en preguntar mostraba el aviso (además de vaciar el conteo de la campana sin que nadie lo hubiera visto). La entrega ya no toca `read_at`.
+
+**El handler `push` nunca termina sin mostrar algo** (Chrome lo exige con `userVisibleOnly`): sin sesión o sin red muestra un aviso genérico, y solo omite el contenido, no el aviso. `webpush_wake_devices()` devuelve el código de cada dispositivo, registra en `error_log` los que no son 2xx (solo el host, el endpoint es una credencial) y borra las suscripciones con 403/404/410; `syncPushSubscription()` (`push_sync.js`) las recrea al siguiente inicio. `push/test`, desde la campana, dice qué respondió el servicio de push de cada dispositivo.
+
+**Si un usuario dice que "a veces no llegan"**: primero el botón de prueba de la campana en ese dispositivo. Después, fuera del código: en Windows el navegador debe poder seguir en segundo plano y sin "Asistente de concentración"; en Android, sin ahorro de batería agresivo para el navegador; y conviene marcar "Recuérdame" al iniciar sesión (sin eso la cookie de sesión muere al cerrar el navegador y solo llegan avisos genéricos).
 
 ### Dos canales de actualización independientes
 

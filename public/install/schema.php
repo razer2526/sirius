@@ -664,9 +664,10 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
             'push_subscriptions' => "CREATE TABLE IF NOT EXISTS push_subscriptions (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 user_id INT UNSIGNED NOT NULL,
-                endpoint VARCHAR(500) NOT NULL,
+                endpoint VARCHAR(1000) NOT NULL,
                 p256dh VARCHAR(255) NULL,
                 auth VARCHAR(255) NULL,
+                last_notified_id INT UNSIGNED NOT NULL DEFAULT 0,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE KEY uq_push_endpoint (endpoint(255)),
                 INDEX idx_push_user (user_id),
@@ -1282,6 +1283,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 endpoint TEXT NOT NULL UNIQUE,
                 p256dh TEXT NULL,
                 auth TEXT NULL,
+                last_notified_id INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
             'notifications' => "CREATE TABLE IF NOT EXISTS notifications (
@@ -1494,7 +1496,20 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         // en una sola llamada, así que contar y filtrar por red es trabajo del cliente
         // y nunca llega a ser una consulta. Cadena vacía = sin red asignada.
         "ALTER TABLE content_posts ADD COLUMN channels " . ($isMysql ? "VARCHAR(120) NOT NULL DEFAULT ''" : "TEXT NOT NULL DEFAULT ''"),
+        // Hasta qué notificación ya se entregó a ESE dispositivo. Antes "entregada" y "leída" eran
+        // la misma bandera (read_at), así que con dos dispositivos solo el primero en preguntar
+        // mostraba el aviso, y la campanita perdía el conteo sin que nadie lo hubiera visto.
+        "ALTER TABLE push_subscriptions ADD COLUMN last_notified_id " . ($isMysql ? 'INT UNSIGNED NOT NULL DEFAULT 0' : 'INTEGER NOT NULL DEFAULT 0'),
+        // Las suscripciones que ya existían arrancan en la última notificación de su usuario: sin
+        // esto, tras el despliegue cada una recibiría de golpe (un aviso por push) todo lo que
+        // tuviera sin leer. Solo toca las que siguen en 0, así que repetir la migración no las mueve.
+        "UPDATE push_subscriptions SET last_notified_id = COALESCE((SELECT MAX(n.id) FROM notifications n WHERE n.user_id = push_subscriptions.user_id), 0) WHERE last_notified_id = 0",
     ];
+    // Los endpoints de Edge/WNS pueden pasar de 500 caracteres y con MySQL estricto el INSERT
+    // fallaba, así que ese dispositivo nunca llegaba a suscribirse. MODIFY es idempotente.
+    if ($isMysql) {
+        $migrations[] = 'ALTER TABLE push_subscriptions MODIFY endpoint VARCHAR(1000) NOT NULL';
+    }
     $applied = 0;
     foreach ($migrations as $sql) {
         try {
