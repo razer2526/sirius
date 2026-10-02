@@ -857,6 +857,16 @@
                         "k": "bio_edad_metabolica",
                         "l": "Edad metabólica",
                         "t": "number"
+                    },
+                    {
+                        "k": "bio_tmb",
+                        "l": "TMB / BMR (kcal)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_impedancia",
+                        "l": "Impedancia (Ω)",
+                        "t": "number"
                     }
                 ],
                 "grid": 3
@@ -1368,6 +1378,16 @@
                     {
                         "k": "bio_edad_metabolica",
                         "l": "Edad metabólica",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_tmb",
+                        "l": "TMB / BMR (kcal)",
+                        "t": "number"
+                    },
+                    {
+                        "k": "bio_impedancia",
+                        "l": "Impedancia (Ω)",
                         "t": "number"
                     }
                 ],

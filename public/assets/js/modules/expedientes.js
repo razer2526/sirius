@@ -7,6 +7,7 @@ import {
 } from '../ui.js';
 import { SERVICES, PATIENT_FIELDS, CLINICAL_FIELDS, loadCatalog } from '../services.js';
 import { sectionsHtml, initSections, fillSections, collectSections, dataRowsHtml } from '../forms.js';
+import { attachScaleButton, isScaleUser } from '../scale_connect.js';
 import { progressChartHtml, progressChartBodyHtml } from '../progress_chart.js';
 
 let ctx;
@@ -975,6 +976,10 @@ function openConsultModal(patient, episodes, patientId) {
     paramsBox.innerHTML = sectionsHtml(currentSections, { compact: true });
     initSections(form);
     applyReadonlyFromAdmission(form, currentSections, ep);
+    // Báscula Bluetooth: va después de fijar la talla de la admisión, que usa para estimar.
+    if (ep?.service === 'control_peso') {
+      attachScaleButton(form, { enabled: isScaleUser(ctx.user), getPatient: () => patient });
+    }
     // Número de sesión sugerido: consultas previas del episodio + 1
     const num = form.querySelector('[name=numero_sesion]');
     if (num && ep) num.value = (ep.consultations?.length || 0) + 1;

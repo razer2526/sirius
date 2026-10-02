@@ -261,10 +261,21 @@ header('Cache-Control: no-store');
   const known = [0x1800, 0x1801, 0x180a, 0x180f, 0x181b, 0x181d, 0x1805, 0xfee0, 0xfee7, 0xfe95, 0xfd00];
   const vendor = Array.from({ length: 256 }, (_, i) => 0xff00 + i);
   const optionalServices = [...known, ...vendor];
+  // El navegador solo entrega los datos de fabricante de los identificadores declarados aquí; como no
+  // sabemos cuál usa la báscula, se declaran todos (sin esto el informe saldría sin los bytes del peso).
+  const companyIds = Array.from({ length: 0x10000 }, (_, i) => i);
 
   async function scan() {
     try {
-      const dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices });
+      let dev;
+      try {
+        dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices, optionalManufacturerData: companyIds });
+      } catch (err) {
+        // Si el navegador rechaza una lista tan larga, se reintenta sin ella (y se anota en el informe).
+        if (err.name !== 'TypeError') throw err;
+        say('err', 'El navegador rechazó la lista de fabricantes (' + err.message + '); se reintenta sin ella.');
+        dev = await navigator.bluetooth.requestDevice({ acceptAllDevices: true, optionalServices });
+      }
       state.device = dev;
       $('dev-card').hidden = false;
       $('dev-name').textContent = dev.name || '(sin nombre)';

@@ -71,6 +71,8 @@ La composición (indicadores + alertas descartables + agenda entre módulos) es 
 
 Rejilla de servicios → formulario de captura dinámico cuyas secciones y campos vienen de `assets/js/services_catalog.json` (validado del lado del servidor). Crea o reutiliza un cliente y abre un episodio, asigna personal, registra el médico tratante, los estudios pedidos y la fecha de entrega, sube documentos y manda por correo la ficha en PDF.
 
+**Báscula Bluetooth (Control de peso).** Un botón en el formulario de admisión y en la consulta nueva abre el modal de conexión (`scale_connect.js`); al elegir la báscula el modal se cierra, avisa que el paciente ya puede subir y un banner en el formulario muestra el peso en vivo. Con una lectura estable (4 iguales, o 2 si la báscula marca "estable") se llenan peso, impedancia, TMB y la composición **estimada** (`body_composition.js`: Sun 2003 y Mifflin–St Jeor; grasa visceral y edad metabólica no se estiman). Cada campo lleva su etiqueta "báscula"/"estimado", no se pisa lo capturado a mano y nunca se guarda solo. Web Bluetooth solo existe en Chrome/Edge (Windows/Android, https); en iPhone/iPad el botón sale desactivado con la razón. **Los decodificadores por modelo viven en `scale_decoders.js` y el registro está vacío** hasta ver el informe real de `bascula_prueba.php`; mientras tanto el botón es solo para administradores y ofrece "Copiar informe técnico".
+
 La variante `wizard` es una versión de una pregunta por pantalla y 10 campos, para los recolectores a domicilio, **con cola offline en IndexedDB** que postea al mismo endpoint que el flujo normal.
 
 **Acciones:** `create`, `resend_ficha`, `update`, `set_delivery`, `assignable_users`, `search_patient`, `search_studies`, `search_doctors`, `doc_upload`
