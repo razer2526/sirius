@@ -59,6 +59,8 @@ const DISPLAY = {
   bio_agua:           { short: 'Agua total (TBW)',    unit: '',      decimals: 1, minSpan: 2 },
   bio_grasa_visceral: { short: 'Grasa visceral',      unit: '',      decimals: 0, minSpan: 2 },
   bio_edad_metabolica: { short: 'Edad metabólica',    unit: 'años',  decimals: 0, minSpan: 2 },
+  bio_tmb:            { short: 'TMB / BMR',           unit: 'kcal',  decimals: 0, minSpan: 20 },
+  bio_impedancia:     { short: 'Impedancia',          unit: 'Ω',     decimals: 0, minSpan: 20 },
   sv_fc:              { short: 'Frecuencia cardiaca', unit: 'lpm',   decimals: 0, minSpan: 5 },
   sv_spo2:            { short: 'SpO2',                unit: '%',     decimals: 0, minSpan: 2 },
   sv_glucosa:         { short: 'Glucosa',             unit: 'mg/dL', decimals: 0, minSpan: 10 },

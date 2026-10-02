@@ -4,6 +4,7 @@ import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, field, formValues, inputCls, labelCls, debounce, fullName, fmtDate, recurrenceText } from '../ui.js';
 import { SERVICES, PATIENT_FIELDS, loadCatalog } from '../services.js';
 import { sectionsHtml, initSections, collectSections } from '../forms.js';
+import { attachScaleButton, isScaleUser } from '../scale_connect.js';
 
 let ctx;
 
@@ -216,6 +217,17 @@ async function renderForm(root, serviceKey) {
 
   const form = root.querySelector('#admission-form');
   initSections(form);
+
+  // Báscula Bluetooth (solo Control de peso). Edad y sexo salen del paciente elegido o, si es
+  // nuevo, de lo que se va capturando en el formulario.
+  if (serviceKey === 'control_peso') {
+    attachScaleButton(form, {
+      enabled: isScaleUser(ctx.user),
+      getPatient: () => (selectedPatient
+        ? { sex: selectedPatient.sex, birth_date: selectedPatient.birth_date }
+        : { sex: form.querySelector('[name=sex]')?.value, birth_date: form.querySelector('[name=birth_date]')?.value }),
+    });
+  }
 
   /* ---- Médico tratante (solo laboratorio): dropdown de convenio + "Otro" ---- */
   const doctorSelect = root.querySelector('#doctor-select');
