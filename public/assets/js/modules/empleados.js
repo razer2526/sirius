@@ -368,7 +368,10 @@ function openVacationModal(form, record) {
       ${field({ key: 'date_to', label: 'Al', type: 'date', required: true }, record?.date_to || '')}
       <div class="sm:col-span-2">
         <label class="${labelCls}">Días que se descuentan</label>
-        <input name="days" type="number" step="0.5" min="0.5" value="${record ? record.days : ''}" class="${inputCls} sm:!w-40">
+        <div class="flex flex-wrap items-center gap-2">
+          <input name="days" type="number" step="0.5" min="0.5" value="${record ? record.days : ''}" class="${inputCls} sm:!w-40">
+          <button type="button" id="vac-recalc" class="rounded-lg px-3 py-2 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">Recalcular según la jornada</button>
+        </div>
         <p id="vac-days-hint" class="mt-1 text-xs text-slate-400">Elige las fechas y se calculan solos. Puedes corregir el número (por ejemplo, por un día festivo).</p>
       </div>
       ${field({ key: 'notes', label: 'Motivo u observaciones (opcional)', type: 'textarea', span: 'sm:col-span-2' }, record?.notes || '')}
@@ -387,19 +390,24 @@ function openVacationModal(form, record) {
     if (!from.value || !to.value || to.value < from.value) return;
     const mine = ++seq;
     try {
-      const r = await apiGet('employees/vacation_preview', { user_id: current.userId, date_from: from.value, date_to: to.value });
+      // Se cuenta con la jornada que está en pantalla (guardada o no), no con la del servidor.
+      const r = await apiPost('employees/vacation_preview', { user_id: current.userId, date_from: from.value, date_to: to.value, work_schedule: readSchedule(form) });
       if (mine !== seq) return;
       days.value = r.days;
       manual = false;
       hint.textContent = r.mode === 'jornada'
-        ? `${r.days} día(s) laborables de ${r.span} naturales, según la jornada guardada${dirty ? ' (no cuenta los cambios sin guardar de la ficha)' : ''}. Puedes corregir el número.`
-        : `${r.days} día(s) naturales: esta persona aún no tiene jornada guardada, así que se cuentan todos los días.`;
+        ? `${r.days} día(s) laborables de ${r.span} naturales, según la jornada de la ficha${dirty ? ' (recuerda guardar la ficha para conservar esa jornada)' : ''}. Puedes corregir el número.`
+        : `${r.days} día(s) naturales: no hay ningún día marcado en la jornada, así que se cuentan todos. Marca los días laborables en «Jornada laboral» y pulsa «Recalcular según la jornada».`;
     } catch (e) {
       if (mine === seq) hint.textContent = e.message;
     }
   };
   from.addEventListener('change', () => { if (to.value && to.value < from.value) to.value = from.value; recalc(); });
   to.addEventListener('change', recalc);
+  f.querySelector('#vac-recalc').addEventListener('click', () => {
+    if (!from.value || !to.value) { hint.textContent = 'Elige primero las fechas.'; return; }
+    recalc();
+  });
   days.addEventListener('input', () => { manual = true; });
 
   modal({

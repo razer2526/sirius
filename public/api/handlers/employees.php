@@ -112,10 +112,22 @@ function handle_employees(string $action): void
         }
 
         case 'vacation_preview': {
-            $user = employee_find_user((int)($_GET['user_id'] ?? 0));
-            [$from, $to] = employee_vacation_range($_GET['date_from'] ?? null, $_GET['date_to'] ?? null);
-            $profile = employee_find_profile((int)$user['id']);
-            $schedule = employee_decode_schedule($profile['work_schedule'] ?? null);
+            // POST: la pantalla manda la jornada que el administrador TIENE EN PANTALLA, guardada o
+            // no. Si solo se leyera la guardada, una persona recién dada de alta (o con la jornada
+            // a medio editar) se contaría por días naturales y un fin de semana restaría vacaciones.
+            $b = request_body();
+            $user = employee_find_user((int)($b['user_id'] ?? 0));
+            [$from, $to] = employee_vacation_range($b['date_from'] ?? null, $b['date_to'] ?? null);
+            if (isset($b['work_schedule'])) {
+                try {
+                    $schedule = employee_normalize_schedule($b['work_schedule']);
+                } catch (InvalidArgumentException $e) {
+                    json_error($e->getMessage(), 422);
+                }
+            } else {
+                $profile = employee_find_profile((int)$user['id']);
+                $schedule = employee_decode_schedule($profile['work_schedule'] ?? null);
+            }
             json_ok(employee_count_days($from, $to, $schedule));
         }
 
