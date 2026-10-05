@@ -18,6 +18,13 @@ if (!user_can('expedientes')) {
 
 $patientId = (int)($_GET['patient_id'] ?? 0);
 
+// Un documento por visita: no existe la impresión que junta todos los servicios de un paciente.
+$requestedEpisode = (int)($_GET['episode_id'] ?? 0);
+if ($requestedEpisode <= 0) {
+    http_response_code(400);
+    exit('Indica la visita a imprimir: cada servicio se imprime por separado.');
+}
+
 $st = db()->prepare('SELECT * FROM patients WHERE id = ? AND is_deleted = 0');
 $st->execute([$patientId]);
 $p = $st->fetch();
@@ -78,7 +85,6 @@ if ($episodes) {
  */
 $onlyEpisode = (int)($_GET['episode_id'] ?? 0);
 $onlyConsult = (int)($_GET['consultation_id'] ?? 0);
-$singleEvent = false;
 
 if ($onlyEpisode > 0) {
     $episodes = array_values(array_filter($episodes, fn($e) => (int)$e['id'] === $onlyEpisode));
@@ -86,15 +92,15 @@ if ($onlyEpisode > 0) {
         http_response_code(404);
         exit('Visita no encontrada o sin acceso.');
     }
+    // La admisión de laboratorio es la ficha de identificación (con su consentimiento informado);
+    // este generador queda para los demás servicios y para las consultas sueltas. Redirigir evita
+    // que un enlace o marcador viejo vuelva a sacar el documento anterior.
+    if ($onlyConsult === 0 && $episodes[0]['service'] === 'laboratorio') {
+        header('Location: ficha.php?episode_id=' . $onlyEpisode);
+        exit;
+    }
     $consultsByEpisode = array_intersect_key($consultsByEpisode, [$onlyEpisode => true]);
     $studiesByEpisode = array_intersect_key($studiesByEpisode, [$onlyEpisode => true]);
-
-    // Una admisión de laboratorio se imprime como documento del evento único (la toma de muestra
-    // o recolección), no como historial: sin consultas de seguimiento y con el consentimiento.
-    $singleEvent = $onlyConsult === 0 && $episodes[0]['service'] === 'laboratorio';
-    if ($singleEvent) {
-        $consultsByEpisode = [];
-    }
 
     if ($onlyConsult > 0) {
         $filtered = array_values(array_filter(
@@ -123,7 +129,7 @@ try {
 }
 
 try {
-    $pdf = render_patient_record_pdf($p, $episodes, $consultsByEpisode, $clinicName, null, $studiesByEpisode, $singleEvent);
+    $pdf = render_patient_record_pdf($p, $episodes, $consultsByEpisode, $clinicName, null, $studiesByEpisode);
 } catch (Throwable $e) {
     error_log('print.php: ' . $e->getMessage());
     http_response_code(500);

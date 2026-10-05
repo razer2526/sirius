@@ -166,9 +166,6 @@ async function renderDetail(root, patientId) {
             <button id="btn-new-consult" type="button" class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3.5 py-2 text-sm font-semibold text-white hover:bg-indigo-500">
               ${icon('plus', 'h-4 w-4')} Nuevo
             </button>
-            <a href="print.php?patient_id=${p.id}" target="_blank" class="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
-              ${icon('printer', 'h-4 w-4')} PDF
-            </a>
             ${flags.edit ? `
             <button id="btn-edit" type="button" class="flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">
               ${icon('edit', 'h-4 w-4')} Editar
@@ -581,8 +578,14 @@ function admissionPanelHtml(e) {
   const admSections = catalog[e.service]?.admission || [];
   const actions = [
     actionBtn(`data-edit-episode="${e.id}"`, 'edit', 'Editar'),
-    actionLink(`print.php?patient_id=${e.patient_id}&episode_id=${e.id}`, 'printer', 'Imprimir'),
-    actionLink(`ficha.php?episode_id=${e.id}`, 'file-text', 'Ficha'),
+    // Laboratorio: un solo documento, la ficha (con su consentimiento). Los demás servicios
+    // conservan su impresión de visita y la ficha. No hay impresión de "todos los servicios".
+    ...(e.service === 'laboratorio'
+      ? [actionLink(`ficha.php?episode_id=${e.id}`, 'printer', 'Imprimir')]
+      : [
+        actionLink(`print.php?patient_id=${e.patient_id}&episode_id=${e.id}`, 'printer', 'Imprimir'),
+        actionLink(`ficha.php?episode_id=${e.id}`, 'file-text', 'Ficha'),
+      ]),
   ];
   if (ctx.features?.mail) {
     actions.push(actionBtn(`data-resend-ficha="${e.id}"`, 'send', 'Reenviar ficha'));

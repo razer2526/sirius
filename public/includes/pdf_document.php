@@ -1633,16 +1633,13 @@ function render_document_pdf(array $doc, ?string $path = null): string
 }
 
 /**
- * Expediente clínico completo de un paciente: datos personales, antecedentes y el
- * historial por servicio (admisión + consultas subsecuentes de cada episodio).
+ * Documento de UNA visita de un paciente: datos personales, antecedentes y esa admisión (con las
+ * consultas subsecuentes de ese mismo episodio, si el servicio las tiene). Ya no se imprime un
+ * historial que junte varios servicios: cada servicio tiene su propio documento (print.php exige
+ * episode_id y la admisión de laboratorio se imprime como ficha, ficha.php).
  * Usa el membrete configurado (header, footer, marca de agua) igual que el resto
  * de los documentos, pero SIN firma de responsable: este documento es un expediente,
  * no un estudio que alguien deba validar.
- *
- * Con $singleEvent (la impresión de UNA admisión de laboratorio) deja de ser un
- * historial: sin la barra «Historial por servicio» y sin consultas de seguimiento,
- * es el documento del evento único de la toma de muestra o recolección, con el
- * consentimiento informado firmado antes del aviso de privacidad.
  */
 function render_patient_record_pdf(
     array $patient,
@@ -1650,8 +1647,7 @@ function render_patient_record_pdf(
     array $consultsByEpisode,
     string $clinicName,
     ?string $path = null,
-    array $studiesByEpisode = [],
-    bool $singleEvent = false
+    array $studiesByEpisode = []
 ): string {
     $lh = letterhead_config();
     $pdf = new SiriusDocPDF($lh, $clinicName);
@@ -1720,13 +1716,6 @@ function render_patient_record_pdf(
         $pdf->Ln(2);
     }
 
-    /* ---------- Historial por servicio ---------- */
-    if (!$singleEvent) {
-        $pdf->ensureSpace(14);
-        $pdf->panelBar('Historial por servicio', '');
-        $pdf->Ln(3);
-    }
-
     if (!$episodes) {
         $pdf->SetFont('Helvetica', 'I', 9);
         $pdf->SetTextColor(...PDF_MUTED);
@@ -1765,7 +1754,7 @@ function render_patient_record_pdf(
             $pdf->Ln(5.5);
         }
 
-        render_pdf_service_sections($pdf, $admSections, $sd, false, $singleEvent);
+        render_pdf_service_sections($pdf, $admSections, $sd);
 
         if (!empty($studiesByEpisode[$e['id']])) {
             $pdf->ensureSpace(10);
@@ -1784,7 +1773,7 @@ function render_patient_record_pdf(
         // La admisión cierra con la firma del paciente. Las consultas de seguimiento
         // arrancan en hoja nueva, con su propia barra, para que no se lean como parte
         // de lo que el paciente firmó ese día.
-        $consults = $singleEvent ? [] : ($consultsByEpisode[$e['id']] ?? []);
+        $consults = $consultsByEpisode[$e['id']] ?? [];
         if ($consults) {
             $pdf->AddPage();
             $pdf->panelBar(
@@ -1816,14 +1805,6 @@ function render_patient_record_pdf(
             render_pdf_service_sections($pdf, $sesSections, $params);
         }
         $pdf->Ln(4);
-    }
-
-    // Evento único: el consentimiento informado va en su propia hoja, con la firma que el
-    // paciente dejó en esa admisión (la misma que cierra los datos), antes del aviso.
-    if ($singleEvent && $episodes) {
-        $sd0 = $episodes[0]['service_data'] ? json_decode($episodes[0]['service_data'], true) : [];
-        $pdf->AddPage();
-        render_ficha_consent_page($pdf, $fullName ?: 'No referido', (string)($sd0['firma'] ?? ''), 'este documento');
     }
 
     // El expediente cierra en hoja propia con el aviso de privacidad. Antes esa
@@ -2140,12 +2121,12 @@ function render_ficha_pdf(
  * Declaraciones del consentimiento informado para toma de muestra y estudios de
  * laboratorio — redactado para Especialidades Médicas Bosques Polanco.
  */
-function ficha_consent_items(string $documentRef = 'esta ficha de identificación'): array
+function ficha_consent_items(): array
 {
     return [
         'He sido informado(a), de manera clara y en un lenguaje que comprendo, sobre la naturaleza, el '
-            . 'propósito y el procedimiento del o los estudios de laboratorio solicitados, detallados en '
-            . $documentRef . '.',
+            . 'propósito y el procedimiento del o los estudios de laboratorio solicitados, detallados en esta '
+            . 'ficha de identificación.',
         'Entiendo que la toma de muestra (sangre, orina u otro fluido o tejido, según el estudio) será '
             . 'realizada por personal capacitado, siguiendo las medidas de higiene y seguridad correspondientes.',
         'He sido informado(a) de los riesgos asociados a la toma de muestra, que pueden incluir: dolor leve o '
@@ -2168,17 +2149,9 @@ function ficha_consent_items(string $documentRef = 'esta ficha de identificació
     ];
 }
 
-/**
- * Hoja de consentimiento informado, al cierre de la ficha (ver render_ficha_pdf()) o de la
- * impresión de una admisión de laboratorio (render_patient_record_pdf() con $singleEvent).
- * $documentRef es cómo llama al documento el primer punto del consentimiento.
- */
-function render_ficha_consent_page(
-    SiriusDocPDF $pdf,
-    string $patientName,
-    string $signatureDataUrl,
-    string $documentRef = 'esta ficha de identificación'
-): void {
+/** Hoja de consentimiento informado, al cierre de la ficha (ver render_ficha_pdf()). */
+function render_ficha_consent_page(SiriusDocPDF $pdf, string $patientName, string $signatureDataUrl): void
+{
     $pdf->pageTitle('Consentimiento informado');
     $pdf->SetFont('Helvetica', '', 8.6);
     $pdf->SetTextColor(...PDF_MUTED);
@@ -2200,7 +2173,7 @@ function render_ficha_consent_page(
     $pdf->Ln(3);
 
     $i = 1;
-    foreach (ficha_consent_items($documentRef) as $item) {
+    foreach (ficha_consent_items() as $item) {
         $pdf->ensureSpace(10);
         $num = $i . '. ';
         $numW = $pdf->GetStringWidth(pdf_t($num)) + 1;
@@ -2323,13 +2296,8 @@ function ficha_slug(string $name): string
 }
 
 /** Imprime las secciones capturadas del catálogo (admisión o sesión) que traigan datos. */
-function render_pdf_service_sections(
-    SiriusDocPDF $pdf,
-    array $sections,
-    ?array $data,
-    bool $compact = false,
-    bool $skipSignature = false
-): void {
+function render_pdf_service_sections(SiriusDocPDF $pdf, array $sections, ?array $data, bool $compact = false): void
+{
     if (!$data) {
         return;
     }
@@ -2359,8 +2327,7 @@ function render_pdf_service_sections(
             }
             $pairs[] = [$f['l'], $display];
         }
-        // $skipSignature: la firma va en la hoja del consentimiento (evento único), no se repite aquí
-        if (!$pairs && (!$signature || $skipSignature)) {
+        if (!$pairs && !$signature) {
             continue;
         }
         $pdf->sectionLabel($sec['title']);
@@ -2369,7 +2336,7 @@ function render_pdf_service_sections(
             // usa celdas con recuadro, que se leen mejor en un documento largo
             $compact ? $pdf->compactRows($pairs) : $pdf->fieldsTable($pairs);
         }
-        if ($signature && !$skipSignature) {
+        if ($signature) {
             // El pie de la imagen sobra cuando repite el título de la sección
             // ("FIRMA DEL PACIENTE" arriba y "Firma del paciente" abajo).
             $caption = (string)($signatureField['l'] ?? 'Firma del paciente');
