@@ -43,6 +43,18 @@ if (is_admin_role($me)) {
     }
 }
 
+// Laboratorio no va dentro de un historial: cada admisión de laboratorio se imprime sola, como
+// ficha de identificación con su consentimiento (ficha.php). Sin episode_id, el expediente del
+// paciente se arma solo con sus visitas de los demás servicios.
+if ((int)($_GET['episode_id'] ?? 0) === 0) {
+    $withoutLab = array_values(array_filter($episodes, fn($e) => $e['service'] !== 'laboratorio'));
+    if (!$withoutLab && $episodes) {
+        http_response_code(400);
+        exit('Las admisiones de laboratorio se imprimen una por una desde su visita (ficha).');
+    }
+    $episodes = $withoutLab;
+}
+
 $consultsByEpisode = [];
 if ($episodes) {
     $ids = array_column($episodes, 'id');
@@ -84,6 +96,12 @@ if ($onlyEpisode > 0) {
     if (!$episodes) {
         http_response_code(404);
         exit('Visita no encontrada o sin acceso.');
+    }
+    // La admisión de laboratorio es la ficha de identificación (con su consentimiento informado).
+    // Redirigir evita que un enlace o marcador viejo saque el documento anterior.
+    if ($onlyConsult === 0 && $episodes[0]['service'] === 'laboratorio') {
+        header('Location: ficha.php?episode_id=' . $onlyEpisode);
+        exit;
     }
     $consultsByEpisode = array_intersect_key($consultsByEpisode, [$onlyEpisode => true]);
     $studiesByEpisode = array_intersect_key($studiesByEpisode, [$onlyEpisode => true]);
