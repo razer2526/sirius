@@ -18,13 +18,6 @@ if (!user_can('expedientes')) {
 
 $patientId = (int)($_GET['patient_id'] ?? 0);
 
-// Un documento por visita: no existe la impresión que junta todos los servicios de un paciente.
-$requestedEpisode = (int)($_GET['episode_id'] ?? 0);
-if ($requestedEpisode <= 0) {
-    http_response_code(400);
-    exit('Indica la visita a imprimir: cada servicio se imprime por separado.');
-}
-
 $st = db()->prepare('SELECT * FROM patients WHERE id = ? AND is_deleted = 0');
 $st->execute([$patientId]);
 $p = $st->fetch();
@@ -48,6 +41,18 @@ if (is_admin_role($me)) {
         http_response_code(403);
         exit('No tienes acceso a este expediente.');
     }
+}
+
+// Laboratorio no va dentro de un historial: cada admisión de laboratorio se imprime sola, como
+// ficha de identificación con su consentimiento (ficha.php). Sin episode_id, el expediente del
+// paciente se arma solo con sus visitas de los demás servicios.
+if ((int)($_GET['episode_id'] ?? 0) === 0) {
+    $withoutLab = array_values(array_filter($episodes, fn($e) => $e['service'] !== 'laboratorio'));
+    if (!$withoutLab && $episodes) {
+        http_response_code(400);
+        exit('Las admisiones de laboratorio se imprimen una por una desde su visita (ficha).');
+    }
+    $episodes = $withoutLab;
 }
 
 $consultsByEpisode = [];
@@ -92,9 +97,8 @@ if ($onlyEpisode > 0) {
         http_response_code(404);
         exit('Visita no encontrada o sin acceso.');
     }
-    // La admisión de laboratorio es la ficha de identificación (con su consentimiento informado);
-    // este generador queda para los demás servicios y para las consultas sueltas. Redirigir evita
-    // que un enlace o marcador viejo vuelva a sacar el documento anterior.
+    // La admisión de laboratorio es la ficha de identificación (con su consentimiento informado).
+    // Redirigir evita que un enlace o marcador viejo saque el documento anterior.
     if ($onlyConsult === 0 && $episodes[0]['service'] === 'laboratorio') {
         header('Location: ficha.php?episode_id=' . $onlyEpisode);
         exit;

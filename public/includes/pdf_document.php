@@ -1633,10 +1633,8 @@ function render_document_pdf(array $doc, ?string $path = null): string
 }
 
 /**
- * Documento de UNA visita de un paciente: datos personales, antecedentes y esa admisión (con las
- * consultas subsecuentes de ese mismo episodio, si el servicio las tiene). Ya no se imprime un
- * historial que junte varios servicios: cada servicio tiene su propio documento (print.php exige
- * episode_id y la admisión de laboratorio se imprime como ficha, ficha.php).
+ * Expediente clínico completo de un paciente: datos personales, antecedentes y el
+ * historial por servicio (admisión + consultas subsecuentes de cada episodio).
  * Usa el membrete configurado (header, footer, marca de agua) igual que el resto
  * de los documentos, pero SIN firma de responsable: este documento es un expediente,
  * no un estudio que alguien deba validar.
@@ -1715,6 +1713,11 @@ function render_patient_record_pdf(
         }
         $pdf->Ln(2);
     }
+
+    /* ---------- Historial por servicio ---------- */
+    $pdf->ensureSpace(14);
+    $pdf->panelBar('Historial por servicio', '');
+    $pdf->Ln(3);
 
     if (!$episodes) {
         $pdf->SetFont('Helvetica', 'I', 9);
