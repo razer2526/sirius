@@ -170,6 +170,8 @@ Marketing es la excepción sana a ese problema: su panel vive en `assets/js/mark
 
 ## Grupo Admin Tools
 
+En el sidebar es **una sola entrada** («Admin Tools») que abre un panel con una tarjeta por herramienta (`modules/admin_tools.js`, rejilla de 3 columnas en escritorio). No es un módulo del registro: no tiene permiso propio y aparece si la persona tiene al menos una de las herramientas; cada tarjeta muestra el `description` del registro, así que una herramienta nueva aparece sola. Dentro de cualquier herramienta (también las ocultas, como `whatsapp_config`) el sidebar resalta «Admin Tools».
+
 ### 🟢 `usuarios` — Usuarios
 CRUD de usuarios más **la matriz de permisos**: una rejilla de cada módulo del registro × usuario, con casillas por módulo y casillas anidadas por flag, guardadas como JSON en `user_permissions.flags`.
 

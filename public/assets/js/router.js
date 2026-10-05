@@ -36,7 +36,12 @@ async function renderRoute() {
   }
   const moduleKey = key || 'dashboard';
 
-  const mod = appState.modules.find((m) => m.key === moduleKey);
+  // Admin Tools: panel virtual, sin fila en el registro de módulos. Solo existe si la persona tiene
+  // alguna de las herramientas del grupo (si no, cae en el fallback como cualquier ruta sin acceso).
+  const adminTools = appState.modules.filter((m) => m.group === 'admin_tools' && !m.hidden);
+  const mod = moduleKey === 'admin_tools' && adminTools.length
+    ? { key: 'admin_tools', label: 'Admin Tools' }
+    : appState.modules.find((m) => m.key === moduleKey);
   if (!mod) {
     // Sin acceso al módulo pedido: ir al primero disponible para el usuario.
     const fallback = appState.modules[0];
@@ -49,8 +54,12 @@ async function renderRoute() {
   }
 
   document.getElementById('topbar-title').textContent = mod.label;
+  // Dentro de cualquier herramienta del grupo (incluida whatsapp_config, que está oculta) el
+  // sidebar resalta "Admin Tools", que es de donde se llegó.
+  const inAdminGroup = moduleKey === 'admin_tools'
+    || appState.modules.some((m) => m.key === moduleKey && m.group === 'admin_tools');
   document.querySelectorAll('#sidebar-nav [data-module]').forEach((a) => {
-    const active = a.dataset.module === moduleKey;
+    const active = a.dataset.module === (inAdminGroup ? 'admin_tools' : moduleKey);
     // sidebar-link-active (no bg-indigo-600 fijo): el color de acento depende del
     // tema elegido por el usuario, ver [data-theme] en src/tailwind.css.
     a.classList.toggle('sidebar-link-active', active);

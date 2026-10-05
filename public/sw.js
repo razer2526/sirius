@@ -40,6 +40,7 @@ const SHELL = [
   'assets/js/modules/admision.js',
   'assets/js/modules/wizard_admision.js',
   'assets/js/modules/expedientes.js',
+  'assets/js/modules/admin_tools.js',
   'assets/js/modules/usuarios.js',
   'assets/js/modules/empleados.js',
   'assets/js/modules/perfil.js',
