@@ -2106,12 +2106,23 @@ function render_ficha_pdf(
     $pdf->Ln(4);
     render_ficha_privacy_note($pdf);
 
-    /* ---- Consentimiento informado, en hoja aparte: ahora sí es el cierre real
-     * del documento, así que reserva el espacio del pie corporativo. Reutiliza la
-     * misma firma ya capturada en el formulario en vez de pedir una segunda. */
+    /* ---- Consentimiento informado, en hoja aparte. Reutiliza la misma firma ya
+     * capturada en el formulario en vez de pedir una segunda.
+     * Laboratorio lleva además el aviso de privacidad completo en su propia hoja, que
+     * entonces es el cierre real del documento y la que reserva el espacio del pie
+     * corporativo; los demás servicios siguen cerrando en la hoja del consentimiento. */
+    $isLab = ($episode['service'] ?? '') === 'laboratorio';
     $pdf->AddPage();
-    $pdf->markLastPage();
+    if (!$isLab) {
+        $pdf->markLastPage();
+    }
     render_ficha_consent_page($pdf, $fullName ?: $nr, $signature);
+
+    if ($isLab) {
+        $pdf->AddPage();
+        $pdf->markLastPage();
+        render_privacy_notice($pdf, $clinicName);
+    }
 
     if ($path) {
         $pdf->Output('F', $path);
