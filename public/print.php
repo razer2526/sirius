@@ -78,6 +78,7 @@ if ($episodes) {
  */
 $onlyEpisode = (int)($_GET['episode_id'] ?? 0);
 $onlyConsult = (int)($_GET['consultation_id'] ?? 0);
+$singleEvent = false;
 
 if ($onlyEpisode > 0) {
     $episodes = array_values(array_filter($episodes, fn($e) => (int)$e['id'] === $onlyEpisode));
@@ -87,6 +88,13 @@ if ($onlyEpisode > 0) {
     }
     $consultsByEpisode = array_intersect_key($consultsByEpisode, [$onlyEpisode => true]);
     $studiesByEpisode = array_intersect_key($studiesByEpisode, [$onlyEpisode => true]);
+
+    // Una admisión de laboratorio se imprime como documento del evento único (la toma de muestra
+    // o recolección), no como historial: sin consultas de seguimiento y con el consentimiento.
+    $singleEvent = $onlyConsult === 0 && $episodes[0]['service'] === 'laboratorio';
+    if ($singleEvent) {
+        $consultsByEpisode = [];
+    }
 
     if ($onlyConsult > 0) {
         $filtered = array_values(array_filter(
@@ -115,7 +123,7 @@ try {
 }
 
 try {
-    $pdf = render_patient_record_pdf($p, $episodes, $consultsByEpisode, $clinicName, null, $studiesByEpisode);
+    $pdf = render_patient_record_pdf($p, $episodes, $consultsByEpisode, $clinicName, null, $studiesByEpisode, $singleEvent);
 } catch (Throwable $e) {
     error_log('print.php: ' . $e->getMessage());
     http_response_code(500);
