@@ -1,6 +1,6 @@
 # 02 · Modelo de datos
 
-Las 49 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
+Las 51 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
 
 Todo el esquema vive en **un solo archivo**: `public/install/schema.php` (~1,730 líneas), con cuatro funciones:
 
@@ -114,7 +114,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 
 ## Inventario de tablas
 
-49 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
+51 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
 
 ### A · Identidad, sesión y permisos
 
@@ -123,6 +123,8 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 | `users` | Cuentas del personal. Raíz de casi toda FK del esquema. | `username` UNIQUE, `password_hash`, `role` ENUM(`estandar`,`administrador`,`developper`), `is_active`, `assignable`, `theme` | 🟢 |
 | `user_permissions` | Permisos por usuario y módulo. PK `(user_id, module_key)`. | `module_key` VARCHAR(40), **`flags` JSON** | 🟢 |
 | `remember_tokens` | Tokens de "recordarme", selector/validador. | `selector` UNIQUE, `validator_hash` CHAR(64), `expires_at` | 🟢 |
+| `employee_profiles` | Ficha del empleado (Admin Tools > Empleados; la ve el propio empleado en Perfil). PK `user_id`, `ON DELETE CASCADE`. El nombre sigue en `users.full_name`. | `institutional_email`, `start_date`, `vacation_days_entitled`, `work_schedule` (JSON en texto), `visible_fields` (JSON en texto: qué ve el empleado) | 🟢 |
+| `employee_vacations` | Vacaciones tomadas, una fila por periodo. Tomados y restantes se **calculan**, no se guardan. | `user_id`, `date_from`, `date_to`, `days` (editable: puede diferir de los días naturales), `notes` | 🟢 |
 | `push_subscriptions` | Endpoints de Web Push por usuario y dispositivo. | `endpoint` VARCHAR(1000) UNIQUE (en MySQL índice de prefijo 255), `p256dh`, `auth`, **`last_notified_id`** (hasta qué notificación ya se entregó a ese dispositivo) | 🟢 |
 
 ### B · Pacientes y expediente clínico

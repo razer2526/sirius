@@ -1,6 +1,6 @@
 # 03 · Módulos
 
-Los 22 módulos de Sirius: qué hace cada uno, sus acciones de API, sus permisos, y **qué tan rescatable es**.
+Los 24 módulos de Sirius: qué hace cada uno, sus acciones de API, sus permisos, y **qué tan rescatable es**.
 
 La clasificación es lo importante de este documento:
 
@@ -14,14 +14,14 @@ La clasificación es lo importante de este documento:
 
 | Clasificación | Módulos | Total |
 |---|---|---|
-| 🟢 Genérico | tareas · pizarrón · archivos · inventario · whatsapp · whatsapp_config · usuarios · membretes · log · backup · api · papelera · configuración | **13** |
+| 🟢 Genérico | tareas · pizarrón · archivos · inventario · whatsapp · whatsapp_config · usuarios · empleados · membretes · log · backup · api · papelera · configuración · perfil | **15** |
 | 🟡 Semi-genérico | dashboard · admisión · calendario · catálogo de estudios · vinculación · cobertura | **6** |
 | 🔴 Específico | expedientes · plantillas de estudios | **2** |
 | Contenedor mixto | apps (5 sub-herramientas de distinta clasificación) | **1** |
 
 Más tres handlers sin módulo, todos genéricos: `auth`, `assistant`, `push`.
 
-**El titular: de 22 módulos, 19 se rescatan** — 13 casi textuales y 6 con renombres. Solo 2 se descartan. (Marketing ya no cuenta aparte: vive dentro de Apps como sub-app.)
+**El titular: de 24 módulos, 21 se rescatan** — 15 casi textuales y 6 con renombres. Solo 2 se descartan. (Marketing ya no cuenta aparte: vive dentro de Apps como sub-app.)
 
 ### Los renombres que convierten 🟡 en 🟢
 
@@ -177,6 +177,15 @@ CRUD de usuarios más **la matriz de permisos**: una rejilla de cada módulo del
 
 La matriz dirigida por el registro es de lo mejor que hay que llevarse.
 
+### 🟢 `empleados` — Empleados
+`modules/empleados.js` + `handlers/employees.php` + `includes/employees.php`
+
+Ficha de cada usuario de Sirius, elegido en un desplegable: datos personales y de contacto, correo institucional, fecha de inicio (la **antigüedad se calcula**), jornada (días de la semana + horario), días de vacaciones que le corresponden, registro de vacaciones tomadas (los **días se cuentan solos según su jornada**, corregibles; sin traslapes) y una casilla por dato para decidir qué ve el empleado en su Perfil. Tomados y restantes se calculan siempre, no se guardan.
+
+"Admin Tools" solo agrupa el módulo en el menú: la restricción real es `is_admin_role()` al inicio del handler, porque trae datos personales de todo el personal.
+
+**Acciones:** `users_list`, `get`, `save`, `vacation_preview`, `vacation_save`, `vacation_delete`
+
 ### 🟢 `membretes` — Membretes
 Sube encabezado, pie, marca de agua y firmas, más la geometría del PDF en milímetros (márgenes, altura reservada, opacidad, ancho de firma).
 
@@ -245,6 +254,13 @@ No aparece en el sidebar; se llega desde una tarjeta en Admin Tools > API, pero 
 Se llega desde el menú del avatar y está en `ALWAYS_AVAILABLE_MODULES`: **todo usuario autenticado lo tiene sin necesidad de fila de permiso**. Tres cosas: instalación de PWA (instrucciones de iOS vs. `beforeinstallprompt`), buscar actualizaciones contra `BUILD_VERSION`, y personalización — ocho colores de acento por usuario más los logos de branding (solo admin).
 
 **Acciones:** `get`, `upload_logo`, `remove_logo`, `save_theme`
+
+### 🟢 `perfil` — Perfil *(oculto)*
+`modules/perfil.js` + `handlers/profile.php`
+
+También desde el menú del avatar y en `ALWAYS_AVAILABLE_MODULES`. Es la ficha del propio empleado, **solo lectura**. El endpoint no recibe ningún id (siempre es el usuario de la sesión) y **omite en el servidor** lo que el administrador decidió no mostrar: lo oculto no viaja en la respuesta.
+
+**Acciones:** `get`
 
 ---
 

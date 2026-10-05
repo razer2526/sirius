@@ -46,12 +46,16 @@ const ACTIONS = {
   quote_create: ['Cotización creada', 'bg-sky-100 text-sky-700'],
   quote_delete: ['Cotización eliminada', 'bg-red-100 text-red-700'],
   quote_download: ['Descarga de cotización', 'bg-slate-100 text-slate-600'],
+  employee_save: ['Ficha de empleado', 'bg-amber-100 text-amber-700'],
+  vacation_add: ['Vacaciones registradas', 'bg-sky-100 text-sky-700'],
+  vacation_update: ['Vacaciones editadas', 'bg-amber-100 text-amber-700'],
+  vacation_delete: ['Vacaciones eliminadas', 'bg-red-100 text-red-700'],
 };
 
 const MODULE_LABELS = {
   auth: 'Acceso', admision: 'Admisión', expedientes: 'Expedientes', usuarios: 'Usuarios',
   tareas: 'Tareas', apps: 'Apps', membretes: 'Membretes', assistant: 'Asistente', log: 'Log',
-  catalogo_estudios: 'Catálogo de Estudios',
+  catalogo_estudios: 'Catálogo de Estudios', empleados: 'Empleados',
 };
 
 let filters = { q: '', user: '', module: '', from: '', to: '', page: 1 };

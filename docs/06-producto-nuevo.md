@@ -12,7 +12,7 @@
 
 ### El veredicto de un vistazo
 
-De 22 módulos, **19 se rescatan**: 13 casi textuales, 6 con renombres. Solo 2 se descartan y 1 es un contenedor mixto.
+De 24 módulos, **21 se rescatan**: 15 casi textuales, 6 con renombres. Solo 2 se descartan y 1 es un contenedor mixto.
 
 | Se levanta casi tal cual | Se generaliza con renombres | Se descarta |
 |---|---|---|
