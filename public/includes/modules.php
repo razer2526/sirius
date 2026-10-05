@@ -5,7 +5,8 @@
  * + (si aplica) 1 handler en api/handlers/. El núcleo no se toca.
  *
  * 'flags' declara privilegios extra configurables por usuario en la matriz de permisos.
- * 'group' => 'admin_tools' agrupa el módulo bajo Admin Tools en el sidebar.
+ * 'group' => 'admin_tools' lo agrupa bajo Admin Tools: una sola entrada del sidebar que abre un panel
+ * de tarjetas (assets/js/modules/admin_tools.js). 'description' es el texto de su tarjeta.
  */
 return [
     'dashboard' => [
@@ -103,66 +104,77 @@ return [
         'icon'  => 'users',
         'phase' => 1,
         'group' => 'admin_tools',
+        'description' => 'Crea usuarios, asigna roles y define a qué módulos accede cada persona.',
     ],
     'empleados' => [
         'label' => 'Empleados',
         'icon'  => 'briefcase',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Fichas del personal: contacto, jornada, antigüedad y vacaciones.',
     ],
     'membretes' => [
         'label' => 'Membretes',
         'icon'  => 'image',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Encabezado, pie, marca de agua y firmas de los PDF que se imprimen.',
     ],
     'log' => [
         'label' => 'Log',
         'icon'  => 'list',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Bitácora de actividad: quién hizo qué y cuándo.',
     ],
     'backup' => [
         'label' => 'Backup',
         'icon'  => 'database',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Exporta y restaura respaldos de la base de datos.',
     ],
     'api' => [
         'label' => 'API',
         'icon'  => 'sparkles',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Conexiones externas: inteligencia artificial, correo, calendario y WhatsApp.',
     ],
     'catalogo_estudios' => [
         'label' => 'Catálogo de Estudios',
         'icon'  => 'flask',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Lista de precios de los estudios, con importación y exportación.',
     ],
     'vinculacion' => [
         'label' => 'Vinculación',
         'icon'  => 'link',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Médicos con convenio, concierges y tasas de comisión.',
     ],
     'cobertura' => [
         'label' => 'Cobertura',
         'icon'  => 'map-pin',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Zonas y códigos postales donde llega el servicio a domicilio.',
     ],
     'papelera' => [
         'label' => 'Papelera',
         'icon'  => 'trash',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Recupera o elimina definitivamente lo que se borró.',
     ],
     'plantillas_estudios' => [
         'label' => 'Plantillas de Estudios',
         'icon'  => 'clipboard',
         'phase' => 2,
         'group' => 'admin_tools',
+        'description' => 'Qué determinaciones lleva cada estudio y sus rangos de referencia.',
     ],
     'whatsapp_config' => [
         'label'  => 'WhatsApp: Configuración',

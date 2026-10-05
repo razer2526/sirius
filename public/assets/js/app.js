@@ -88,13 +88,13 @@ function renderSidebar() {
       <span class="sidebar-label">${m.label}</span>
     </a>`;
 
-  let html = `<div class="space-y-1">${main.map(link).join('')}</div>`;
-  if (admin.length) {
-    html += `
-      <p class="sidebar-label mt-6 px-3 pb-1 text-xs font-semibold uppercase tracking-widest text-slate-500">Admin Tools</p>
-      <div class="space-y-1">${admin.map(link).join('')}</div>`;
-  }
-  nav.innerHTML = html;
+  // Admin Tools es UNA entrada del sidebar que abre un panel con las herramientas (admin_tools.js);
+  // antes eran 11 iconos sueltos. No es un módulo del registro (no tiene permiso propio): aparece
+  // si la persona tiene al menos una de las herramientas.
+  const entries = admin.length
+    ? [...main, { key: 'admin_tools', label: 'Admin Tools', icon: 'settings' }]
+    : main;
+  nav.innerHTML = `<div class="space-y-1">${entries.map(link).join('')}</div>`;
 
   // En tablet/móvil, navegar cierra el sidebar off-canvas
   nav.addEventListener('click', (e) => {

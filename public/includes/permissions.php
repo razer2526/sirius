@@ -114,6 +114,7 @@ function user_modules(): array
             'label'  => $def['label'],
             'icon'   => $def['icon'],
             'group'  => $def['group'] ?? null,
+            'description' => $def['description'] ?? '',
             'hidden' => $def['hidden'] ?? false,
             'flags'  => $flags,
         ];
