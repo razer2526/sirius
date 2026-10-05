@@ -60,7 +60,11 @@ rem 3. Instalar la base de datos (una sola vez)
 rem    Abrir: http://localhost:8080/install/setup.php?key=sirius-dev
 ```
 
-Entrar en `http://localhost:8080` con **Admin / 08135038**.
+Para que el paso 3 cree el usuario `Admin` en una base nueva, agrega antes en
+`public/includes/config.php` (que no se versiona) una línea
+`'seed_admin_password' => 'la-que-tú-elijas'`. Sin ella no se siembra ningún
+usuario; en ese caso usa el asistente `install/`. Después entra en
+`http://localhost:8080` con `Admin` y esa contraseña.
 
 En desarrollo se usa SQLite (`data/sirius.sqlite`) — configurado en
 `public/includes/config.php` con `driver => 'sqlite'`.

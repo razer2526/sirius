@@ -32,12 +32,19 @@ foreach (sirius_install_schema($pdo, $isMysql) as $line) {
 
 // ---- Seed: usuario Admin (solo si no hay ninguno; el asistente visual ya
 // crea uno con credenciales propias, esto es para desarrollo/emergencia) ----
-$result = sirius_seed_admin($pdo, 'Admin', '08135038', 'Administrador');
-foreach ($result['log'] as $line) {
-    echo $line . "\n";
-}
-if ($result['created']) {
-    echo "Contraseña por defecto: cámbiala tras el primer inicio de sesión.\n";
+// La contraseña inicial NO vive en el código (el repositorio es público): sale de
+// 'seed_admin_password' en includes/config.php, que no se versiona.
+$seedPassword = (string)($cfg['seed_admin_password'] ?? '');
+if ($seedPassword === '') {
+    echo "Admin: no se sembró (sin 'seed_admin_password' en config.php; usa el asistente install/index.php).\n";
+} else {
+    $result = sirius_seed_admin($pdo, 'Admin', $seedPassword, 'Administrador');
+    foreach ($result['log'] as $line) {
+        echo $line . "\n";
+    }
+    if ($result['created']) {
+        echo "Cambia la contraseña tras el primer inicio de sesión.\n";
+    }
 }
 
 echo "\nInstalación/actualización completa.\n";
