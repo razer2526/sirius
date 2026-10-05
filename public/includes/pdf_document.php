@@ -2072,9 +2072,14 @@ function render_ficha_pdf(
         ['shade' => true, 'cells' => [
             ['text' => 'Grupo sanguíneo: ' . (($patient['blood_type'] ?? '') ?: $nr)],
             ['text' => 'Teléfono: ' . ((string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: $nr))],
+            ['text' => ''],   // tercera columna vacía: el teléfono queda alineado con «Edad» del renglón de arriba
+        ]],
+        // El correo va siempre en su propio renglón: es el dato más largo y variable, y así se
+        // lee igual cuando es corto que cuando no cabría en una columna.
+        ['shade' => false, 'cells' => [
             ['text' => 'Correo electrónico: ' . ((string)($patient['email'] ?? '') ?: $nr)],
         ]],
-        ['shade' => false, 'cells' => [
+        ['shade' => true, 'cells' => [
             ['text' => 'Dirección: ' . $direccion],
         ]],
     ]);
