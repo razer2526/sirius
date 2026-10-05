@@ -38,14 +38,14 @@ El sidebar, la matriz de permisos, el ruteo, el título de la pantalla y el resa
 │  ├─ sw.js              service worker
 │  ├─ BUILD_VERSION      SHA corto del commit, lo escribe el CI
 │  ├─ api/
-│  │  ├─ index.php       front controller JSON (33 rutas)
-│  │  └─ handlers/       32 archivos, uno por recurso
+│  │  ├─ index.php       front controller JSON (35 rutas)
+│  │  └─ handlers/       34 archivos, uno por recurso
 │  ├─ includes/          capa PHP compartida (31 archivos)
 │  ├─ install/
 │  │  ├─ index.php       asistente visual de primera instalación
 │  │  ├─ schema.php      todo el esquema + migraciones + seeds (~1,730 líneas)
 │  │  └─ setup.php       runner de migraciones por URL (?key=)
-│  ├─ assets/js/         núcleo SPA + widgets compartidos + modules/ (23 archivos)
+│  ├─ assets/js/         núcleo SPA + widgets compartidos + modules/ (25 archivos)
 │  ├─ uploads/           contenido de usuario, bloqueado por .htaccess
 │  └─ vendor/            FPDF y PHPMailer copiados a mano
 ├─ src/tailwind.css      única entrada de CSS
@@ -133,7 +133,7 @@ Este es uno de los diseños más rescatables del sistema.
 
 ```php
 function modules_registry(): array
-const ALWAYS_AVAILABLE_MODULES = ['configuracion'];
+const ALWAYS_AVAILABLE_MODULES = ['configuracion', 'perfil'];
 function user_permission_rows(int $userId): array      // module_key => flags[]
 function is_admin_role(?array $user): bool
 function user_can(string $moduleKey): bool
@@ -161,7 +161,7 @@ Un `return [...]` puro, `clave_de_módulo => definición`, memoizado. Campos de 
 | `group` | `'admin_tools'` lo agrupa en una sección aparte del sidebar |
 | `hidden` | alcanzable por URL y con permiso verificado, pero no listado en el sidebar |
 
-Hoy hay **22 módulos** registrados.
+Hoy hay **24 módulos** registrados.
 
 ### El modelo de dos niveles
 
@@ -311,7 +311,7 @@ El transporte prefiere cURL pero **cae a `stream_context_create` si cURL no est�
 
 **Toda** llamada a la API es `api/index.php?r=<recurso>/<acción>`. Sin reescritura de rutas, sin depender de `mod_rewrite`: funciona en cualquier hosting.
 
-La **tabla de rutas** es un arreglo literal, `recurso => [archivo, clave_de_módulo|null]`. Hoy tiene **33 entradas**. Un `null` significa "cualquier usuario autenticado, sin permiso de módulo" (`auth`, `assistant`, `push`).
+La **tabla de rutas** es un arreglo literal, `recurso => [archivo, clave_de_módulo|null]`. Hoy tiene **35 entradas**. Un `null` significa "cualquier usuario autenticado, sin permiso de módulo" (`auth`, `assistant`, `push`).
 
 El mapeo **no es 1:1**: un módulo puede tener varios handlers (`apps` es dueño de `documents`, `labs`, `quotes`, `commissions`, `coverage`) y un handler puede servir dos recursos con permisos distintos (`cobertura.php` define `handle_cobertura` para Admin Tools y `handle_coverage` para Apps).
 

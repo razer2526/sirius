@@ -756,6 +756,40 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_boardasset_item (item_id),
                 CONSTRAINT fk_boardasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            // Ficha de empleado (Admin Tools > Empleados; la ve el propio empleado en Perfil).
+            // work_schedule y visible_fields son JSON guardado como texto. El nombre completo no
+            // se duplica: sigue en users.full_name.
+            'employee_profiles' => "CREATE TABLE IF NOT EXISTS employee_profiles (
+                user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+                contact_phone VARCHAR(30) NULL,
+                contact_email_personal VARCHAR(120) NULL,
+                contact_address VARCHAR(255) NULL,
+                emergency_name VARCHAR(120) NULL,
+                emergency_phone VARCHAR(30) NULL,
+                institutional_email VARCHAR(120) NULL,
+                start_date DATE NULL,
+                vacation_days_entitled DECIMAL(5,1) NOT NULL DEFAULT 0,
+                work_schedule TEXT NULL,
+                visible_fields TEXT NULL,
+                updated_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                CONSTRAINT fk_empprofile_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_empprofile_updater FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
+            'employee_vacations' => "CREATE TABLE IF NOT EXISTS employee_vacations (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                user_id INT UNSIGNED NOT NULL,
+                date_from DATE NOT NULL,
+                date_to DATE NOT NULL,
+                days DECIMAL(5,1) NOT NULL,
+                notes VARCHAR(500) NULL,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_empvac_user (user_id, date_from),
+                CONSTRAINT fk_empvac_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                CONSTRAINT fk_empvac_creator FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
         ];
     } else {
         // SQLite (desarrollo): ENUM/JSON => TEXT, AUTO_INCREMENT => AUTOINCREMENT.
@@ -1357,6 +1391,32 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'employee_profiles' => "CREATE TABLE IF NOT EXISTS employee_profiles (
+                user_id INTEGER NOT NULL PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+                contact_phone TEXT NULL,
+                contact_email_personal TEXT NULL,
+                contact_address TEXT NULL,
+                emergency_name TEXT NULL,
+                emergency_phone TEXT NULL,
+                institutional_email TEXT NULL,
+                start_date TEXT NULL,
+                vacation_days_entitled REAL NOT NULL DEFAULT 0,
+                work_schedule TEXT NULL,
+                visible_fields TEXT NULL,
+                updated_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
+            'employee_vacations' => "CREATE TABLE IF NOT EXISTS employee_vacations (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                date_from TEXT NOT NULL,
+                date_to TEXT NOT NULL,
+                days REAL NOT NULL,
+                notes TEXT NULL,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
         ];
     }
 
@@ -1410,6 +1470,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_commemdate_month_day ON commemorative_dates (month, day)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mktasset_created ON marketing_assets (created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_boardasset_item ON board_assets (item_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_empvac_user ON employee_vacations (user_id, date_from)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');

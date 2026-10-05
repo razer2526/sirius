@@ -21,7 +21,7 @@ function modules_registry(): array
  *  user_permissions — ajustes personales del dispositivo/navegador, no datos
  *  clínicos ni de la clínica, así que no tiene sentido pedir que se otorguen uno
  *  por uno como el resto de los módulos. */
-const ALWAYS_AVAILABLE_MODULES = ['configuracion'];
+const ALWAYS_AVAILABLE_MODULES = ['configuracion', 'perfil'];
 
 /** Mapa module_key => flags (arreglo) para un usuario estandar. */
 function user_permission_rows(int $userId): array

@@ -41,6 +41,8 @@ const SHELL = [
   'assets/js/modules/wizard_admision.js',
   'assets/js/modules/expedientes.js',
   'assets/js/modules/usuarios.js',
+  'assets/js/modules/empleados.js',
+  'assets/js/modules/perfil.js',
   'assets/js/modules/tareas.js',
   'assets/js/modules/inventario.js',
   'assets/js/modules/pizarron.js',

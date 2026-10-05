@@ -17,6 +17,7 @@ function backup_groups(): array
 {
     return [
         'usuarios'   => ['label' => 'Usuarios y permisos', 'tables' => ['users', 'user_permissions']],
+        'empleados'  => ['label' => 'Fichas de empleados y vacaciones', 'tables' => ['employee_profiles', 'employee_vacations']],
         'pacientes'  => ['label' => 'Pacientes y expedientes', 'tables' => ['patients', 'episodes', 'consultations']],
         'tareas'     => ['label' => 'Tareas y proyectos', 'tables' => ['projects', 'tasks', 'task_completions']],
         'documentos' => ['label' => 'Estudios y catálogo de laboratorio', 'tables' => ['documents', 'lab_tests', 'lab_reference_ranges']],
@@ -29,7 +30,7 @@ function backup_groups(): array
 function backup_table_order(): array
 {
     return [
-        'users', 'user_permissions', 'settings',
+        'users', 'user_permissions', 'employee_profiles', 'employee_vacations', 'settings',
         'patients', 'episodes', 'consultations',
         'projects', 'tasks', 'task_completions',
         'lab_tests', 'lab_reference_ranges', 'documents',

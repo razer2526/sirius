@@ -104,6 +104,12 @@ return [
         'phase' => 1,
         'group' => 'admin_tools',
     ],
+    'empleados' => [
+        'label' => 'Empleados',
+        'icon'  => 'briefcase',
+        'phase' => 2,
+        'group' => 'admin_tools',
+    ],
     'membretes' => [
         'label' => 'Membretes',
         'icon'  => 'image',
@@ -173,6 +179,14 @@ return [
         'phase'  => 2,
         // Se alcanza desde el menú del avatar, no del sidebar — y ver ALWAYS_AVAILABLE_MODULES
         // en permissions.php: disponible para cualquier usuario, sin fila de permiso.
+        'hidden' => true,
+    ],
+    'perfil' => [
+        'label'  => 'Perfil',
+        'icon'   => 'user',
+        'phase'  => 2,
+        // Se alcanza desde el menú del avatar (como 'configuracion') y está en
+        // ALWAYS_AVAILABLE_MODULES: cada persona ve su propia ficha sin fila de permiso.
         'hidden' => true,
     ],
 ];

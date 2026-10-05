@@ -55,6 +55,8 @@ $routes = [
     'papelera'      => ['papelera.php', 'papelera'],
     'push'          => ['push.php', null],
     'branding'      => ['branding.php', 'configuracion'],
+    'employees'     => ['employees.php', 'empleados'],
+    'profile'       => ['profile.php', 'perfil'],
     'marketing'     => ['marketing.php', 'apps'],
 ];
 
