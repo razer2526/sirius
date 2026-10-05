@@ -865,7 +865,7 @@
                     },
                     {
                         "k": "bio_impedancia",
-                        "l": "Impedancia (Ω)",
+                        "l": "Impedancia (ohmios)",
                         "t": "number"
                     }
                 ],
@@ -1387,7 +1387,7 @@
                     },
                     {
                         "k": "bio_impedancia",
-                        "l": "Impedancia (Ω)",
+                        "l": "Impedancia (ohmios)",
                         "t": "number"
                     }
                 ],

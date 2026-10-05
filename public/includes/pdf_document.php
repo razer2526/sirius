@@ -689,27 +689,114 @@ class SiriusDocPDF extends FPDF
     public function identBlock(array $rows): void
     {
         $w = $this->usableWidth();
-        $h = 7.2;
         foreach ($rows as $row) {
             $cells = $row['cells'];
             $n = max(1, count($cells));
             $colW = $w / $n;
-            $this->ensureSpace($h + 1);
-            $y = $this->GetY();
-            if (!empty($row['shade'])) {
-                $this->SetFillColor(...PDF_FICHA_ZEBRA);
-                $this->Rect($this->left(), $y, $w, $h, 'F');
+            $bold = !empty($row['bold']);
+            $shade = !empty($row['shade']);
+            $this->SetFont('Helvetica', $bold ? 'B' : '', 9.5);
+
+            // Un renglón de una sola celda ocupa el ancho completo y, si el texto no cabe,
+            // continúa en renglones siguientes DENTRO de la misma banda (síntomas largos).
+            if ($n === 1) {
+                $this->identBand($shade, $this->identWrap(pdf_t((string)$cells[0]['text']), $w - 2 * $this->cMargin), $bold);
+                continue;
             }
-            $this->SetX($this->left());
-            $this->SetFont('Helvetica', !empty($row['bold']) ? 'B' : '', 9.5);
-            $this->SetTextColor(...PDF_INK);
-            foreach ($cells as $cell) {
-                $align = ($cell['align'] ?? 'L') === 'R' ? 'R' : 'L';
-                $this->Cell($colW, $h, pdf_t((string)$cell['text']), 0, 0, $align);
+
+            // Renglón de varias columnas: la celda cuyo texto no cabe en su columna (un correo
+            // largo) no se sale del margen; baja COMPLETA a su propio renglón, con la misma banda.
+            $inline = [];
+            $moved = [];
+            foreach ($cells as $i => $cell) {
+                $text = pdf_t((string)$cell['text']);
+                if ($this->GetStringWidth($text) > $colW - 2 * $this->cMargin) {
+                    $moved[] = $text;
+                } else {
+                    $inline[$i] = [$text, ($cell['align'] ?? 'L') === 'R' ? 'R' : 'L'];
+                }
             }
-            $this->Ln($h);
+            if ($inline) {
+                $this->identBand($shade, [''], $bold, function (float $y) use ($inline, $colW, $bold) {
+                    $this->SetFont('Helvetica', $bold ? 'B' : '', 9.5);
+                    foreach ($inline as $i => [$text, $align]) {
+                        $this->SetXY($this->left() + $colW * $i, $y);
+                        $this->Cell($colW, 7.2, $text, 0, 0, $align);
+                    }
+                });
+            }
+            foreach ($moved as $text) {
+                $this->identBand($shade, $this->identWrap($text, $w - 2 * $this->cMargin), $bold);
+            }
         }
         $this->SetTextColor(...PDF_INK);
+    }
+
+    /**
+     * Parte un texto (ya convertido con pdf_t) en renglones que quepan en $avail mm. Una palabra
+     * más ancha que el renglón —un correo sin espacios— se corta por caracteres. La fuente debe
+     * estar puesta antes de llamar.
+     */
+    private function identWrap(string $text, float $avail): array
+    {
+        $lines = [];
+        $cur = '';
+        foreach (explode(' ', $text) as $word) {
+            while ($this->GetStringWidth($word) > $avail) {
+                if ($cur !== '') {
+                    $lines[] = $cur;
+                    $cur = '';
+                }
+                $cut = strlen($word) - 1;
+                while ($cut > 1 && $this->GetStringWidth(substr($word, 0, $cut)) > $avail) {
+                    $cut--;
+                }
+                $lines[] = substr($word, 0, $cut);
+                $word = substr($word, $cut);
+            }
+            $try = $cur === '' ? $word : $cur . ' ' . $word;
+            if ($cur !== '' && $this->GetStringWidth($try) > $avail) {
+                $lines[] = $cur;
+                $cur = $word;
+            } else {
+                $cur = $try;
+            }
+        }
+        if ($cur !== '' || !$lines) {
+            $lines[] = $cur;
+        }
+        return $lines;
+    }
+
+    /**
+     * Dibuja una banda de la ficha (sombreada o no) con una o varias líneas de texto. Con una
+     * sola línea mide lo de siempre (7.2 mm); con más, crece lo necesario y la primera línea
+     * queda a la misma altura que en un renglón normal. $draw sustituye el texto cuando el
+     * renglón son varias columnas (recibe la Y de la banda).
+     */
+    private function identBand(bool $shade, array $lines, bool $bold, ?callable $draw = null): void
+    {
+        $lineH = 4.8;
+        $minH = 7.2;
+        $pad = ($minH - $lineH) / 2;
+        $h = max($minH, $pad * 2 + $lineH * count($lines));
+        $this->ensureSpace($h + 1);
+        $y = $this->GetY();
+        if ($shade) {
+            $this->SetFillColor(...PDF_FICHA_ZEBRA);
+            $this->Rect($this->left(), $y, $this->usableWidth(), $h, 'F');
+        }
+        $this->SetFont('Helvetica', $bold ? 'B' : '', 9.5);
+        $this->SetTextColor(...PDF_INK);
+        if ($draw) {
+            $draw($y);
+        } else {
+            foreach ($lines as $k => $line) {
+                $this->SetXY($this->left(), $y + $pad + $lineH * $k);
+                $this->Cell($this->usableWidth(), $lineH, $line, 0, 0, 'L');
+            }
+        }
+        $this->SetXY($this->left(), $y + $h);
     }
 
     /**
@@ -1985,9 +2072,14 @@ function render_ficha_pdf(
         ['shade' => true, 'cells' => [
             ['text' => 'Grupo sanguíneo: ' . (($patient['blood_type'] ?? '') ?: $nr)],
             ['text' => 'Teléfono: ' . ((string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: $nr))],
+            ['text' => ''],   // tercera columna vacía: el teléfono queda alineado con «Edad» del renglón de arriba
+        ]],
+        // El correo va siempre en su propio renglón: es el dato más largo y variable, y así se
+        // lee igual cuando es corto que cuando no cabría en una columna.
+        ['shade' => false, 'cells' => [
             ['text' => 'Correo electrónico: ' . ((string)($patient['email'] ?? '') ?: $nr)],
         ]],
-        ['shade' => false, 'cells' => [
+        ['shade' => true, 'cells' => [
             ['text' => 'Dirección: ' . $direccion],
         ]],
     ]);
