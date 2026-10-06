@@ -74,6 +74,12 @@ export async function renderCoverageMap(container, markers) {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
+    // La app manda `Referrer-Policy: same-origin` (public/.htaccess): el navegador no envía
+    // Referer a otros dominios, y los servidores de OpenStreetMap bloquean (403 «App is not
+    // following the tile usage policy») las teselas sin Referer. Solo las imágenes del mapa
+    // llevan esta política más abierta: mandan únicamente el dominio (nunca la ruta ni datos
+    // del paciente) y solo a OpenStreetMap; el resto de la app sigue en same-origin.
+    referrerPolicy: 'strict-origin-when-cross-origin',
   }).addTo(map);
 
   withCoords.forEach((m) => {

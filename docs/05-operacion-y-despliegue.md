@@ -137,7 +137,7 @@ Servido desde PHP como `application/manifest+json` para que los iconos sigan al 
 |---|---|
 | `public/includes/.htaccess` | `Require all denied` — `config.php` y las credenciales no se pueden pedir por HTTP |
 | `public/uploads/*/.htaccess` | Lo mismo por carpeta de subidas; todo se sirve por scripts PHP con verificación |
-| `public/.htaccess` | `Options -Indexes`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin`, tipos MIME para `.webmanifest` y `.woff2` |
+| `public/.htaccess` | `Options -Indexes`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: same-origin` (ojo: por eso el mapa de Cobertura declara su propio `referrerPolicy` en las teselas; OpenStreetMap bloquea con 403 las peticiones sin `Referer`), tipos MIME para `.webmanifest` y `.woff2` |
 | `public/.user.ini` | `upload_max_filesize 26M`, `post_max_size 30M`, `session.gc_maxlifetime 14400` (4 h) |
 | `.gitignore` | excluye `tools/`, `data/`, `config.php`, `.installed`, y el contenido de `uploads/*` conservando sus `.htaccess` |
 
