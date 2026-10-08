@@ -194,3 +194,24 @@ function branding_unlink_slot(array $cfg, string $slot): void
         }
     }
 }
+
+/** Nombre de la clínica o negocio (settings.clinic_name, lo captura el asistente de instalación). */
+function app_clinic_name(): string
+{
+    static $name = null;
+    if ($name !== null) {
+        return $name;
+    }
+    $name = 'Laboratorio y Clínica Bosques Polanco';
+    try {
+        $st = db()->prepare('SELECT svalue FROM settings WHERE skey = ?');
+        $st->execute(['clinic_name']);
+        $row = $st->fetch();
+        if ($row && trim((string)$row['svalue']) !== '') {
+            $name = trim((string)$row['svalue']);
+        }
+    } catch (Throwable $e) {
+        // Sin tabla de ajustes todavía: se usa el nombre por defecto.
+    }
+    return $name;
+}

@@ -27,6 +27,9 @@ function handle_backups(string $action): void
         /** Analiza el archivo recibido sin aplicar nada, para mostrar qué contiene. */
         case 'inspect': {
             $backup = backup_uploaded_file();
+            if (backup_is_encrypted($backup)) {
+                json_ok(['encrypted' => true, 'created_at' => $backup['created_at'] ?? null]);
+            }
             try {
                 $summary = backup_validate($backup);
             } catch (Throwable $e) {
@@ -43,6 +46,9 @@ function handle_backups(string $action): void
 
         case 'restore': {
             $backup = backup_uploaded_file();
+            if (backup_is_encrypted($backup)) {
+                json_error('Este respaldo está cifrado: escribe su contraseña', 422);
+            }
             $replace = !empty($_POST['replace']);
             // Confirmación explícita: el reemplazo borra los datos actuales
             if ($replace && ($_POST['confirm'] ?? '') !== 'REEMPLAZAR') {
@@ -64,7 +70,10 @@ function handle_backups(string $action): void
     }
 }
 
-/** Lee y decodifica el archivo de respaldo recibido. */
+/**
+ * Lee y decodifica el archivo de respaldo recibido. Si está cifrado, lo abre con la contraseña
+ * enviada en $_POST['password']; sin contraseña devuelve el sobre tal cual (el llamador decide).
+ */
 function backup_uploaded_file(): array
 {
     if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
@@ -81,6 +90,17 @@ function backup_uploaded_file(): array
     $data = json_decode($json, true);
     if (!is_array($data)) {
         json_error('El archivo no es un respaldo válido (JSON ilegible)', 422);
+    }
+    if (backup_is_encrypted($data)) {
+        $password = (string)($_POST['password'] ?? '');
+        if ($password === '') {
+            return $data;   // sigue cifrado: inspect pide la contraseña; restore la exige
+        }
+        try {
+            return backup_decrypt($data, $password);
+        } catch (Throwable $e) {
+            json_error($e->getMessage(), 422);
+        }
     }
     return $data;
 }

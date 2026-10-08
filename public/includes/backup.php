@@ -101,6 +101,79 @@ function backup_create(array $groupKeys): array
     ];
 }
 
+/* ---------- Cifrado opcional con contraseña ----------
+ * El respaldo trae hashes de contraseña y las llaves de IA/correo/WhatsApp (tabla settings),
+ * así que se puede proteger: AES-256-GCM con una llave derivada de la contraseña (PBKDF2-SHA256).
+ * El archivo cifrado es un JSON con la cabecera en claro y el contenido en 'ciphertext'. */
+
+const BACKUP_KDF_ITERATIONS = 200000;
+const BACKUP_MIN_PASSWORD = 10;
+
+function backup_is_encrypted(array $data): bool
+{
+    return !empty($data['sirius_backup_encrypted']);
+}
+
+function backup_derive_key(string $password, string $salt, int $iterations): string
+{
+    return hash_pbkdf2('sha256', $password, $salt, $iterations, 32, true);
+}
+
+/** Envuelve un respaldo (estructura de backup_create) en un sobre cifrado. */
+function backup_encrypt(array $backup, string $password): array
+{
+    if (mb_strlen($password) < BACKUP_MIN_PASSWORD) {
+        throw new RuntimeException('La contraseña del respaldo debe tener al menos ' . BACKUP_MIN_PASSWORD . ' caracteres.');
+    }
+    if (!function_exists('openssl_encrypt')) {
+        throw new RuntimeException('Este servidor no tiene OpenSSL: no se puede cifrar el respaldo.');
+    }
+    $salt = random_bytes(16);
+    $iv = random_bytes(12);
+    $tag = '';
+    $key = backup_derive_key($password, $salt, BACKUP_KDF_ITERATIONS);
+    $cipher = openssl_encrypt(json_encode($backup, JSON_UNESCAPED_UNICODE), 'aes-256-gcm', $key, OPENSSL_RAW_DATA, $iv, $tag);
+    if ($cipher === false) {
+        throw new RuntimeException('No se pudo cifrar el respaldo.');
+    }
+    return [
+        'sirius_backup_encrypted' => 1,
+        'created_at'  => $backup['created_at'] ?? date('Y-m-d H:i:s'),
+        'driver'      => $backup['driver'] ?? db_driver(),
+        'groups'      => $backup['groups'] ?? [],
+        'kdf'         => 'pbkdf2-sha256',
+        'iterations'  => BACKUP_KDF_ITERATIONS,
+        'cipher'      => 'aes-256-gcm',
+        'salt'        => base64_encode($salt),
+        'iv'          => base64_encode($iv),
+        'tag'         => base64_encode($tag),
+        'ciphertext'  => base64_encode($cipher),
+    ];
+}
+
+/** Abre un sobre cifrado. Lanza RuntimeException si la contraseña no es la correcta o el archivo se alteró. */
+function backup_decrypt(array $env, string $password): array
+{
+    $salt = base64_decode((string)($env['salt'] ?? ''), true);
+    $iv = base64_decode((string)($env['iv'] ?? ''), true);
+    $tag = base64_decode((string)($env['tag'] ?? ''), true);
+    $cipher = base64_decode((string)($env['ciphertext'] ?? ''), true);
+    $iterations = (int)($env['iterations'] ?? 0);
+    if ($salt === false || $iv === false || $tag === false || $cipher === false || $iterations < 1000 || $iterations > 5000000
+        || ($env['cipher'] ?? '') !== 'aes-256-gcm') {
+        throw new RuntimeException('El archivo cifrado está dañado o no es de Sirius.');
+    }
+    $plain = openssl_decrypt($cipher, 'aes-256-gcm', backup_derive_key($password, $salt, $iterations), OPENSSL_RAW_DATA, $iv, $tag);
+    if ($plain === false) {
+        throw new RuntimeException('Contraseña incorrecta, o el archivo se modificó.');
+    }
+    $data = json_decode($plain, true);
+    if (!is_array($data)) {
+        throw new RuntimeException('El contenido descifrado no es un respaldo válido.');
+    }
+    return $data;
+}
+
 /** Valida la forma del archivo antes de tocar nada. */
 function backup_validate(array $backup): array
 {

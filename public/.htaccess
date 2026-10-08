@@ -12,9 +12,13 @@ Options -Indexes
   AddType font/woff2 .woff2
 </IfModule>
 
-# En producción con SSL activo, descomentar para forzar HTTPS:
-# <IfModule mod_rewrite.c>
-#   RewriteEngine On
-#   RewriteCond %{HTTPS} !=on
-#   RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
-# </IfModule>
+# Fuerza HTTPS (el sitio ya tiene SSL en HostGator).
+# - X-Forwarded-Proto: si algún proxy termina el TLS, no se entra en un bucle de redirecciones.
+# - .well-known: la renovación automática del certificado (AutoSSL) valida por HTTP y no debe redirigirse.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteCond %{REQUEST_URI} !^/\.well-known/
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+</IfModule>

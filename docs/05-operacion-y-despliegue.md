@@ -65,17 +65,13 @@ deployment:
 
 Por eso `docs/` (esta carpeta), `src/`, `tools/` y `data/` **nunca llegan al servidor**: viven fuera de `public/`.
 
-### 3 · Migraciones: a mano, por URL
+### 3 · Migraciones: a mano, por formulario
 
-**El pipeline no corre migraciones.** Después de un despliegue que cambia el esquema, un humano tiene que visitar:
+**El pipeline no corre migraciones.** Después de un despliegue que cambia el esquema, un humano tiene que abrir `https://sirius-bpm.com/install/setup.php`, escribir la `install_key` en el formulario y pulsar **Aplicar**.
 
-```
-https://sirius-bpm.com/install/setup.php?key=<install_key>
-```
+`setup.php` manda la clave **por POST** (ya no por `?key=`: una URL queda en los logs de acceso y en el historial del navegador; `?key=` se ignora). Compara con `hash_equals` contra `app_config()['install_key']`, exige token CSRF de sesión, frena tras 5 intentos fallidos por sesión (10 minutos), espera 2 s por cada fallo y deja el intento en el `error_log` con la IP. Si la clave pasa, imprime en texto plano la bitácora de `sirius_install_schema()`. Todo es idempotente y no destructivo.
 
-`setup.php` compara la clave con `hash_equals` contra `app_config()['install_key']`, y si pasa, imprime en texto plano la bitácora de `sirius_install_schema()`. Todo es idempotente y no destructivo.
-
-> ⚠️ **Este es el punto más débil de toda la plataforma.** La clave es el único control: no hay sesión, ni usuario, ni límite de intentos, ni lista de IPs. Y viaja en la query string, así que **queda escrita en los logs de acceso del servidor**. En un producto comercial esto tiene que ser un comando autenticado o parte del propio pipeline, nunca una URL con secreto.
+> ⚠️ Sigue siendo un control débil para un producto comercial: la clave es el único factor, sin usuario ni lista de IPs, y el freno es por sesión (se salta tirando la cookie). El `error_log` con la IP permite detectarlo; la solución de fondo es un comando autenticado o una migración dentro del pipeline.
 
 ---
 
@@ -141,7 +137,9 @@ Servido desde PHP como `application/manifest+json` para que los iconos sigan al 
 | `public/.user.ini` | `upload_max_filesize 26M`, `post_max_size 30M`, `session.gc_maxlifetime 14400` (4 h) |
 | `.gitignore` | excluye `tools/`, `data/`, `config.php`, `.installed`, y el contenido de `uploads/*` conservando sus `.htaccess` |
 
-> ⚠️ Dos huecos: **el bloque que fuerza HTTPS está comentado** en `public/.htaccess`, y **no hay cabecera CSP** en ningún lado. Los dos son obligatorios en un producto comercial.
+> **HTTPS forzado:** `public/.htaccess` redirige a HTTPS (excepto `/.well-known/`, que AutoSSL necesita por HTTP, y sin bucle si un proxy manda `X-Forwarded-Proto`). Como `php -S` ignora `.htaccess`, solo se ve en el servidor.
+>
+> ⚠️ Hueco que sigue abierto: **no hay cabecera CSP**. Es obligatoria en un producto comercial.
 
 ---
 

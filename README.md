@@ -31,7 +31,7 @@ public/            ← espejo 1:1 de public_html
                    membretes, plantillas de documentos, generación de PDF, lector de PDF
   install/index.php   Asistente visual de instalación (escribe config.php, crea tablas, siembra el Admin)
   install/schema.php  Definición de tablas + migraciones (compartida por el asistente y setup.php)
-  install/setup.php   Aplica el esquema por clave (?key=) — se usa en cada actualización
+  install/setup.php   Aplica el esquema (formulario con la clave) — se usa en cada actualización
   documento.php    Entrega el PDF de un estudio (verifica sesión y permisos)
   cotizacion.php   Entrega el PDF de una cotización (se genera al vuelo, no se archiva)
   uploads/         Imágenes de membrete y PDFs archivados (requiere permiso de escritura)
@@ -57,7 +57,7 @@ rem 2. Levantar el servidor de desarrollo
 tools\php\php.exe -S localhost:8080 -t public
 
 rem 3. Instalar la base de datos (una sola vez)
-rem    Abrir: http://localhost:8080/install/setup.php?key=sirius-dev
+rem    Abrir http://localhost:8080/install/setup.php y escribir la install_key de tu config.php
 ```
 
 Para que el paso 3 cree el usuario `Admin` en una base nueva, agrega antes en
@@ -92,8 +92,8 @@ que elijas. No hace falta editar ningún archivo a mano.
    formulario (datos de la BD del paso 2 + usuario y contraseña del
    administrador que tú quieras). Al terminar, guarda la clave de instalación
    que se muestra una sola vez.
-5. Activar SSL (incluido en HostGator) y descomentar el bloque HTTPS en
-   `public/.htaccess`.
+5. Activar SSL (incluido en HostGator). El redireccionamiento a HTTPS ya viene
+   activo en `public/.htaccess`.
 6. Iniciar sesión y crear los usuarios del equipo.
 
 El asistente se autobloquea después de instalar (`install/.installed`) para
@@ -104,13 +104,29 @@ que no se pueda volver a correr por accidente.
 1. Correr `package.bat` de nuevo con los cambios y subir el zip, extrayéndolo
    **sobre** la instalación existente (no vuelve a tocar `config.php`, que no
    viaja en el zip).
-2. Si el cambio agrega tablas o columnas nuevas, visitar
-   `https://tudominio.com/install/setup.php?key=TU_CLAVE_DE_INSTALACION`
-   (la clave quedó guardada en `includes/config.php` del servidor). Es
-   idempotente: nunca borra datos, solo aplica lo que falte.
+2. Si el cambio agrega tablas o columnas nuevas, abrir
+   `https://tudominio.com/install/setup.php` y escribir la clave de instalación
+   en el formulario (la clave quedó guardada en `includes/config.php` del
+   servidor; ya no se acepta por la URL). Es idempotente: nunca borra datos,
+   solo aplica lo que falte.
 3. Si el cambio toca JS/CSS/Service Worker: subir la versión del caché en
    `sw.js` (`sirius-shell-v18` → `v19`, …) para que el PWA no sirva versiones
    viejas desde caché.
+
+## Pruebas automáticas
+
+No necesitan instalar nada (usan el PHP portable de `tools/` y una base SQLite
+temporal; nunca tocan `config.php` ni `data/`):
+
+```bat
+tools\php\php.exe tests\run.php          rem unitarias y estructurales (~segundos)
+tools\php\php.exe tests\api_smoke.php    rem integración: levanta php -S y recorre login, CSRF, permisos, respaldo cifrado y setup.php
+```
+
+Cubren permisos y *mode flags*, antigüedad y vacaciones, respaldo cifrado, el freno
+de login por IP, el esquema MySQL/SQLite, que cada archivo JS esté en el precaché
+de `sw.js` y que cada ruta de la API tenga su handler. GitHub las corre en cada
+pull request (`.github/workflows/tests.yml`).
 
 ## Apps (Membretador y Cotizador)
 

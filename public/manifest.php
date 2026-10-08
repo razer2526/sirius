@@ -14,9 +14,9 @@ $icon192 = $brand['icon_192'] ?: 'assets/img/icons/icon-192.png';
 $icon512 = $brand['icon_512'] ?: 'assets/img/icons/icon-512.png';
 
 echo json_encode([
-    'name'             => 'Sirius — Bosques Polanco',
+    'name'             => 'Sirius — ' . app_clinic_name(),
     'short_name'       => 'Sirius',
-    'description'      => 'Sistema de gestión del Laboratorio y Clínica Bosques Polanco',
+    'description'      => 'Sistema de gestión de ' . app_clinic_name(),
     'lang'             => 'es-MX',
     'start_url'        => './index.php',
     'scope'            => './',
