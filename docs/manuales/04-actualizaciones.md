@@ -11,12 +11,63 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [8 de octubre de 2026](#8-de-octubre-de-2026)
-2. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+2. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+3. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
 
 ---
 
-## 8 de octubre de 2026
+## 8 de octubre de 2026 · Seguridad y pruebas automáticas
+
+Endurecimiento de seguridad y pruebas automáticas (PR 71). **Exige correr una vez la actualización de la base de datos** al desplegarlo, porque agrega la tabla `login_attempts`. Esa actualización **ya no se hace con `?key=` en la dirección**: ver la segunda entrada.
+
+### Respaldos cifrados con contraseña
+
+- **Qué cambió:** al exportar un respaldo aparece **«Proteger con contraseña (recomendado)»**, activado por defecto. El archivo se cifra (AES-256) con una contraseña de **mínimo 10 caracteres**. Al importarlo, Sirius pide esa contraseña antes de mostrar el contenido. Sin contraseña (opción desmarcada, con confirmación) el archivo sigue saliendo como antes.
+- **Afecta a:** administradores en **Admin Tools → Backup**. Los respaldos anteriores sin cifrar se siguen pudiendo importar.
+- **Acción:** usa contraseña al exportar y **guárdala en un lugar seguro: si se pierde, el respaldo no se puede recuperar**. Conviene no guardarla junto al archivo.
+- **Por qué:** el respaldo incluye las llaves de IA, correo y WhatsApp y los hashes de contraseña de los usuarios.
+- **Manual:** administrador, apartado 12; desarrollador, apartados 8.6 y 16.
+
+### Actualizar la base de datos: ahora es un formulario, no una dirección con clave
+
+- **Qué cambió:** `install/setup.php?key=…` **ya no funciona**. Ahora se abre `https://sirius-bpm.com/install/setup.php`, se escribe la clave de instalación en el campo y se pulsa **Aplicar**. La clave viaja por POST y **ya no queda en los registros de acceso ni en el historial del navegador**. Tras 5 claves incorrectas hay una espera de 10 minutos.
+- **Afecta a:** quien aplique actualizaciones de base de datos (administrador/desarrollador).
+- **Acción:** **hacerlo una vez después de este despliegue** (crea la tabla `login_attempts`); si no se hace, todo sigue funcionando, solo que el freno por IP del inicio de sesión no se activa. Si guardaste el enlace con `?key=`, bórralo de tus favoritos.
+- **Manual:** administrador, apartados 20.2 y 21; desarrollador, apartado 12.3.
+
+### Inicio de sesión: freno también por IP
+
+- **Qué cambió:** además del freno por sesión (5 fallos → 5 minutos), ahora una **misma IP** que acumula 20 inicios de sesión fallidos en 15 minutos queda bloqueada temporalmente, con el mensaje «Demasiados intentos desde esta red».
+- **Afecta a:** quien intente adivinar contraseñas abriendo sesiones nuevas. El personal de la clínica no lo nota: sale por una misma IP, y el límite es holgado a propósito.
+- **Acción:** ninguna. Si alguien del equipo se ve bloqueado, esperar 15 minutos.
+- **Manual:** desarrollador, apartados 6 y 16.
+
+### La conexión siempre es segura (HTTPS)
+
+- **Qué cambió:** entrar por `http://` redirige automáticamente a `https://`. Estaba comentado en la configuración del servidor.
+- **Afecta a:** todos, sin notarlo. Enlaces y favoritos antiguos con `http://` siguen funcionando.
+- **Acción:** ninguna. Si algún día el sitio no abre y el navegador dice «demasiadas redirecciones», avisa al desarrollador.
+- **Manual:** administrador, apartado 19; desarrollador, apartado 16.
+
+### El nombre de la clínica sale de la configuración
+
+- **Qué cambió:** la pantalla de inicio de sesión y el nombre de la aplicación instalada muestran el nombre capturado al instalar (**settings → clinic_name**) y no uno fijo en el código. Para esta clínica no cambia lo que se ve en el login. El nombre de la aplicación instalada pasa a ser «Sirius — Laboratorio y Clínica Bosques Polanco».
+- **Afecta a:** todos, apenas.
+- **Acción:** ninguna. En dispositivos donde Sirius ya está instalada, el nombre bajo el icono puede tardar en actualizarse o requerir reinstalarla.
+- **Manual:** desarrollador, hallazgo 5 del apartado 17.
+
+### Pruebas automáticas
+
+- **Qué cambió:** hay 17 pruebas unitarias/estructurales y 13 de integración (`tests/`), que GitHub corre en cada pull request. Cubren permisos, vacaciones y antigüedad, respaldo cifrado, el freno de login, el esquema, el precaché del service worker y el ciclo completo de login, CSRF y permisos.
+- **Afecta a:** desarrolladores. No cambia nada para los usuarios.
+- **Acción:** antes de abrir un PR, `tools\php\php.exe tests\run.php` y `tools\php\php.exe tests\api_smoke.php`.
+un.php` y `tools\php\php.exe testspi_smoke.php`.
+- **Manual:** desarrollador, apartado 13 («No hay pruebas automatizadas» queda superado) y hallazgo 7 del apartado 17.
+
+---
+
+## 8 de octubre de 2026 · Correcciones de la revisión
 
 Correcciones que salen de la revisión del código hecha para los manuales (PR 70). No hay cambios de esquema de base de datos: **no hace falta correr `install/setup.php`**.
 

@@ -2,7 +2,7 @@
 /**
  * Esquema de Sirius: creación de tablas + migraciones idempotentes.
  * Compartido por el asistente visual (index.php, primera instalación) y por
- * setup.php (?key=..., para aplicar cambios de esquema en actualizaciones).
+ * setup.php (formulario con la clave, para aplicar cambios de esquema en actualizaciones).
  * Todo aquí es seguro de volver a ejecutar: CREATE TABLE IF NOT EXISTS y
  * ALTER TABLE envueltos en try/catch (fallan en silencio si la columna ya existe).
  */
@@ -702,6 +702,13 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 UNIQUE KEY uq_remember_selector (selector),
                 CONSTRAINT fk_remember_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
             )$suffix",
+            'login_attempts' => "CREATE TABLE IF NOT EXISTS login_attempts (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                ip VARCHAR(45) NOT NULL,
+                username VARCHAR(50) NULL,
+                created_at DATETIME NOT NULL,
+                INDEX idx_login_attempt_ip (ip, created_at)
+            )$suffix",
             'content_posts' => "CREATE TABLE IF NOT EXISTS content_posts (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 post_date DATE NOT NULL,
@@ -1344,6 +1351,12 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 expires_at TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'login_attempts' => "CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ip TEXT NOT NULL,
+                username TEXT NULL,
+                created_at TEXT NOT NULL
+            )",
             'content_posts' => "CREATE TABLE IF NOT EXISTS content_posts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 post_date TEXT NOT NULL,
@@ -1471,6 +1484,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mktasset_created ON marketing_assets (created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_boardasset_item ON board_assets (item_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_empvac_user ON employee_vacations (user_id, date_from)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_login_attempt_ip ON login_attempts (ip, created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_labstudy_active ON lab_studies (is_active, name)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_studyitem_order ON lab_study_items (study_id, sort_order)');

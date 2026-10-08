@@ -73,6 +73,24 @@ function renderExport(root) {
         <p class="text-sm text-slate-500">Elige qué incluir. Se descargará un archivo con la fecha del día.</p>
       </div>
       <section id="export-groups" class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">${spinner()}</section>
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+        <label class="flex cursor-pointer items-start gap-3">
+          <input id="enc-on" type="checkbox" checked class="mt-1 h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500">
+          <span>
+            <span class="block text-sm font-semibold text-slate-800">Proteger con contraseña (recomendado)</span>
+            <span class="block text-xs text-slate-500">
+              El respaldo contiene las contraseñas (cifradas) de los usuarios y las llaves de IA, correo y WhatsApp.
+              Con contraseña, el archivo no se puede leer sin ella. <b>Si la pierdes, el respaldo no se puede recuperar.</b>
+            </span>
+          </span>
+        </label>
+        <div id="enc-fields" class="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div><label class="${labelCls}">Contraseña (mínimo 10 caracteres)</label>
+            <input id="enc-pw" type="password" autocomplete="new-password" class="${inputCls}"></div>
+          <div><label class="${labelCls}">Repite la contraseña</label>
+            <input id="enc-pw2" type="password" autocomplete="new-password" class="${inputCls}"></div>
+        </div>
+      </section>
       <div class="flex justify-end">
         <button id="btn-export" type="button" disabled
                 class="flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-500 disabled:bg-slate-200 disabled:text-slate-400">
@@ -98,15 +116,51 @@ function renderExport(root) {
     root.querySelector('#btn-export').disabled = false;
   });
 
+  const encOn = root.querySelector('#enc-on');
+  encOn.addEventListener('change', () => {
+    root.querySelector('#enc-fields').classList.toggle('hidden', !encOn.checked);
+  });
+
   root.querySelector('#btn-export').addEventListener('click', () => {
     const groups = [...root.querySelectorAll('[data-group]')].filter((c) => c.checked).map((c) => c.dataset.group);
     if (!groups.length) {
       toast('Selecciona al menos un grupo', 'error');
       return;
     }
-    // La descarga va por su propio endpoint para que el navegador reciba el archivo
-    window.location.href = 'respaldo.php?grupos=' + encodeURIComponent(groups.join(','));
-    toast('Generando respaldo…');
+    let password = '';
+    if (encOn.checked) {
+      password = root.querySelector('#enc-pw').value;
+      if (password.length < 10) {
+        toast('La contraseña debe tener al menos 10 caracteres', 'error');
+        return;
+      }
+      if (password !== root.querySelector('#enc-pw2').value) {
+        toast('Las contraseñas no coinciden', 'error');
+        return;
+      }
+    } else if (!window.confirm('Este respaldo saldrá SIN cifrar y contiene contraseñas (cifradas) y llaves de servicios. ¿Descargarlo así?')) {
+      return;
+    }
+    // La descarga va por su propio endpoint (para que el navegador reciba un archivo) y por POST:
+    // la contraseña no puede viajar en la URL porque quedaría en los logs del servidor.
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = 'respaldo.php';
+    form.style.display = 'none';
+    const add = (name, value) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    };
+    add('_csrf', window.__siriusCsrf || '');
+    add('grupos', groups.join(','));
+    add('password', password);
+    document.body.appendChild(form);
+    form.submit();
+    form.remove();
+    toast(password ? 'Generando respaldo cifrado…' : 'Generando respaldo…');
   });
 }
 
@@ -114,6 +168,7 @@ function renderExport(root) {
 function renderImport(root) {
   let file = null;
   let inspected = null;
+  let password = '';   // contraseña de un respaldo cifrado (solo en memoria)
 
   root.innerHTML = `
     <div class="mx-auto max-w-3xl space-y-5">
@@ -129,7 +184,7 @@ function renderImport(root) {
         <p class="text-sm font-semibold text-amber-900">Antes de continuar</p>
         <p class="mt-1 text-sm text-amber-800">
           Recuperar información modifica la base de datos. Te recomendamos
-          <a href="respaldo.php" class="font-semibold underline">descargar un respaldo del estado actual</a>
+          <a href="#/backup/exportar" class="font-semibold underline">descargar un respaldo del estado actual</a>
           antes de importar, por si necesitas volver atrás.
         </p>
       </div>
@@ -145,12 +200,17 @@ function renderImport(root) {
       <section id="imp-detail" class="hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"></section>
     </div>`;
 
-  root.querySelector('#imp-file').addEventListener('change', async (e) => {
+  root.querySelector('#imp-file').addEventListener('change', (e) => {
     file = e.target.files[0];
-    if (!file) return;
+    password = '';
+    if (file) inspectFile();
+  });
+
+  async function inspectFile() {
     root.querySelector('#imp-label').textContent = 'Revisando…';
     const fd = new FormData();
     fd.append('file', file);
+    if (password) fd.append('password', password);
     try {
       const res = await fetch('api/index.php?r=backups/inspect', {
         method: 'POST',
@@ -161,12 +221,36 @@ function renderImport(root) {
       if (!json.ok) throw new Error(json.error);
       inspected = json.data;
       root.querySelector('#imp-label').textContent = file.name;
-      paintDetail(root, file, inspected);
+      if (inspected.encrypted) paintPassword(root);
+      else paintDetail(root, file, inspected);
     } catch (err) {
       root.querySelector('#imp-label').textContent = 'Seleccionar archivo';
       toast(err.message, 'error');
     }
-  });
+  }
+
+  /** Respaldo cifrado: pide la contraseña y vuelve a revisarlo con ella. */
+  function paintPassword(root) {
+    const box = root.querySelector('#imp-detail');
+    box.classList.remove('hidden');
+    box.innerHTML = `
+      <h4 class="mb-1 text-sm font-bold uppercase tracking-wide text-slate-700">Respaldo cifrado</h4>
+      <p class="mb-4 text-xs text-slate-400">${escapeHtml(file.name)} · generado el ${escapeHtml(inspected.created_at || '—')}</p>
+      <label class="${labelCls}">Contraseña del respaldo</label>
+      <input id="imp-pw" type="password" autocomplete="off" class="${inputCls}">
+      <div class="mt-4 flex justify-end">
+        <button id="btn-unlock" type="button" class="rounded-lg bg-indigo-600 px-6 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">Desbloquear</button>
+      </div>`;
+    const input = box.querySelector('#imp-pw');
+    const unlock = () => {
+      password = input.value;
+      if (!password) return;
+      inspectFile();
+    };
+    box.querySelector('#btn-unlock').addEventListener('click', unlock);
+    input.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') unlock(); });
+    input.focus();
+  }
 
   function paintDetail(root, file, d) {
     const box = root.querySelector('#imp-detail');
@@ -251,6 +335,7 @@ function renderImport(root) {
   async function doRestore(file, replace, confirmWord) {
     const fd = new FormData();
     fd.append('file', file);
+    if (password) fd.append('password', password);
     if (replace) {
       fd.append('replace', '1');
       fd.append('confirm', confirmWord);

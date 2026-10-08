@@ -44,7 +44,7 @@ El sidebar, la matriz de permisos, el ruteo, el título de la pantalla y el resa
 │  ├─ install/
 │  │  ├─ index.php       asistente visual de primera instalación
 │  │  ├─ schema.php      todo el esquema + migraciones + seeds (~1,730 líneas)
-│  │  └─ setup.php       runner de migraciones por URL (?key=)
+│  │  └─ setup.php       runner de migraciones (formulario con la clave, por POST)
 │  ├─ assets/js/         núcleo SPA + widgets compartidos + modules/ (25 archivos)
 │  ├─ uploads/           contenido de usuario, bloqueado por .htaccess
 │  └─ vendor/            FPDF y PHPMailer copiados a mano
@@ -77,7 +77,7 @@ Claves del contrato de configuración:
 | `db.host` / `db.name` / `db.user` / `db.pass` | partes del DSN de MySQL |
 | `db.sqlite_path` | ruta del archivo, por defecto `<raíz>/data/sirius.sqlite` |
 | `app_env` | `'dev'` muestra errores y filtra mensajes de excepción en las respuestas de la API; `'prod'` oculta ambos |
-| `install_key` | secreto compartido que protege `install/setup.php?key=` |
+| `install_key` | secreto compartido que protege `install/setup.php` (se escribe en su formulario; ya no va en la URL) |
 | `cron_key` | secreto compartido para los scripts de cron invocados por HTTP |
 | `ca_bundle` | ruta opcional a `cacert.pem` para TLS saliente (lo necesita el PHP portable de desarrollo) |
 
@@ -123,7 +123,7 @@ Esta capa es **100% libre de dominio**. Se rescata tal cual.
 
 `session_regenerate_id(true)` tanto al iniciar sesión con contraseña como al restaurar por cookie.
 
-> ⚠️ El freno de fuerza bruta es **solo de sesión** (`login_fails` / `login_last_fail` en `$_SESSION`, 5 intentos y 5 minutos de bloqueo). Se salta tirando la cookie de sesión. En un producto comercial esto tiene que vivir en la base o en un almacén compartido, indexado por IP y por usuario.
+> **Freno de fuerza bruta, en dos capas.** Por sesión (`login_fails` / `login_last_fail` en `$_SESSION`: 5 intentos y 5 minutos) y **por IP** (`login_attempts`: 20 fallos en 15 minutos bloquean esa IP; es holgado porque todo el personal sale por la misma IP pública). El de IP se salta si la tabla aún no existe (migración pendiente), para no impedir el inicio de sesión. Solo se usa `REMOTE_ADDR` (nunca `X-Forwarded-For`, que se falsifica). Falta un bloqueo por usuario y alertas; en un producto comercial conviene un limitador compartido (Redis o similar).
 
 ---
 

@@ -1,6 +1,6 @@
 # 02 · Modelo de datos
 
-Las 51 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
+Las 52 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
 
 Todo el esquema vive en **un solo archivo**: `public/install/schema.php` (~1,730 líneas), con cuatro funciones:
 
@@ -114,7 +114,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 
 ## Inventario de tablas
 
-51 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
+52 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
 
 ### A · Identidad, sesión y permisos
 
@@ -247,6 +247,7 @@ Todo es agendamiento genérico salvo el ENUM de servicios. Convertirlo en una ta
 | `notifications` | Bandeja de notificaciones. `read_at` NULL = no leída. | 🟢 |
 | `dismissed_alerts` | Descarte por usuario de alertas calculadas. UNIQUE `(user_id, alert_key)`. | 🟢 |
 | `trash_items` | Papelera universal. `entity_type` + `entity_id` polimórficos, **`snapshot` JSON**, auto-FK `related_trash_id` para cascadas. | 🟢 |
+| `login_attempts` | Intentos de inicio de sesión **fallidos** por IP (`ip`, `username`, `created_at`, índice `(ip, created_at)`). Alimenta el freno por IP de `auth.php`; se purga solo (más de un día). Transitoria: **no entra en el respaldo**. | 🟢 |
 
 `settings` es un patrón limpio y reusable: la configuración de IA, el branding, el nombre de la clínica y WhatsApp viven todos ahí como blobs JSON, sin necesidad de una tabla por cosa.
 

@@ -11,7 +11,7 @@
  *  - Se autobloquea (.installed) para no poder volver a correr por accidente.
  *
  * Para actualizaciones posteriores que agreguen tablas/columnas, se usa
- * setup.php?key=... (la clave queda guardada en config.php al terminar aquí).
+ * setup.php (formulario con la clave; la clave queda guardada en config.php al terminar aquí).
  */
 
 session_start();
@@ -143,7 +143,7 @@ $nonce = $_SESSION['install_nonce'];
       <p class="text-sm font-semibold text-slate-800">Sirius ya está instalado en este sitio.</p>
       <p class="mt-2 text-sm text-slate-600">
         Si necesitas aplicar cambios de esquema de una actualización (tablas o columnas nuevas),
-        usa <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">setup.php?key=TU_INSTALL_KEY</code>
+        abre <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">install/setup.php</code> y escribe tu clave de instalación
         (la clave está en tu <code class="rounded bg-slate-100 px-1.5 py-0.5 text-xs">includes/config.php</code>).
       </p>
       <p class="mt-2 text-sm text-slate-600">
@@ -170,7 +170,7 @@ $nonce = $_SESSION['install_nonce'];
           Usuario administrador: <b><?= htmlspecialchars($success['admin_user']) ?></b>
         </p>
         <p class="mt-1 text-sm text-amber-800">
-          Clave de instalación (para futuras actualizaciones con <code>setup.php?key=</code>):<br>
+          Clave de instalación (para futuras actualizaciones con <code>setup.php</code>):<br>
           <code class="break-all rounded bg-white px-2 py-1 text-xs ring-1 ring-amber-200"><?= htmlspecialchars($success['install_key']) ?></code>
         </p>
         <p class="mt-2 text-sm text-amber-800">
