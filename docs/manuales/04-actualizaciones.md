@@ -11,13 +11,14 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-2. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-3. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-4. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-5. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-6. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-7. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+2. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+3. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+4. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+5. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+6. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+7. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+8. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
 
 ---
 
@@ -38,6 +39,30 @@ Función nueva (PR 76). No hay cambios de esquema: **no hace falta correr `setup
 - **Afecta a:** quien membreta análisis clínicos.
 - **Acción:** ninguna.
 - **Manual:** estándar, apartado 14.1 (Membretador); administrador, apartado 8 (Plantillas de Estudios).
+
+---
+
+## 9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura
+
+Mejora (PR 78). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### El Calendario se abre en la vista de semana
+
+- **Qué cambió:** al entrar a **Calendario** ya no se abre el mes, sino la **semana actual**: ahí se leen completas las citas del día (el mes muestra solo 4 por día y recorta el resto). **Día** y **Mes** siguen a un clic en el selector de arriba, y **Hoy** vuelve a la fecha actual en la vista que estés usando.
+- **Afecta a:** todos los que usan el Calendario.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 12 (Calendario): la captura principal muestra el mes, que ya no es la vista inicial.
+
+### Las citas se abren en solo lectura; para cambiarlas hay que pulsar «Editar»
+
+- **Qué cambió:** al pulsar una cita (en Día, Semana o Mes) se abre una **tarjeta de detalle** con título, estado, fecha y hora, servicio, responsable, ubicación, paciente, invitados y notas, **sin campos editables**. Abajo hay dos botones: **Cerrar** y **Editar**.
+  - **Editar** abre el formulario de siempre (con **Guardar** y **Cancelar cita**). Cancelar una cita **solo** se puede desde ahí, después de pulsar Editar.
+  - Quien no pueda editar la cita (no es la persona responsable ni administra el calendario) solo ve **Cerrar**, con un aviso.
+  - Las citas que vienen de **Google Calendar** muestran un recordatorio: si se editan en Sirius, el cambio también se envía a Google.
+- **Por qué:** abrir una cita para mirarla ya no puede modificarla ni cancelarla por un descuido.
+- **Afecta a:** todos los que usan el Calendario. **Crear** una cita nueva (botón **Nueva cita** o el **+** de un día) funciona igual que antes.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 12.1: la captura «Detalle de una cita» muestra el formulario editable, que ahora se abre solo tras pulsar Editar.
 
 ---
 
