@@ -60,7 +60,7 @@ $brand = branding_urls();
       </div>
       <?php endif; ?>
       <h1 class="text-2xl font-bold tracking-tight text-slate-900">Sirius</h1>
-      <p class="mt-1 text-sm text-slate-500">Laboratorio y Clínica Bosques Polanco</p>
+      <p class="mt-1 text-sm text-slate-500"><?= htmlspecialchars(app_clinic_name()) ?></p>
     </div>
 
     <form method="post" class="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">

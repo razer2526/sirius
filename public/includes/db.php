@@ -5,7 +5,11 @@ function app_config(): array
 {
     static $config = null;
     if ($config === null) {
-        $config = require __DIR__ . '/config.php';
+        // SIRIUS_CONFIG solo se respeta en línea de comandos y en el servidor de desarrollo (php -S):
+        // las pruebas automáticas (tests/) lo usan para correr con una base temporal. Bajo Apache/FPM
+        // se ignora, así que una variable de entorno nunca puede cambiar la configuración en producción.
+        $override = (PHP_SAPI === 'cli' || PHP_SAPI === 'cli-server') ? getenv('SIRIUS_CONFIG') : false;
+        $config = require ($override ?: __DIR__ . '/config.php');
     }
     return $config;
 }

@@ -44,9 +44,42 @@ function current_user(): ?array
     return $user = ($row ?: null);
 }
 
+/** Intentos fallidos por IP permitidos en la ventana, antes de bloquear esa IP. Es holgado a
+ *  propósito: todo el personal de la clínica sale por la misma IP pública. */
+const LOGIN_IP_MAX_FAILS = 20;
+const LOGIN_IP_WINDOW_MIN = 15;
+
+/** ¿Esta IP agotó sus intentos fallidos? Si la tabla aún no existe (migración pendiente), no bloquea. */
+function login_ip_blocked(string $ip): bool
+{
+    try {
+        $since = date('Y-m-d H:i:s', time() - LOGIN_IP_WINDOW_MIN * 60);
+        $st = db()->prepare('SELECT COUNT(*) c FROM login_attempts WHERE ip = ? AND created_at >= ?');
+        $st->execute([$ip, $since]);
+        return (int)$st->fetch()['c'] >= LOGIN_IP_MAX_FAILS;
+    } catch (Throwable $e) {
+        return false;
+    }
+}
+
+/** Registra un intento fallido de esta IP y purga los de más de un día. */
+function login_ip_record_fail(string $ip, string $username): void
+{
+    try {
+        $now = date('Y-m-d H:i:s');
+        db()->prepare('INSERT INTO login_attempts (ip, username, created_at) VALUES (?, ?, ?)')
+            ->execute([$ip, mb_substr($username, 0, 50), $now]);
+        db()->prepare('DELETE FROM login_attempts WHERE created_at < ?')
+            ->execute([date('Y-m-d H:i:s', time() - 86400)]);
+    } catch (Throwable $e) {
+        // La protección nunca debe impedir el inicio de sesión de quien sí tiene la contraseña.
+    }
+}
+
 /**
  * Intenta iniciar sesión. Devuelve true si las credenciales son válidas.
- * Aplica un freno simple: tras 5 intentos fallidos se exige esperar 5 minutos.
+ * Dos frenos: por sesión (5 fallos → esperar 5 min) y por IP (20 fallos en 15 min → esperar), este
+ * último para quien abre sesiones nuevas una y otra vez.
  */
 function attempt_login(string $username, string $password): array
 {
@@ -60,11 +93,19 @@ function attempt_login(string $username, string $password): array
         $_SESSION['login_fails'] = 0;
     }
 
+    $ip = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($ip !== '' && login_ip_blocked($ip)) {
+        return ['ok' => false, 'error' => 'Demasiados intentos desde esta red. Espera unos minutos.'];
+    }
+
     $st = db()->prepare('SELECT * FROM users WHERE username = ? AND is_active = 1');
     $st->execute([$username]);
     $row = $st->fetch();
 
     if (!$row || !password_verify($password, $row['password_hash'])) {
+        if ($ip !== '') {
+            login_ip_record_fail($ip, $username);
+        }
         $_SESSION['login_fails'] = ($_SESSION['login_fails'] ?? 0) + 1;
         $_SESSION['login_last_fail'] = $now;
         return ['ok' => false, 'error' => 'Usuario o contraseña incorrectos.'];

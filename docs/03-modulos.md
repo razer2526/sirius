@@ -205,6 +205,8 @@ Exporta la base completa; al importar, inspecciona el archivo (conteos, versión
 
 **Acciones:** `info`, `inspect`, `restore`
 
+**Cifrado opcional:** al exportar (`respaldo.php`, por POST con CSRF; la contraseña nunca va en la URL) se puede proteger con una contraseña de 10+ caracteres: AES-256-GCM con llave PBKDF2-SHA256 (200 000 iteraciones). El archivo cifrado es un JSON con cabecera en claro y `ciphertext`. Al importar, `inspect` responde `encrypted: true` y la interfaz pide la contraseña; `restore` la exige. Sin contraseña (opción desmarcada, con confirmación) el archivo contiene hashes de contraseña y llaves de servicios en claro. **Si se pierde la contraseña, el respaldo no se puede abrir.**
+
 ### 🟢 `api` — API
 Rejilla de tarjetas de integraciones externas: **IA** (proveedor, modelo, llave, prueba de conexión), **Calendario** (OAuth de Google), **Correo** (SMTP saliente). También es la puerta al módulo oculto de configuración de WhatsApp. **Los secretos nunca vuelven al navegador**: las respuestas solo dicen si existe una llave.
 

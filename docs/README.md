@@ -40,7 +40,7 @@ Están numerados porque el orden de lectura importa.
 | # | Documento | Qué contiene | Léelo si… |
 |---|---|---|---|
 | 01 | [Arquitectura](01-arquitectura.md) | El núcleo: configuración, sesión, permisos, papelera genérica, capa de IA, front controller, SPA. Con firmas de función reales. | Siempre. Es la base de todo lo demás. |
-| 02 | [Modelo de datos](02-modelo-de-datos.md) | Las 51 tablas por dominio, y los tres patrones de esquema (doble motor, migraciones, seeds). | Vas a diseñar el esquema nuevo. |
+| 02 | [Modelo de datos](02-modelo-de-datos.md) | Las 52 tablas por dominio, y los tres patrones de esquema (doble motor, migraciones, seeds). | Vas a diseñar el esquema nuevo. |
 | 03 | [Módulos](03-modulos.md) | Los 24 módulos: qué hace cada uno, sus acciones, sus permisos, y **qué tan rescatable es**. | Quieres saber qué ya existe y no reinventar. |
 | 04 | [Patrones reusables](04-patrones-reusables.md) | Los 23 patrones transversales, cada uno con el archivo donde mejor se ve. | **El documento más valioso.** Son decisiones ya validadas. |
 | 05 | [Operación y despliegue](05-operacion-y-despliegue.md) | Build sin Node, CI, service worker, instalador, seguridad de archivos, y qué restricciones vienen del hosting compartido. | Vas a montar la infraestructura del producto nuevo. |
@@ -82,7 +82,7 @@ Todas verificadas contra el código, no estimadas.
 | **PHP** (sin `vendor/`) | 21,261 líneas |
 | **JavaScript** | 18,066 líneas |
 | **Total** | ~39,300 líneas |
-| Tablas en el esquema | 51 (definidas dos veces: MySQL y SQLite) |
+| Tablas en el esquema | 52 (definidas dos veces: MySQL y SQLite) |
 | Módulos registrados | 24 |
 | Handlers de API | 34 archivos, 35 rutas |
 | Archivos de módulo JS | 25 (24 módulos + `wizard_admision.js`, variante de Admisión) |

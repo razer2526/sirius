@@ -20,7 +20,7 @@ return [
     // 'dev' muestra errores; 'prod' los oculta
     'app_env' => 'prod',
 
-    // Clave requerida para ejecutar install/setup.php (?key=...)
+    // Clave requerida para ejecutar install/setup.php (se escribe en su formulario; no va en la URL)
     // Tras instalar en producción, BORRA la carpeta install/.
     'install_key' => 'CAMBIA-ESTA-CLAVE',
 

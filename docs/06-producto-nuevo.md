@@ -240,7 +240,7 @@ El catálogo de errores conocidos. Cada uno está documentado con detalle en su 
 
 | Error | Dónde | Qué hacer |
 |---|---|---|
-| **Clave de instalación en la query string** | `install/setup.php` | Nunca. Queda en los logs de acceso. Migraciones como comando autenticado o parte del pipeline. |
+| **Clave de instalación como único factor** | `install/setup.php` | La clave ya no viaja en la URL (formulario POST con freno), pero sigue siendo el único control. Migraciones como comando autenticado o parte del pipeline. |
 | **Migraciones sin tabla de versiones** | `schema.php` | Tabla `schema_migrations` desde el día uno. Sin ella no puedes saber en qué revisión está una base — inviable con muchos clientes. |
 | **Freno de fuerza bruta solo en sesión** | `auth.php` | Se salta tirando la cookie. Debe vivir en la base, indexado por IP y por usuario. |
 | **Sin CSP y con el HTTPS forzado comentado** | `public/.htaccess` | Ambos obligatorios. |
