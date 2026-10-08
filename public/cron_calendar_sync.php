@@ -32,12 +32,17 @@ if (!gcal_is_connected()) {
 try {
     $stats = gcal_sync_pull();
     printf(
-        "Sincronización OK — importadas: %d, actualizadas: %d, canceladas: %d, sin cambios: %d\n",
+        "Sincronización %s — importadas: %d, actualizadas: %d, canceladas: %d, sin cambios: %d, con error: %d\n",
+        $stats['errors'] ? 'CON ERRORES' : 'OK',
         $stats['imported'],
         $stats['updated'],
         $stats['cancelled'],
-        $stats['skipped']
+        $stats['skipped'],
+        $stats['errors']
     );
+    if ($stats['errors']) {
+        echo 'Primer error: ' . $stats['first_error'] . "\n";
+    }
 } catch (Throwable $e) {
     error_log('cron_calendar_sync: ' . $e->getMessage());
     http_response_code(500);

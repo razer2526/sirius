@@ -253,4 +253,7 @@ test('todos los PHP de public/ pasan php -l', function () {
     ok(!$bad, 'errores de sintaxis en: ' . implode(', ', $bad));
 });
 
+require __DIR__ . '/calendar.php';
+
+
 tests_finish();

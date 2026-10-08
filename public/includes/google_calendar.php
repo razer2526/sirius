@@ -266,3 +266,28 @@ function gcal_api_request(string $method, string $path, ?array $payload = null, 
     }
     return $data;
 }
+
+/**
+ * Normaliza una marca de tiempo de Google ("2026-10-08T17:30:12.345Z") a UTC "Y-m-d H:i:s".
+ * Es el formato que se guarda en google_updated_at: MySQL no acepta el "Z" ni los milisegundos en
+ * una columna DATETIME, y al convertirlos por su cuenta el valor guardado dejaba de ser comparable
+ * con el de Google, así que cada evento parecía "modificado" en cada corrida y avisaba de nuevo.
+ * También acepta lo que ya hubiera guardado (formato viejo o convertido por MySQL, que es UTC).
+ */
+function gcal_ts(?string $value): ?string
+{
+    $value = trim((string)$value);
+    if ($value === '') {
+        return null;
+    }
+    try {
+        $hasZone = (bool)preg_match('/(Z|[+-]\d{2}:?\d{2})$/i', $value);
+        $d = new DateTime($value, new DateTimeZone('UTC'));   // sin zona explícita se asume UTC
+        if ($hasZone) {
+            $d->setTimezone(new DateTimeZone('UTC'));
+        }
+        return $d->format('Y-m-d H:i:s');
+    } catch (Throwable $e) {
+        return null;
+    }
+}

@@ -217,7 +217,7 @@ Las tres comparten el patrón **`scope` privado/público + `owner_id`**, que se 
 
 | Tabla | Qué es | Rescate |
 |---|---|---|
-| `appointments` | Citas con sincronización a Google Calendar. `service` ENUM(6 valores médicos), `status` ENUM(4), `source` ENUM(`sirius`,`google`), `google_event_id` UNIQUE + `google_updated_at`, **`attendees` JSON**. | 🟡 |
+| `appointments` | Citas con sincronización a Google Calendar. `service` ENUM(6 valores médicos), `status` ENUM(4), `source` ENUM(`sirius`,`google`), `google_event_id` UNIQUE + `google_updated_at` (**siempre UTC `Y-m-d H:i:s`**, normalizado con `gcal_ts()`: MySQL no acepta el `Z` ni los milisegundos de Google en un DATETIME), **`attendees` JSON**. | 🟡 |
 
 Todo es agendamiento genérico salvo el ENUM de servicios. Convertirlo en una tabla por inquilino y queda genérico.
 
