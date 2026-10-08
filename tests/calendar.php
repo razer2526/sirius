@@ -116,3 +116,53 @@ test('los avisos se agrupan: pocos por separado, muchos en un solo resumen', fun
     notify_gcal_changes([]);
     eq(0, $count() - $before);
 });
+
+test('gcal_sync_pull: primera corrida silenciosa, segunda sin cambios, tercera avisa lo modificado', function () {
+    $pdo = db();
+    $pdo->exec("DELETE FROM appointments WHERE google_event_id LIKE 'w%'");
+    gcal_save(['sync_token' => '']);
+    $queries = [];
+    $pages = [
+        null => ['items' => [t_event('w1', '2026-10-08T10:00:00.000Z'), t_event('w2', '2026-10-08T10:00:00.000Z')], 'nextPageToken' => 'p2'],
+        'p2' => ['items' => [t_event('w3', '2026-10-08T10:00:00.000Z')]],
+    ];
+    $fetch = function (array $q) use (&$pages, &$queries) {
+        $queries[] = $q;
+        return $pages[$q['pageToken'] ?? null];
+    };
+    $count = fn() => (int)$pdo->query('SELECT COUNT(*) FROM notifications')->fetchColumn();
+
+    $before = $count();
+    $stats = gcal_sync_pull($fetch);
+    eq(3, $stats['imported'], 'importa las dos páginas');
+    eq(0, $count() - $before, 'la primera corrida no avisa');
+    ok(isset($queries[0]['timeMin'], $queries[0]['timeMax']), 'pide una ventana acotada');
+    ok(!isset($queries[0]['syncToken']), 'no usa syncToken');
+    ok(trim(gcal_config(true)['sync_token']) !== '', 'queda marcada como inicializada');
+
+    $stats = gcal_sync_pull($fetch);
+    eq([0, 0, 0, 3], [$stats['imported'], $stats['updated'], $stats['cancelled'], $stats['skipped']], 'segunda corrida: todo al día');
+    eq(0, $count() - $before, 'sin cambios no hay avisos');
+
+    $pages[null]['items'][1] = t_event('w2', '2026-10-08T12:00:00.000Z', ['summary' => 'Movida']);
+    $stats = gcal_sync_pull($fetch);
+    eq(1, $stats['updated']);
+    $admins = (int)$pdo->query("SELECT COUNT(*) FROM users WHERE is_active = 1 AND role IN ('administrador','developper')")->fetchColumn();
+    eq($admins, $count() - $before, 'un solo cambio = un aviso por usuario');
+});
+
+test('gcal_sync_pull: un evento con error no detiene a los demás ni marca la sincronización como lista', function () {
+    $pdo = db();
+    $pdo->exec("DELETE FROM appointments WHERE google_event_id LIKE 'e%'");
+    gcal_save(['sync_token' => '']);
+    $items = [
+        t_event('e1', '2026-10-08T10:00:00.000Z'),
+        t_event('e_malo', '2026-10-08T10:00:00.000Z', ['start' => ['dateTime' => 'esto-no-es-una-fecha'], 'end' => ['dateTime' => 'tampoco']]),
+        t_event('e2', '2026-10-08T10:00:00.000Z'),
+    ];
+    $stats = gcal_sync_pull(fn(array $q) => ['items' => $items]);
+    eq(2, $stats['imported']);
+    eq(1, $stats['errors']);
+    ok($stats['first_error'] !== '');
+    eq('', trim(gcal_config(true)['sync_token']), 'con errores no se marca como inicializada');
+});
