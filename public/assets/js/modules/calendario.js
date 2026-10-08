@@ -1,4 +1,4 @@
-/** Módulo Calendario: citas de todos los servicios (día / semana / mes + invitados externos). */
+/** Módulo Calendario: citas de todos los servicios (semana por defecto, día / mes + invitados externos). */
 
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, confirmDialog, inputCls, labelCls, spinner, debounce, fullName } from '../ui.js';
@@ -69,7 +69,8 @@ const VIEWS = ['dia', 'semana', 'mes'];
 
 export async function render(root, ctx) {
   const [viewArg, dateArg] = ctx.args;
-  const view = VIEWS.includes(viewArg) ? viewArg : 'mes';
+  // La semana es la vista por defecto: es donde se leen bien las citas (el mes recorta a 4 por día).
+  const view = VIEWS.includes(viewArg) ? viewArg : 'semana';
   const refDate = dateArg && /^\d{4}-\d{2}-\d{2}$/.test(dateArg) ? dateArg : todayStr();
   if (view === 'dia') await renderDay(root, ctx, refDate);
   else if (view === 'semana') await renderWeek(root, ctx, refDate);
@@ -127,7 +128,8 @@ function wireAgendaEvents(root, { assignableUsers, canManage, meId, reload }) {
       e.stopPropagation();
       try {
         const { appointment } = await apiGet('appointments/get', { id: btn.dataset.openAppt });
-        openApptModal({ appt: appointment, assignableUsers, canManage, meId, reload });
+        // Una cita existente se abre SOLO PARA LEER; para cambiarla hay que pulsar "Editar".
+        openApptViewModal({ appt: appointment, assignableUsers, canManage, meId, reload });
       } catch (err) {
         toast(err.message, 'error');
       }
@@ -349,6 +351,59 @@ async function renderDay(root, ctx, refDate) {
     onNewAppt: () => openApptModal({ assignableUsers, canManage: can_manage, meId, reload, prefillDate: refDate }),
   });
   wireAgendaEvents(root, { assignableUsers, canManage: can_manage, meId, reload });
+}
+
+/**
+ * Detalle de una cita en modo solo lectura. Editar (y cancelar) exige pulsar "Editar": abrir una
+ * cita para mirarla no debe poder cambiarla por un descuido.
+ */
+function openApptViewModal({ appt, assignableUsers, canManage, meId, reload }) {
+  const canEdit = canManage || !appt.assigned_user_id || appt.assigned_user_id === meId;
+  const date = appt.start_at.slice(0, 10);
+  const sameDay = appt.end_at.slice(0, 10) === date;
+  const when = `${dayLabel(date)} · ${appt.start_at.slice(11, 16)}–${sameDay ? '' : dayLabel(appt.end_at.slice(0, 10)) + ' '}${appt.end_at.slice(11, 16)}`;
+  const row = (label, value) => (value
+    ? `<div><dt class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">${label}</dt><dd class="mt-0.5 text-sm text-slate-800">${value}</dd></div>`
+    : '');
+  const attendees = (appt.attendees || []).map((a) => escapeHtml(a.name ? `${a.name} <${a.email}>` : a.email));
+
+  const body = document.createElement('div');
+  body.innerHTML = `
+    <div class="space-y-4">
+      <div>
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="h-2.5 w-2.5 shrink-0 rounded-full ${SERVICE_DOT[appt.service] || SERVICE_DOT.otro}"></span>
+          <h4 class="text-lg font-bold text-slate-900">${escapeHtml(appt.title)}</h4>
+          <span class="rounded px-2 py-0.5 text-xs font-semibold ${STATUS_BADGE[appt.status] || ''}">${STATUS_LABELS[appt.status] || escapeHtml(appt.status)}</span>
+        </div>
+        <p class="mt-1 text-sm font-medium text-slate-600">${escapeHtml(when)}</p>
+      </div>
+      <dl class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        ${row('Servicio', escapeHtml(SERVICE_LABELS[appt.service] || appt.service))}
+        ${row('Responsable', escapeHtml(appt.assigned_name || 'General (todos con acceso)'))}
+        ${row('Ubicación', escapeHtml(appt.location || ''))}
+        ${row('Paciente', appt.patient_name ? escapeHtml(`${appt.patient_name}${appt.file_number ? ' · ' + appt.file_number : ''}`) : '')}
+      </dl>
+      ${attendees.length ? `<div><p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Invitados</p>
+        <ul class="mt-0.5 space-y-0.5 text-sm text-slate-800">${attendees.map((a) => `<li>${a}</li>`).join('')}</ul></div>` : ''}
+      ${appt.notes ? `<div><p class="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Notas</p>
+        <p class="mt-0.5 whitespace-pre-wrap text-sm text-slate-800">${escapeHtml(appt.notes)}</p></div>` : ''}
+      ${appt.source === 'google' ? '<p class="rounded-lg bg-sky-50 px-3 py-2 text-xs text-sky-800">Esta cita viene de Google Calendar. Si la editas aquí, el cambio también se envía a Google.</p>' : ''}
+      ${canEdit ? '' : '<p class="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">Solo la persona responsable o quien administra el calendario puede editar esta cita.</p>'}
+    </div>`;
+
+  const actions = [{ label: 'Cerrar' }];
+  if (canEdit) {
+    actions.push({
+      label: 'Editar',
+      primary: true,
+      onClick: (close) => {
+        close();
+        openApptModal({ appt, assignableUsers, canManage, meId, reload });
+      },
+    });
+  }
+  modal({ title: 'Detalle de la cita', content: body, actions, size: 'max-w-xl' });
 }
 
 function openApptModal({ appt = null, assignableUsers, canManage, meId, reload, prefillDate = null }) {
