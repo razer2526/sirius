@@ -8,6 +8,7 @@
  *   …/<tipo>/nuevo  y  …/<tipo>/<id>          → captura y edición
  */
 
+import { renderTemplateWizard } from '../lab_template_wizard.js';
 import { apiGet, apiPost } from '../api.js';
 import {
   icon, escapeHtml, toast, modal, confirmDialog, spinner,
@@ -56,6 +57,7 @@ export async function render(root, context) {
     const docType = cat.doc_type;
     if (!type) return renderOrders(root, category, cat, docType);
     if (type === 'nueva') return renderOrderForm(root, category, cat, docType, null);
+    if (type === 'plantilla-nueva') return renderTemplateCreator(root, category);
     if (/^\d+$/.test(type)) return renderOrderForm(root, category, cat, docType, +type);
     return renderOrders(root, category, cat, docType);
   }
@@ -336,10 +338,16 @@ async function renderOrders(root, category, cat, docType) {
           <input id="doc-q" type="text" placeholder="Buscar por paciente o folio…" autocomplete="off"
                  class="w-full rounded-xl border-0 bg-white py-2.5 pl-11 pr-4 text-sm shadow-sm ring-1 ring-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none">
         </div>
-        <a href="#/apps/membretador/${category}/nueva"
-           class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
-          ${icon('plus', 'h-4 w-4')} Nueva orden
-        </a>
+        <div class="flex flex-wrap items-center gap-2">
+          <a href="#/apps/membretador/${category}/plantilla-nueva"
+             class="flex items-center gap-1.5 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50">
+            ${icon('plus', 'h-4 w-4')} Crear plantilla
+          </a>
+          <a href="#/apps/membretador/${category}/nueva"
+             class="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">
+            ${icon('plus', 'h-4 w-4')} Nueva orden
+          </a>
+        </div>
       </div>
       <div id="doc-status-filter">${statusFilterHtml(status)}</div>
       <div id="doc-list">${spinner()}</div>
@@ -353,6 +361,17 @@ async function renderOrders(root, category, cat, docType) {
   input.addEventListener('input', debounce(load, 300));
   wireStatusFilter(root, (next) => { status = next; load(); });
   await load();
+}
+
+/** "Crear plantilla": al terminar vuelve a la selección de estudios con la plantilla ya marcada. */
+function renderTemplateCreator(root, category) {
+  renderTemplateWizard(root, {
+    backHref: `#/apps/membretador/${category}`,
+    onDone: (res) => {
+      try { sessionStorage.setItem('sirius_new_tpl', String(res.id)); } catch { /* se elige a mano */ }
+      ctx.navigate(`apps/membretador/${category}/nueva`);
+    },
+  });
 }
 
 /**
@@ -407,6 +426,12 @@ async function renderOrderForm(root, category, cat, docType, docId) {
         </div>
 
         <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div class="mb-3 flex justify-end">
+            <a href="#/apps/membretador/${category}/plantilla-nueva"
+               class="inline-flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:text-indigo-500">
+              ${icon('plus', 'h-4 w-4')} Crear plantilla
+            </a>
+          </div>
           <div class="relative">
             <span class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">${icon('search', 'h-5 w-5')}</span>
             <input id="tpl-q" type="text" value="${escapeHtml(q)}" placeholder="Buscar estudio…" autocomplete="off"
@@ -417,7 +442,7 @@ async function renderOrderForm(root, category, cat, docType, docId) {
               <div class="px-3 py-8 text-center">
                 <p class="text-sm text-slate-500">No hay plantillas de estudios todavía.</p>
                 <p class="mt-1 text-xs text-slate-400">
-                  Créalas en <b>Admin Tools › Plantillas de Estudios</b> para que las referencias
+                  Crea la primera con <b>Crear plantilla</b> para que las referencias
                   dejen de leerse del PDF.
                 </p>
               </div>`
@@ -942,6 +967,12 @@ async function renderOrderForm(root, category, cat, docType, docId) {
     try {
       templates = (await apiGet('labs/studies')).studies;
     } catch { templates = []; }
+    // Viene de "Crear plantilla": la plantilla nueva ya queda marcada.
+    try {
+      const fresh = +sessionStorage.getItem('sirius_new_tpl');
+      sessionStorage.removeItem('sirius_new_tpl');
+      if (fresh && templates.some((t) => t.id === fresh) && !picked.includes(fresh)) picked = [...picked, fresh];
+    } catch { /* sin sessionStorage: se elige a mano */ }
   }
   paint();
 }

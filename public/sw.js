@@ -33,6 +33,7 @@ const SHELL = [
   'assets/js/scale_connect.js',
   'assets/js/scale_decoders.js',
   'assets/js/body_composition.js',
+  'assets/js/lab_template_wizard.js',
   'assets/js/body_silhouette.js',
   'assets/js/coverage_map.js',
   'assets/js/assistant.js',

@@ -129,6 +129,139 @@ function handle_labs(string $action): void
             }
             json_ok(['tests' => $tests, 'total' => count($tests)]);
         }
+
+        /**
+         * Crea una plantilla de estudio desde el Membretador: nombre, técnica y determinaciones con sus
+         * valores de referencia. Es el mismo modelo de Admin Tools > Plantillas de Estudios (lab_studies +
+         * lab_tests + lab_reference_ranges), así que el reporte sale con el formato de siempre.
+         *
+         * Requiere el privilegio "membretador" (el administrador lo tiene). A diferencia de Admin Tools,
+         * aquí NUNCA se sobrescribe nada existente: una plantilla con el mismo nombre se rechaza y una
+         * determinación que ya está en el catálogo (mismo nombre y unidad) se reutiliza tal cual, para que
+         * crear una plantilla nueva no pueda cambiar los intervalos de otros reportes.
+         *
+         * Cuerpo: { name, technique, tests: [ {id} | {name, unit, technique, ranges: [...]} ] }
+         */
+        case 'template_create': {
+            if (!user_flag('apps', 'membretador')) {
+                json_error('Necesitas el privilegio de Membretador para crear plantillas', 403);
+            }
+            $b = request_body();
+            $name = mb_substr(trim((string)($b['name'] ?? '')), 0, 150);
+            $technique = mb_substr(trim((string)($b['technique'] ?? '')), 0, 80);
+            if ($name === '') {
+                json_error('Escribe el nombre del estudio', 422);
+            }
+            $tests = is_array($b['tests'] ?? null) ? $b['tests'] : [];
+            if (!$tests) {
+                json_error('Agrega al menos una determinación', 422);
+            }
+            if (count($tests) > 80) {
+                json_error('Una plantilla admite hasta 80 determinaciones', 422);
+            }
+            $st = db()->prepare('SELECT id FROM lab_studies WHERE slug = ?');
+            $st->execute([lab_slug($name)]);
+            if ($st->fetch()) {
+                json_error('Ya existe una plantilla con ese nombre. Elige otro o usa la existente.', 422);
+            }
+
+            // Validar todo antes de escribir nada
+            $prepared = [];
+            foreach ($tests as $i => $t) {
+                $n = $i + 1;
+                if (!is_array($t)) {
+                    json_error("Determinación $n no válida", 422);
+                }
+                if (!empty($t['id'])) {
+                    $chk = db()->prepare('SELECT id, name FROM lab_tests WHERE id = ?');
+                    $chk->execute([(int)$t['id']]);
+                    $row = $chk->fetch();
+                    if (!$row) {
+                        json_error("La determinación $n ya no existe en el catálogo", 422);
+                    }
+                    $prepared[] = ['id' => (int)$row['id'], 'name' => $row['name']];
+                    continue;
+                }
+                $tName = mb_substr(trim((string)($t['name'] ?? '')), 0, 150);
+                if ($tName === '') {
+                    json_error("La determinación $n necesita nombre", 422);
+                }
+                $ranges = [];
+                foreach (is_array($t['ranges'] ?? null) ? $t['ranges'] : [] as $r) {
+                    if (!is_array($r)) {
+                        continue;
+                    }
+                    $sex = $r['sex'] ?? 'A';
+                    if (!in_array($sex, ['A', 'F', 'M'], true)) {
+                        json_error("«$tName»: el sexo de una referencia no es válido", 422);
+                    }
+                    $min = lab_num($r['min_value'] ?? null);
+                    $max = lab_num($r['max_value'] ?? null);
+                    $text = mb_substr(trim((string)($r['text_value'] ?? '')), 0, 120);
+                    $ageMin = lab_num($r['age_min'] ?? null);
+                    $ageMax = lab_num($r['age_max'] ?? null);
+                    if ($min === null && $max === null && $text === '') {
+                        continue;   // renglón vacío
+                    }
+                    if ($min !== null && $max !== null && $min > $max) {
+                        json_error("«$tName»: el mínimo de una referencia es mayor que el máximo", 422);
+                    }
+                    if ($ageMin !== null && $ageMax !== null && $ageMin > $ageMax) {
+                        json_error("«$tName»: la edad inicial de una referencia es mayor que la final", 422);
+                    }
+                    $ranges[] = [
+                        'sex' => $sex, 'age_min' => $ageMin, 'age_max' => $ageMax,
+                        'condition_label' => mb_substr(trim((string)($r['condition_label'] ?? '')), 0, 80),
+                        'min_value' => $min, 'max_value' => $max, 'text_value' => $text,
+                        'unit' => null,
+                    ];
+                }
+                $prepared[] = [
+                    'id' => 0,
+                    'name' => $tName,
+                    'unit' => mb_substr(trim((string)($t['unit'] ?? '')), 0, 40),
+                    'technique' => mb_substr(trim((string)($t['technique'] ?? '')), 0, 80) ?: $technique,
+                    'ranges' => $ranges,
+                ];
+            }
+
+            $pdo = db();
+            $reused = [];
+            $testIds = [];
+            $pdo->beginTransaction();
+            try {
+                foreach ($prepared as $p) {
+                    if ($p['id'] > 0) {
+                        $testIds[] = $p['id'];
+                        continue;
+                    }
+                    $slugKey = lab_slug_key($p['name'], $p['unit']);
+                    $ex = $pdo->prepare('SELECT id FROM lab_tests WHERE slug = ?');
+                    $ex->execute([$slugKey]);
+                    $found = $ex->fetch();
+                    if ($found) {
+                        $testIds[] = (int)$found['id'];   // ya existe: se usa tal cual, sin tocar sus rangos
+                        $reused[] = $p['name'];
+                        continue;
+                    }
+                    $testIds[] = lab_save_test(
+                        ['name' => $p['name'], 'unit' => $p['unit'], 'technique' => $p['technique']],
+                        $p['ranges'],
+                        (int)$me['id']
+                    );
+                }
+                $studyId = lab_study_save(['name' => $name], $testIds, (int)$me['id']);
+                $pdo->commit();
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log('labs/template_create: ' . $e->getMessage());
+                json_error('No se pudo crear la plantilla', 500);
+            }
+            log_activity('apps', 'lab_template_create', 'Creó la plantilla "' . $name . '" (' . count($testIds) . ' determinación(es))', 'lab_study', $studyId);
+            json_ok(['id' => $studyId, 'name' => $name, 'item_count' => count($testIds), 'reused' => $reused]);
+        }
     }
 }
 
