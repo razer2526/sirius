@@ -10,13 +10,14 @@ Esta carpeta no es documentación de usuario ni referencia de API (para eso est�
 
 ## Manuales (con capturas de pantalla)
 
-En [`manuales/`](manuales/) hay tres manuales en **Markdown** (se leen en GitHub) y en **PDF** (para imprimir o compartir). Las capturas están en `manuales/img/` y salen de un entorno de demostración con datos ficticios.
+En [`manuales/`](manuales/) hay tres manuales (más un registro de actualizaciones) en **Markdown** (se leen en GitHub) y en **PDF** (para imprimir o compartir). Las capturas están en `manuales/img/` y salen de un entorno de demostración con datos ficticios.
 
 | Manual | Para quién | PDF |
 |---|---|---|
 | [Usuario estándar](manuales/01-manual-usuario-estandar.md) | Quien trabaja en Sirius todos los días: admisión, expedientes, tareas, inventario, agenda, mensajes | [PDF](manuales/01-manual-usuario-estandar.pdf) |
 | [Usuario administrador](manuales/02-manual-usuario-administrador.md) | Quien administra: usuarios y permisos, empleados, conexiones, membretes, catálogos, respaldos | [PDF](manuales/02-manual-usuario-administrador.pdf) |
 | [Desarrollador](manuales/03-manual-desarrollador.md) | Quien mantiene o extiende el código: entorno, arquitectura, despliegue, recetas, trampas | [PDF](manuales/03-manual-desarrollador.pdf) |
+| [Registro de actualizaciones](manuales/04-actualizaciones.md) | Todos: cambios posteriores a los manuales (los manuales 01–03 **no se editan**; cada cambio se anota aquí) | [PDF](manuales/04-actualizaciones.pdf) |
 
 El manual del desarrollador **consolida y actualiza** los documentos 01–06 de esta carpeta (que siguen siendo la referencia detallada) y está verificado contra el código actual. Para regenerar los PDF: `python manuales/build_manuales.py` (requiere `pip install markdown` y Edge o Chrome).
 
