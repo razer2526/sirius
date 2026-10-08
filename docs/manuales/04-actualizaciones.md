@@ -11,12 +11,13 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-2. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-3. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-4. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-5. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-6. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+2. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+3. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+4. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+5. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+6. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+7. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
 
 ---
 
@@ -37,6 +38,21 @@ Función nueva (PR 76). No hay cambios de esquema: **no hace falta correr `setup
 - **Afecta a:** quien membreta análisis clínicos.
 - **Acción:** ninguna.
 - **Manual:** estándar, apartado 14.1 (Membretador); administrador, apartado 8 (Plantillas de Estudios).
+
+---
+
+## 9 de octubre de 2026 · Membretador: datos del paciente desde su ficha
+
+Mejora (PR 77). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Subir la ficha de identificación en las órdenes de análisis clínicos
+
+- **Qué cambió:** en **Apps → Membretador → Análisis clínicos → Nueva orden** hay una tarjeta **Datos del paciente** con el botón **Subir ficha (PDF)**. Al subir la ficha de identificación del paciente (la que genera Admisión), Sirius llena solo: **nombre, sexo, edad, fecha de nacimiento y teléfono**; y, si estaban vacíos, el **folio**, el **médico solicitante** y la **toma de muestra**. Todo sigue editable, y el llenado **manual** funciona igual que antes.
+- **Referencias al paciente:** con el sexo y la edad que trae la ficha, los **valores de referencia** de las determinaciones de las plantillas se ajustan al paciente (por ejemplo, hemoglobina de mujer o de hombre). Las referencias que tú hayas editado a mano **no se tocan**. Lo que ya habías escrito en los demás campos del formulario se conserva.
+- **Cuándo usarlo:** antes o después de subir el PDF del laboratorio. Los datos del paciente que traiga ese PDF y los de la ficha se combinan: la ficha completa lo que el PDF no trae (teléfono, fecha de nacimiento…).
+- **Afecta a:** quien membreta análisis clínicos.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 14.1 (Membretador).
 
 ---
 
