@@ -21,7 +21,9 @@ echo json_encode([
     'start_url'        => './index.php',
     'scope'            => './',
     'display'          => 'standalone',
-    'orientation'      => 'portrait',
+    // 'any': la app se puede girar. Con 'portrait' la aplicación instalada quedaba bloqueada en vertical
+    // y en una tablet no se podía usar en horizontal.
+    'orientation'      => 'any',
     'background_color' => '#f1f5f9',
     'theme_color'      => '#4f46e5',
     'icons'            => [
