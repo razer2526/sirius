@@ -22,8 +22,8 @@ const NUMBERS = [
 ];
 
 const SIGNER_FIELDS = [
-  { key: 'name',    label: 'Responsable sanitario', placeholder: 'Dr. Marcos Rodríguez Cota' },
-  { key: 'license', label: 'Cédula profesional',    placeholder: 'Ced. Prof. 1141159 U.N.A.M.' },
+  { key: 'name',    label: 'Responsable sanitario', placeholder: 'Dr. Nombre Apellido Apellido' },
+  { key: 'license', label: 'Cédula profesional',    placeholder: 'Ced. Prof. 0000000' },
   { key: 'role',    label: 'Cargo',                 placeholder: 'Responsable Sanitario' },
 ];
 

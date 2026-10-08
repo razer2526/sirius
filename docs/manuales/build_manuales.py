@@ -30,6 +30,8 @@ MANUALES = [
      'Usuarios y permisos, empleados, conexiones externas, membretes, catálogos, respaldos y rutina de administración.'),
     ('03-manual-desarrollador', 'Manual del desarrollador',
      'Arquitectura, entorno, base de datos, frontend, PWA, despliegue, recetas para extender el sistema y trampas conocidas.'),
+    ('04-actualizaciones', 'Registro de actualizaciones',
+     'Cambios posteriores a la versión 1.0 de los manuales: qué cambió, a quién afecta y qué hay que hacer.'),
 ]
 
 BROWSERS = [
