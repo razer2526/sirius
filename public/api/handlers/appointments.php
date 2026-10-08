@@ -271,7 +271,7 @@ function appointments_sync_to_google(int $id): void
             );
         }
         db()->prepare('UPDATE appointments SET google_event_id = ?, google_updated_at = ? WHERE id = ?')
-            ->execute([$result['id'] ?? $appt['google_event_id'], $result['updated'] ?? null, $id]);
+            ->execute([$result['id'] ?? $appt['google_event_id'], gcal_ts($result['updated'] ?? null), $id]);
     } catch (Throwable $e) {
         error_log('appointments_sync_to_google #' . $id . ': ' . $e->getMessage());
     }

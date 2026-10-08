@@ -6,6 +6,13 @@
  * cambió desde la última vez. Un evento creado/editado/cancelado directo en Google
  * se refleja en `appointments`; si el evento no tiene origen en Sirius (no existe
  * un google_event_id que lo enlace), se importa como cita general nueva.
+ *
+ * Reglas que evitan inundar de avisos al equipo:
+ *  - La primera sincronización (sin syncToken) importa en silencio: no avisa por cada evento.
+ *  - Después, los cambios de una corrida se avisan juntos: hasta CALSYNC_NOTIFY_INDIVIDUAL
+ *    uno por uno; más que eso, un solo aviso-resumen.
+ *  - Un evento que ya está al día no se vuelve a procesar ni a avisar (ver gcal_ts()).
+ *  - Un evento que falla no detiene a los demás.
  */
 
 require_once __DIR__ . '/google_calendar.php';
@@ -13,6 +20,9 @@ require_once __DIR__ . '/log.php';
 require_once __DIR__ . '/webpush.php';
 
 const CALSYNC_TIMEZONE = 'America/Mexico_City';
+const CALSYNC_PAST_MONTHS = 1;      // primera sincronización: desde hace un mes…
+const CALSYNC_FUTURE_MONTHS = 6;    // …hasta dentro de seis (los recurrentes se expanden sin fin)
+const CALSYNC_NOTIFY_INDIVIDUAL = 3;
 
 /** Punto de entrada del cron: trae los cambios pendientes de Google. */
 function gcal_sync_pull(bool $isRetry = false): array
@@ -20,9 +30,12 @@ function gcal_sync_pull(bool $isRetry = false): array
     $cfg = gcal_config();
     $calendarId = $cfg['calendar_id'];
     $syncToken = $cfg['sync_token'];
-    $stats = ['imported' => 0, 'updated' => 0, 'cancelled' => 0, 'skipped' => 0];
+    $stats = ['imported' => 0, 'updated' => 0, 'cancelled' => 0, 'skipped' => 0, 'errors' => 0, 'first_error' => ''];
+    $changes = [];
     $pageToken = null;
     $nextSyncToken = null;
+    // Sin token (primera vez o reinicio) no se avisa: se importaría de golpe un mes de agenda.
+    $silent = ($syncToken === '');
 
     do {
         $query = ['singleEvents' => 'true', 'showDeleted' => 'true', 'maxResults' => 250];
@@ -31,9 +44,10 @@ function gcal_sync_pull(bool $isRetry = false): array
         } elseif ($syncToken !== '') {
             $query['syncToken'] = $syncToken;
         } else {
-            // Primera sincronización: no hay de dónde partir, se limita la ventana
-            // para no importar años de historial de la cuenta conectada.
-            $query['timeMin'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-1 month'));
+            // Primera sincronización: no hay de dónde partir, se limita la ventana para no
+            // importar años de historial ni los recurrentes expandidos hasta el infinito.
+            $query['timeMin'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('-' . CALSYNC_PAST_MONTHS . ' month'));
+            $query['timeMax'] = gmdate('Y-m-d\TH:i:s\Z', strtotime('+' . CALSYNC_FUTURE_MONTHS . ' month'));
         }
 
         try {
@@ -56,7 +70,16 @@ function gcal_sync_pull(bool $isRetry = false): array
         }
 
         foreach ($resp['items'] ?? [] as $event) {
-            $result = apply_gcal_event($event);
+            try {
+                $result = apply_gcal_event($event, $changes);
+            } catch (Throwable $e) {
+                // Un evento problemático no debe impedir procesar el resto ni dejar la corrida a medias.
+                $result = 'errors';
+                if ($stats['first_error'] === '') {
+                    $stats['first_error'] = $e->getMessage();
+                }
+                error_log('gcal_sync_pull evento ' . ($event['id'] ?? '?') . ': ' . $e->getMessage());
+            }
             $stats[$result] = ($stats[$result] ?? 0) + 1;
         }
         $pageToken = $resp['nextPageToken'] ?? null;
@@ -65,14 +88,22 @@ function gcal_sync_pull(bool $isRetry = false): array
         }
     } while ($pageToken);
 
-    if ($nextSyncToken !== null) {
+    // Con errores no se avanza el token: la próxima corrida vuelve a pedir esos cambios
+    // (los que ya quedaron al día se saltan solos y no vuelven a avisar).
+    if ($nextSyncToken !== null && $stats['errors'] === 0) {
         gcal_save(['sync_token' => $nextSyncToken]);
+    }
+    if (!$silent) {
+        notify_gcal_changes($changes);
     }
     return $stats;
 }
 
-/** Aplica un evento de Google a `appointments`. Devuelve: imported|updated|cancelled|skipped. */
-function apply_gcal_event(array $event): string
+/**
+ * Aplica un evento de Google a `appointments`. Devuelve: imported|updated|cancelled|skipped.
+ * Los cambios que ameritan aviso se agregan a $changes; quien llama decide cómo avisarlos.
+ */
+function apply_gcal_event(array $event, array &$changes = []): string
 {
     $eventId = (string)($event['id'] ?? '');
     if ($eventId === '') {
@@ -82,7 +113,23 @@ function apply_gcal_event(array $event): string
     $st = db()->prepare('SELECT * FROM appointments WHERE google_event_id = ?');
     $st->execute([$eventId]);
     $existing = $st->fetch();
-    $updatedAt = $event['updated'] ?? null;
+    $updatedAt = gcal_ts($event['updated'] ?? null);
+
+    // Evento que Sirius creó pero cuyo id no quedó guardado (falló al anotarlo): se vuelve a enlazar
+    // por la propiedad privada que Sirius le puso, en vez de importarlo como una cita duplicada.
+    if (!$existing) {
+        $siriusId = (int)($event['extendedProperties']['private']['sirius_appointment_id'] ?? 0);
+        if ($siriusId > 0) {
+            $st = db()->prepare("SELECT * FROM appointments WHERE id = ? AND (google_event_id IS NULL OR google_event_id = '')");
+            $st->execute([$siriusId]);
+            $own = $st->fetch();
+            if ($own) {
+                db()->prepare('UPDATE appointments SET google_event_id = ?, google_updated_at = ? WHERE id = ?')
+                    ->execute([$eventId, $updatedAt, $own['id']]);
+                return 'skipped';
+            }
+        }
+    }
 
     if (($event['status'] ?? '') === 'cancelled') {
         if ($existing && $existing['status'] !== 'cancelada') {
@@ -92,29 +139,29 @@ function apply_gcal_event(array $event): string
                 'calendario', 'appointment_cancel_google',
                 'Google canceló "' . $existing['title'] . '"', 'appointment', (int)$existing['id']
             );
-            notify_appt_change($existing, 'Cita cancelada', "\"{$existing['title']}\" fue cancelada desde Google Calendar.");
+            $changes[] = ['kind' => 'cancelled', 'assigned' => $existing['assigned_user_id'] ?? null,
+                          'title' => 'Cita cancelada', 'body' => "\"{$existing['title']}\" fue cancelada desde Google Calendar."];
             return 'cancelled';
         }
         return 'skipped';
     }
 
-    // Evita reprocesar el eco de un cambio que Sirius acaba de empujar a Google.
-    if ($existing && $existing['google_updated_at'] !== null && $updatedAt !== null
-        && $existing['google_updated_at'] >= $updatedAt) {
-        return 'skipped';
+    // Evita reprocesar un evento ya al día o el eco de un cambio que Sirius acaba de empujar a Google.
+    if ($existing && $updatedAt !== null) {
+        $stored = gcal_ts($existing['google_updated_at'] ?? null);
+        if ($stored !== null && $stored >= $updatedAt) {
+            return 'skipped';
+        }
     }
 
-    $start = $event['start']['dateTime'] ?? null;
-    $end = $event['end']['dateTime'] ?? null;
-    if (!$start || !$end) {
-        return 'skipped'; // evento de día completo (sin hora): fuera de alcance por ahora
+    [$startSql, $endSql] = gcal_event_bounds($event);
+    if ($startSql === null) {
+        return 'skipped';
     }
 
     $title = trim((string)($event['summary'] ?? '')) ?: '(Sin título)';
     $location = trim((string)($event['location'] ?? '')) ?: null;
     $notes = trim((string)($event['description'] ?? '')) ?: null;
-    $startSql = gcal_to_sql_datetime($start);
-    $endSql = gcal_to_sql_datetime($end);
     $attendees = [];
     foreach ($event['attendees'] ?? [] as $a) {
         if (!empty($a['email']) && empty($a['self'])) {
@@ -136,10 +183,8 @@ function apply_gcal_event(array $event): string
             'calendario', 'appointment_update_google',
             'Google actualizó "' . $title . '"', 'appointment', (int)$existing['id']
         );
-        notify_appt_change(
-            $existing, 'Cita actualizada',
-            "\"$title\" cambió · " . date('d/m H:i', strtotime($startSql))
-        );
+        $changes[] = ['kind' => 'updated', 'assigned' => $existing['assigned_user_id'] ?? null,
+                      'title' => 'Cita actualizada', 'body' => "\"$title\" cambió · " . date('d/m H:i', strtotime($startSql))];
         return 'updated';
     }
 
@@ -153,24 +198,81 @@ function apply_gcal_event(array $event): string
         'calendario', 'appointment_import_google',
         'Importó cita de Google "' . $title . '"', 'appointment', $newId
     );
-    // Sin assigned_user_id conocido (se importa como cita general): no hay a quién
-    // dirigir un aviso individual, así que se avisa a todos los que ven el módulo.
-    notify_appt_change(
-        ['assigned_user_id' => null], 'Nueva cita en el calendario',
-        "\"$title\" · " . date('d/m H:i', strtotime($startSql))
-    );
+    // Sin assigned_user_id (se importa como cita general): se avisa a todos los que ven el módulo.
+    $changes[] = ['kind' => 'imported', 'assigned' => null,
+                  'title' => 'Nueva cita en el calendario', 'body' => "\"$title\" · " . date('d/m H:i', strtotime($startSql))];
     return 'imported';
 }
 
 /**
- * Avisa del lado de Sirius un cambio que llegó de Google Calendar (import, edición
- * o cancelación) — a diferencia de un cambio hecho en Sirius, aquí nadie en el
- * equipo sabe todavía qué pasó, así que sí amerita avisar aunque solo haya cambiado
- * el horario o los detalles (ver appointments.php para el criterio del lado Sirius,
- * más conservador porque quien edita ya sabe lo que cambió).
+ * Inicio y fin de un evento de Google en hora local de Sirius ('Y-m-d H:i:s').
+ * Los eventos de todo el día (start.date, sin hora) se importan de las 00:00 a las 23:59;
+ * en Google la fecha de fin de esos eventos es exclusiva (el día siguiente al último).
+ * @return array{0:?string,1:?string} [null, null] si el evento no tiene fechas usables
+ */
+function gcal_event_bounds(array $event): array
+{
+    $start = $event['start']['dateTime'] ?? null;
+    $end = $event['end']['dateTime'] ?? null;
+    if ($start && $end) {
+        return [gcal_to_sql_datetime($start), gcal_to_sql_datetime($end)];
+    }
+    $startDay = $event['start']['date'] ?? null;
+    $endDay = $event['end']['date'] ?? null;
+    if ($startDay && preg_match('/^\d{4}-\d{2}-\d{2}$/', $startDay)) {
+        $last = $startDay;
+        if ($endDay && preg_match('/^\d{4}-\d{2}-\d{2}$/', $endDay) && $endDay > $startDay) {
+            $last = date('Y-m-d', strtotime($endDay . ' -1 day'));
+        }
+        return [$startDay . ' 00:00:00', $last . ' 23:59:00'];
+    }
+    return [null, null];
+}
+
+/**
+ * Avisa los cambios de una corrida: hasta CALSYNC_NOTIFY_INDIVIDUAL uno por uno; si hay más,
+ * un solo aviso-resumen (así un lote grande no llena de avisos los dispositivos del equipo).
+ * Nunca lanza: un push roto no debe poder tirar el resto de la corrida.
+ */
+function notify_gcal_changes(array $changes): void
+{
+    if (!$changes) {
+        return;
+    }
+    try {
+        if (count($changes) <= CALSYNC_NOTIFY_INDIVIDUAL) {
+            foreach ($changes as $c) {
+                notify_appt_change(['assigned_user_id' => $c['assigned']], $c['title'], $c['body']);
+            }
+            return;
+        }
+        $by = ['imported' => 0, 'updated' => 0, 'cancelled' => 0];
+        foreach ($changes as $c) {
+            $by[$c['kind']]++;
+        }
+        $parts = [];
+        if ($by['imported']) {
+            $parts[] = $by['imported'] . ' nueva(s)';
+        }
+        if ($by['updated']) {
+            $parts[] = $by['updated'] . ' actualizada(s)';
+        }
+        if ($by['cancelled']) {
+            $parts[] = $by['cancelled'] . ' cancelada(s)';
+        }
+        notify_appt_change(['assigned_user_id' => null], 'Cambios en el calendario',
+            count($changes) . ' cambios desde Google Calendar: ' . implode(', ', $parts) . '.');
+    } catch (Throwable $e) {
+        error_log('notify_gcal_changes: ' . $e->getMessage());
+    }
+}
+
+/**
+ * Avisa del lado de Sirius un cambio que llegó de Google Calendar — a diferencia de un cambio
+ * hecho en Sirius, aquí nadie en el equipo sabe todavía qué pasó (ver appointments.php para el
+ * criterio del lado Sirius, más conservador porque quien edita ya sabe lo que cambió).
  *
- * Nunca lanza: un push roto no debe poder tirar el resto del lote del cron ni
- * impedir que se guarde el syncToken al final de gcal_sync_pull().
+ * Nunca lanza.
  */
 function notify_appt_change(array $appt, string $title, string $body): void
 {
