@@ -5,6 +5,18 @@ Options -Indexes
   Header set X-Content-Type-Options "nosniff"
   Header set X-Frame-Options "SAMEORIGIN"
   Header set Referrer-Policy "same-origin"
+
+  # Content-Security-Policy en modo SOLO REPORTAR: no bloquea nada; cada incumplimiento llega a
+  # csp_report.php y queda en el error_log. Cuando no aparezcan reportes legítimos durante unos días,
+  # se pasa a modo estricto cambiando "Content-Security-Policy-Report-Only" por "Content-Security-Policy".
+  # Permitido: lo propio, Leaflet desde cdnjs y las teselas de OpenStreetMap (Cobertura). Los estilos
+  # en línea se toleran (hay atributos style=); los scripts en línea NO: la app no usa ninguno.
+  Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; img-src 'self' data: blob: https://*.tile.openstreetmap.org https://cdnjs.cloudflare.com; font-src 'self' data:; connect-src 'self'; media-src 'self' blob: data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'; report-uri /csp_report.php"
+
+  # La página de diagnóstico de la báscula lleva un script en línea (herramienta solo para el desarrollador).
+  <FilesMatch "^bascula_prueba\.php$">
+    Header set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'self'"
+  </FilesMatch>
 </IfModule>
 
 <IfModule mod_mime.c>

@@ -182,3 +182,4 @@ El sidebar, el router, los permisos y la matriz de Usuarios lo recogen automáti
 - Permisos verificados en servidor por módulo y por rol (doble chequeo en acciones de admin).
 - `includes/` bloqueado por `.htaccess`; el service worker jamás cachea `/api/` ni datos clínicos.
 - Borrado de pacientes = borrado lógico (`is_deleted`), la información clínica no se destruye.
+- Content-Security-Policy en modo *solo reportar* (`.htaccess` + `csp_report.php`); la app no usa scripts en línea.

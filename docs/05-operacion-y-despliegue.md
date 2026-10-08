@@ -139,7 +139,7 @@ Servido desde PHP como `application/manifest+json` para que los iconos sigan al 
 
 > **HTTPS forzado:** `public/.htaccess` redirige a HTTPS (excepto `/.well-known/`, que AutoSSL necesita por HTTP, y sin bucle si un proxy manda `X-Forwarded-Proto`). Como `php -S` ignora `.htaccess`, solo se ve en el servidor.
 >
-> ⚠️ Hueco que sigue abierto: **no hay cabecera CSP**. Es obligatoria en un producto comercial.
+> **Content-Security-Policy (modo solo reportar):** `public/.htaccess` manda `Content-Security-Policy-Report-Only`: lo propio (`'self'`), Leaflet desde cdnjs, teselas de OpenStreetMap, estilos en línea tolerados y **ningún script en línea** (la app no usa ninguno; `bascula_prueba.php` tiene su propia política). No bloquea nada: cada incumplimiento llega a `csp_report.php`, que lo deja en el `error_log` (cPanel → Errores, líneas que empiezan con `CSP:`). Cuando pasen unos días sin reportes legítimos se pasa a modo estricto cambiando `Content-Security-Policy-Report-Only` por `Content-Security-Policy` en esa línea. Para verla en local, `php -S` no lee `.htaccess`: `tools\php\php.exe -S localhost:8081 -t public tests/csp_router.php`. Una prueba (`tests/run.php`) impide que se agreguen scripts o manejadores en línea (`onclick=`…) sin darse cuenta.
 
 ---
 
