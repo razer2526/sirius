@@ -553,6 +553,23 @@ async function renderOrderForm(root, category, cat, docType, docId) {
           ${data.status === 'revisado' ? '<span class="rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Revisado</span>' : ''}
         </div>
 
+        <section class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-slate-800">Datos del paciente</p>
+              <p id="ficha-summary" class="text-xs ${data.patient.nombre ? 'text-emerald-700' : 'text-slate-500'}">
+                ${data.patient.nombre
+                  ? `Datos de ${escapeHtml(data.patient.nombre)} cargados. Puedes corregirlos en el formulario.`
+                  : 'Sube su ficha de identificación (PDF) para llenarlos solos, o captúralos a mano en el formulario.'}
+              </p>
+            </div>
+            <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg bg-white px-4 py-2.5 text-sm font-semibold text-indigo-700 shadow-sm ring-1 ring-indigo-200 hover:bg-indigo-50">
+              ${icon('upload', 'h-4 w-4')} <span id="ficha-label">Subir ficha (PDF)</span>
+              <input type="file" id="ficha-file" accept="application/pdf" class="hidden">
+            </label>
+          </div>
+        </section>
+
         ${seeded ? `
         <section class="rounded-2xl border-2 border-dashed border-indigo-300 bg-indigo-50 p-6 text-center">
           <p class="text-sm font-semibold text-indigo-900">Plantilla lista · faltan los resultados</p>
@@ -643,6 +660,7 @@ async function renderOrderForm(root, category, cat, docType, docId) {
     paintStudies(root);
     wireUpload(root, '#lab-file');
     wireUpload(root, '#lab-file-2');
+    wireFicha(root);
     if (data.studies.length) wireOrderButtons(root);
   };
 
@@ -708,6 +726,7 @@ async function renderOrderForm(root, category, cat, docType, docId) {
       el.addEventListener('input', () => {
         const [si, ii, field] = el.dataset.cell.split('.');
         data.studies[si].items[ii][field] = el.value;
+        if (field === 'reference') data.studies[si].items[ii].refEdited = true;
         if (field === 'value') refreshReviewGate(root);
       });
     });
@@ -821,6 +840,75 @@ async function renderOrderForm(root, category, cat, docType, docId) {
         paint();
       } catch (e) {
         if (label) label.textContent = 'Seleccionar PDF';
+        toast(e.message, 'error');
+      } finally {
+        input.value = '';
+      }
+    });
+  };
+
+  /** Pasa a `data` lo que ya se escribió a mano en el formulario, para no perderlo al repintar. */
+  const syncFromForm = () => {
+    if (!root.querySelector('#order-form')) return;
+    const c = collect();
+    data.patient = { ...data.patient, ...c.patient_data };
+    data.clinical = { ...data.clinical, ...c.clinical_data };
+    data.folio = c.folio;
+    data.notes = c.notes;
+  };
+
+  /**
+   * Autollenado de los datos personales desde la ficha de identificación (PDF de Admisión).
+   * Los datos del paciente se sobrescriben con los de la ficha; el médico y la toma de muestra solo
+   * se llenan si estaban vacíos. Con el sexo y la edad ya conocidos se recalculan los valores de
+   * referencia de las determinaciones que nadie editó a mano.
+   */
+  const wireFicha = (root) => {
+    const input = root.querySelector('#ficha-file');
+    const label = root.querySelector('#ficha-label');
+    if (!input) return;
+    input.addEventListener('change', async () => {
+      const file = input.files[0];
+      if (!file) return;
+      label.textContent = 'Leyendo…';
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        const res = await fetch('api/index.php?r=documents/parse_ficha', {
+          method: 'POST',
+          headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
+          body: fd,
+        });
+        const json = await res.json();
+        if (!json.ok) throw new Error(json.error);
+        const f = json.data.fields;
+        if (!json.data.found) {
+          label.textContent = 'Subir ficha (PDF)';
+          toast('No se reconocieron campos en esa ficha; captúralos a mano', 'info');
+          return;
+        }
+        syncFromForm();
+        const put = (obj, k, v) => { if (v) obj[k] = v; };
+        put(data.patient, 'nombre', f.nombre);
+        put(data.patient, 'sexo', f.sexo);
+        put(data.patient, 'edad', f.edad);
+        put(data.patient, 'telefono', f.telefono);
+        put(data.patient, 'fecha_nacimiento', dmyToISO(f.fecha_nacimiento));
+        if (!data.folio && f.folio) data.folio = f.folio;
+        if (!data.clinical.medico && f.medico) data.clinical.medico = f.medico;
+        if (!data.clinical.toma_muestra && f.fecha_hora) data.clinical.toma_muestra = dmyToISO(f.fecha_hora);
+
+        // Con sexo y edad conocidos, las referencias de las plantillas se ajustan al paciente.
+        let adjusted = 0;
+        data.studies.forEach((st) => st.items.forEach((it) => {
+          if (it.dropped || it.refEdited || !(it.ranges && it.ranges.length)) return;
+          const next = referenceFor(it, it.condition || '');
+          if (next && next !== it.reference) { it.reference = next; adjusted++; }
+        }));
+        toast(`Ficha leída: ${json.data.found} campos reconocidos${adjusted ? ` · ${adjusted} referencia(s) ajustadas al sexo y la edad` : ''}`);
+        paint();
+      } catch (e) {
+        label.textContent = 'Subir ficha (PDF)';
         toast(e.message, 'error');
       } finally {
         input.value = '';
