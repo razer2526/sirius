@@ -156,6 +156,52 @@ test('el estándar no entra a Admin Tools ni a lo no concedido (403)', function 
     eq(200, $std->json('GET', '/api/index.php?r=profile/get', null)['status'], 'perfil siempre disponible');
 });
 
+echo "\nPlantillas desde el Membretador\n";
+$tplBody = fn(string $name, array $tests) => ['name' => $name, 'technique' => 'Espectrofotometría', 'tests' => $tests];
+$glu = ['name' => 'Glucosa T', 'unit' => 'mg/dL', 'ranges' => [['sex' => 'A', 'min_value' => '70', 'max_value' => '100']]];
+test('sin el privilegio de Membretador no se pueden crear plantillas (403); con él, sí', function () use ($admin, &$csrf, $base, $tplBody, $glu) {
+    foreach ([['solo_apps', ['apps' => []]], ['con_memb', ['apps' => ['membretador' => true]]]] as [$u, $perm]) {
+        $r = $admin->json('POST', '/api/index.php?r=users/create', ['username' => $u, 'full_name' => $u, 'password' => 'Clave-prueba-1', 'role' => 'estandar', 'permissions' => $perm], $csrf);
+        eq(200, $r['status'], $r['body']);
+    }
+    $a = new Http($base);
+    $ca = $a->login('solo_apps', 'Clave-prueba-1');
+    eq(403, $a->json('POST', '/api/index.php?r=labs/template_create', $tplBody('Plantilla X', [$glu]), $ca)['status']);
+    $b = new Http($base);
+    $cb = $b->login('con_memb', 'Clave-prueba-1');
+    $r = $b->json('POST', '/api/index.php?r=labs/template_create', $tplBody('Perfil de prueba', [$glu, ['name' => 'Cetonas T', 'ranges' => [['sex' => 'A', 'text_value' => 'Negativo']]]]), $cb);
+    eq(200, $r['status'], $r['body']);
+    eq(2, $r['json']['data']['item_count']);
+});
+test('la plantilla se crea con técnica, unidad y referencias, y sale en la lista', function () use ($admin) {
+    $list = $admin->json('GET', '/api/index.php?r=labs/studies', null)['json']['data']['studies'];
+    $s = array_values(array_filter($list, fn($x) => $x['name'] === 'Perfil de prueba'))[0] ?? null;
+    ok($s !== null && $s['item_count'] === 2, 'la plantilla no aparece en la lista');
+    $seed = $admin->json('GET', '/api/index.php?r=labs/seed&study_ids=' . $s['id'] . '&sex=F&age=30', null)['json']['data']['studies'][0]['items'];
+    eq('Glucosa T', $seed[0]['name']);
+    eq('Espectrofotometría', $seed[0]['technique']);
+    eq('mg/dL', $seed[0]['unit']);
+    eq('Negativo', implode('', $seed[1]['applicable']));
+});
+test('un nombre repetido se rechaza y una determinación existente se reutiliza sin tocar sus referencias', function () use ($admin, &$csrf, $tplBody) {
+    $dup = $admin->json('POST', '/api/index.php?r=labs/template_create', ['name' => 'perfil de PRUEBA', 'tests' => [['name' => 'Otra', 'ranges' => []]]], $csrf);
+    eq(422, $dup['status'], 'mismo nombre (sin importar mayúsculas)');
+    $changed = ['name' => 'Glucosa T', 'unit' => 'mg/dL', 'ranges' => [['sex' => 'A', 'min_value' => '1', 'max_value' => '2']]];
+    $r = $admin->json('POST', '/api/index.php?r=labs/template_create', $tplBody('Segundo perfil', [$changed]), $csrf);
+    eq(200, $r['status'], $r['body']);
+    eq(['Glucosa T'], $r['json']['data']['reused']);
+    $seed = $admin->json('GET', '/api/index.php?r=labs/seed&study_ids=' . $r['json']['data']['id'] . '&sex=F&age=30', null)['json']['data']['studies'][0]['items'];
+    ok(str_contains(implode('', $seed[0]['applicable']), '70'), 'las referencias existentes no deben cambiar: ' . json_encode($seed[0]['applicable']));
+});
+test('se validan nombre, determinaciones y rangos', function () use ($admin, &$csrf) {
+    $post = fn(array $b) => $admin->json('POST', '/api/index.php?r=labs/template_create', $b, $csrf)['status'];
+    eq(422, $post(['name' => '', 'tests' => [['name' => 'A']]]), 'sin nombre');
+    eq(422, $post(['name' => 'Vacía', 'tests' => []]), 'sin determinaciones');
+    eq(422, $post(['name' => 'Rango malo', 'tests' => [['name' => 'A', 'ranges' => [['sex' => 'A', 'min_value' => '10', 'max_value' => '5']]]]]), 'mínimo mayor que máximo');
+    eq(422, $post(['name' => 'Sexo malo', 'tests' => [['name' => 'A', 'ranges' => [['sex' => 'X', 'min_value' => '1']]]]]), 'sexo inválido');
+    eq(422, $post(['name' => 'Sin nombre det', 'tests' => [['name' => '']]]), 'determinación sin nombre');
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

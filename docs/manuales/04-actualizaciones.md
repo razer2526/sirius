@@ -11,11 +11,32 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-2. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-3. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-4. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-5. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+2. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+3. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+4. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+5. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+6. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 9 de octubre de 2026 · Membretador: crear plantillas de estudio
+
+Función nueva (PR 76). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### «Crear plantilla» dentro del Membretador
+
+- **Qué cambió:** en **Apps → Membretador → Análisis clínicos** hay un botón nuevo, **Crear plantilla** (en la lista de órdenes y en la pantalla «¿Qué estudios vas a membretar?»). Abre un asistente que pregunta:
+  1. el **nombre del estudio**;
+  2. la **técnica** (se aplica a todas las determinaciones; se puede cambiar en cada una);
+  3. las **determinaciones**: nombre, unidad y sus **valores de referencia**, con filas para distinto sexo, edad o condición, o un texto (por ejemplo «Negativo»). También se pueden agregar determinaciones que **ya existen en el catálogo** buscándolas.
+- Al guardar, la plantilla queda **seleccionada** y se continúa con la orden. El reporte sale con **el mismo formato de siempre** (técnica bajo cada determinación, resultado, unidad y referencias del paciente).
+- **Quién puede usarlo:** quien tenga el **privilegio de Membretador** (el administrador lo tiene siempre). Antes, las plantillas solo se creaban en Admin Tools (solo administradores).
+- **Qué no hace:** nunca sobrescribe. Un **nombre de plantilla repetido se rechaza**, y una determinación que **ya existe** en el catálogo (mismo nombre y unidad) se usa tal cual, sin cambiar sus referencias, y el asistente avisa cuáles fueron. Para corregir referencias ya guardadas se sigue usando **Admin Tools → Plantillas de Estudios**.
+- **Consejo:** si los valores cambian por sexo, usa una fila **Femenino** y otra **Masculino**, sin «Ambos sexos»: «Ambos sexos» se muestra también a mujeres y a hombres, y el asistente avisa si se mezclan.
+- **Afecta a:** quien membreta análisis clínicos.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 14.1 (Membretador); administrador, apartado 8 (Plantillas de Estudios).
 
 ---
 

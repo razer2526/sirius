@@ -243,6 +243,8 @@ Una plantilla fija qué determinaciones lleva un estudio y en qué orden; los ra
 
 **Acciones:** `studies_list/get/save/delete`, `tests_search`, `test_save`, `test_delete`, `propose_from_pdf`
 
+**Atajo desde el Membretador:** `labs/template_create` (handler `labs`, módulo `apps`) crea una plantilla completa —nombre, técnica y determinaciones con sus referencias— para quien tiene el flag `membretador` (el administrador lo hereda), con el asistente `assets/js/lab_template_wizard.js`. A diferencia de `studies_save`/`test_save`, **nunca sobrescribe**: rechaza un nombre de plantilla repetido y reutiliza tal cual una determinación que ya está en el catálogo (mismo nombre y unidad), para que crear una plantilla no pueda cambiar los intervalos de otros reportes. Las referencias existentes se siguen editando solo en Admin Tools.
+
 Rangos por sexo y edad no significan nada fuera de diagnóstico. (El núcleo genérico escondido: "ítem compuesto = lista ordenada de atributos con límites de validación".)
 
 ### 🟢 `whatsapp_config` — WhatsApp: Configuración *(oculto)*
