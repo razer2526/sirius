@@ -11,9 +11,24 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-2. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-3. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+2. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+3. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+4. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 8 de octubre de 2026 · Tablet: la app ya se puede girar
+
+Corrección del bloqueo de orientación (PR 75). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### La aplicación instalada ya no se bloquea en vertical
+
+- **Qué pasaba:** la configuración de la aplicación instalada (el manifest) pedía orientación vertical fija, así que en una **tablet** Sirius se abría siempre en vertical y no se podía usar en horizontal aunque se girara el equipo.
+- **Qué cambió:** ahora permite cualquier orientación. En horizontal (1024 píxeles o más de ancho) se ve el menú lateral fijo, igual que en una computadora; en vertical, el menú se oculta tras el botón de las tres rayas.
+- **Afecta a:** quien usa Sirius **instalada** como aplicación en Android (tablet o teléfono). En el navegador normal nunca hubo bloqueo.
+- **Acción:** Android actualiza la aplicación instalada por su cuenta, pero puede tardar **hasta un día**. Para verlo de inmediato: **desinstalar la aplicación de la tablet y volver a instalarla** desde el navegador (Configuración → Instalar la app). También hay que tener activado el giro automático de la tablet.
+- **Manual:** estándar, apartados 3.3 (Sirius en el teléfono) y 16.
 
 ---
 
