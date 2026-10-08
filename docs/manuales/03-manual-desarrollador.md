@@ -456,7 +456,7 @@ Filosofía: **plantillas de cadena con `escapeHtml`**, `innerHTML =` para cambia
 - **Sin `skipWaiting()` automático**: una versión nueva espera hasta que la página manda `{type:'SKIP_WAITING'}` (botón *Buscar actualizaciones* en Configuración). Nadie se actualiza a media sesión.
 - Segundo canal de versión: `version.php` devuelve `{"version": BUILD_VERSION}`; Configuración lo compara con `<meta name="app-version">`, sin depender del ciclo de vida del SW.
 
-> ⚠️ **Al agregar un archivo JS/CSS/JSON, agrégalo a `SHELL`.** No hay red de seguridad. Al revisar este manual se encontraron 4 archivos que faltan (§17).
+> ⚠️ **Al agregar un archivo JS/CSS/JSON, agrégalo a `SHELL`.** No hay red de seguridad. Al revisar este manual faltaban 4 y se corrigieron (§17); la comprobación se repite con un bucle sobre `assets/js/` contra `sw.js`.
 
 ### 10.2 Captura offline (`outbox.js`)
 
@@ -694,7 +694,7 @@ Constante `TRASH_<X>_COLUMNS`, `case` en `trash_restore_row()`, `trash_archive()
 | **`php -S`** | Monohilo; ignora `.htaccess` | No sacar conclusiones de seguridad/cabeceras en local |
 | **SQLite bloqueado** | Un script externo abierto mientras el servidor escribe | Cerrar conexiones; WAL ayuda pero no elimina |
 | **Ω y otros no-Latin-1 en PDF** | Salen como `?` | Reemplazar el texto («ohmios») |
-| **`sex` NOT NULL en rangos de referencia** | `lab_save_test` valida con `$r['sex'] ?? 'A'` pero inserta `$r['sex']`: si la clave viene presente con `null`, se inserta `NULL` y falla la restricción | Mandar siempre `'A'`/`'F'`/`'M'` (hallazgo 4 de §17) |
+| **`sex` NOT NULL en rangos de referencia** | La columna es `NOT NULL DEFAULT 'A'`; un `NULL` explícito rompe el `INSERT` (así falló una vez `lab_save_test`; ya se normaliza a `'A'`) | Mandar siempre `'A'`/`'F'`/`'M'` o dejar que el servidor normalice |
 | **«Recuérdame» y la rotación** | El token se rota en cada uso: si dos peticiones llegan a la vez con la misma cookie, la segunda no encuentra el selector (ya borrado) y se queda sin sesión | Es raro y se corrige iniciando sesión de nuevo |
 | **`trash_insert_exact`** | Reinserta el id original | No depender de ids únicos tras purgar/restaurar |
 | **Tool-calling solo Gemini** | Con OpenAI/Claude `$tools` se ignora | Texto de formato fijo o portar el *tool-calling* |
@@ -720,23 +720,22 @@ Constante `TRASH_<X>_COLUMNS`, `case` en `trash_restore_row()`, `trash_archive()
 5. **Sin cabecera CSP** y **bloque HTTPS de `.htaccess` comentado** (HostGator ya sirve SSL, pero la redirección forzada debe activarse).
 6. `install/` debería **borrarse o bloquearse** en producción tras instalar (el asistente se autobloquea, pero `setup.php` sigue vivo a propósito).
 7. Sin límite de intentos de login por IP (el freno es por sesión; se evade abriendo otra sesión).
-8. Placeholder de membretes con **nombre y cédula de aspecto real** (§17).
 
 ---
 
 ## 17. Hallazgos de esta revisión
 
-Cosas encontradas al verificar el código para estos manuales. **No se corrigieron** (el alcance era documentar); cada una se puede resolver en un PR pequeño.
+Cosas encontradas al verificar el código para estos manuales y su estado.
 
-| # | Hallazgo | Dónde | Impacto |
-|---|---|---|---|
-| 1 | **Cuatro archivos JS faltan en `SHELL`**: `assets/js/body_silhouette.js`, `assets/js/coverage_map.js`, `assets/js/modules/cobertura.js`, `assets/js/modules/papelera.js` | `public/sw.js` | Cobertura, Papelera y la silueta corporal **no cargan sin conexión** (en línea funcionan) |
-| 2 | **Nombre y cédula de aspecto real** como *placeholder* (texto gris de ejemplo) de los campos del responsable sanitario: «Dr. Marcos Rodríguez Cota» y «Ced. Prof. 1141159 U.N.A.M.» | `public/assets/js/modules/membretes.js` (`SIGNER_FIELDS`) | Solo es pista visual (los valores por defecto del servidor están vacíos y no salen en los PDF), pero si pertenecen a una persona real conviene un ejemplo genérico |
-| 3 | `business_id` de WhatsApp **fijo en el código** como valor por defecto | `public/includes/whatsapp.php` | Si se reutiliza el producto con otra cuenta de Meta, apunta a la cuenta equivocada |
-| 4 | **Latente:** en `lab_save_test`, `in_array($r['sex'] ?? 'A', …) ? $r['sex'] : 'A'` inserta `NULL` si el rango trae `sex` presente pero nulo | `public/includes/lab_catalog.php` (≈ línea 249) | Sin síntoma conocido; daría un 500 al guardar una plantilla con `sex: null`. Arreglo de una línea: `$sex = $r['sex'] ?? 'A'` y luego validar |
-| 5 | `manifest.php`, `login.php` e `index.php` tienen **«Bosques Polanco» fijo** aunque `settings.clinic_name` existe | varios | Solo importa si se reutiliza el producto |
-| 6 | Los respaldos incluyen secretos y *hashes* | `backup.php` | Ver §16 |
-| 7 | **Sin pruebas automatizadas** | repo | Toda verificación es manual (§13.3) |
+| # | Hallazgo | Estado |
+|---|---|---|
+| 1 | Cuatro archivos JS faltaban en `SHELL` de `public/sw.js` (`body_silhouette.js`, `coverage_map.js`, `modules/cobertura.js`, `modules/papelera.js`): Cobertura, Papelera y la silueta corporal no cargaban sin conexión | **Corregido** (PR de correcciones, octubre de 2026) |
+| 2 | Nombre y cédula de aspecto real como *placeholder* en `modules/membretes.js` | **Corregido**: ahora son ejemplos genéricos |
+| 3 | `business_id` de WhatsApp fijo en `includes/whatsapp.php` como valor por defecto | **Corregido**: el valor por defecto es vacío (solo se muestra en Configuración; no se usa en las llamadas a la API). Si nunca se guardó la configuración, hay que volver a escribirlo |
+| 4 | `lab_save_test` insertaba `NULL` si un rango traía `sex: null` | **Corregido**: se normaliza a `'A'` |
+| 5 | `manifest.php`, `login.php` e `index.php` tienen **«Bosques Polanco» fijo** aunque `settings.clinic_name` existe | Pendiente (solo importa si se reutiliza el producto) |
+| 6 | Los respaldos incluyen secretos y *hashes* | Pendiente; ver §16 |
+| 7 | Sin pruebas automatizadas | Pendiente; toda verificación es manual (§13.3) |
 
 ---
 

@@ -246,7 +246,10 @@ function lab_save_test(array $data, array $ranges, ?int $userId = null): int
     );
     $order = 0;
     foreach ($ranges as $r) {
-        $sex = in_array($r['sex'] ?? 'A', ['A', 'F', 'M'], true) ? $r['sex'] : 'A';
+        $sex = $r['sex'] ?? 'A';
+        if (!in_array($sex, ['A', 'F', 'M'], true)) {
+            $sex = 'A';
+        }
         $ins->execute([
             $id,
             $sex,

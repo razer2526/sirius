@@ -19,7 +19,7 @@ const WA_AUTO_MESSAGE_COOLDOWN_HOURS = 4;
 function wa_defaults(): array
 {
     return [
-        'business_id'     => '1160164743841575',
+        'business_id'     => '',
         'waba_id'         => '',
         'phone_number_id' => '',
         'access_token'    => '',
