@@ -213,6 +213,29 @@ test('cada ruta de la API tiene su handler y cada módulo su archivo JS', functi
     }
 });
 
+test('CSP: la política existe, es restrictiva y la app no usa scripts en línea', function () {
+    $ht = file_get_contents(SIRIUS_PUBLIC . '/.htaccess');
+    ok(preg_match('/Header set Content-Security-Policy(-Report-Only)? "([^"]+)"/', $ht, $m), 'falta la cabecera Content-Security-Policy en .htaccess');
+    $policy = $m[2];
+    ok(str_contains($policy, "default-src 'self'") && str_contains($policy, "object-src 'none'"), 'política demasiado abierta');
+    $scriptSrc = preg_match('/script-src ([^;]+)/', $policy, $s) ? $s[1] : '';
+    ok(!str_contains($scriptSrc, 'unsafe-inline') && !str_contains($scriptSrc, 'unsafe-eval'), 'script-src no debe permitir unsafe-inline/unsafe-eval');
+    $bad = [];
+    $files = array_merge(glob(SIRIUS_PUBLIC . '/*.php'), glob(SIRIUS_PUBLIC . '/assets/js/*.js'), glob(SIRIUS_PUBLIC . '/assets/js/modules/*.js'));
+    foreach ($files as $f) {
+        if (basename($f) === 'bascula_prueba.php') {
+            continue;   // diagnóstico: tiene su propia política en .htaccess
+        }
+        $src = file_get_contents($f);
+        $inlineScript = '/<script(?![^>]*src=)[^>]*>/i';
+        $inlineHandler = '/\son(click|change|submit|input|load|error)\s*=\s*["\x27]/i';
+        if (preg_match($inlineScript, $src, $mm) || preg_match($inlineHandler, $src, $mm)) {
+            $bad[] = basename($f) . ' (' . trim($mm[0]) . ')';
+        }
+    }
+    ok(!$bad, 'scripts o manejadores en línea en: ' . implode(', ', $bad));
+});
+
 test('todos los PHP de public/ pasan php -l', function () {
     $bad = [];
     $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(SIRIUS_PUBLIC, FilesystemIterator::SKIP_DOTS));

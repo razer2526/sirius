@@ -19,7 +19,7 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## 8 de octubre de 2026 · Seguridad y pruebas automáticas
 
-Endurecimiento de seguridad y pruebas automáticas (PR 71). **Exige correr una vez la actualización de la base de datos** al desplegarlo, porque agrega la tabla `login_attempts`. Esa actualización **ya no se hace con `?key=` en la dirección**: ver la segunda entrada.
+Endurecimiento de seguridad y pruebas automáticas (PR 71 y 72). **Exige correr una vez la actualización de la base de datos** al desplegarlo, porque agrega la tabla `login_attempts`. Esa actualización **ya no se hace con `?key=` en la dirección**: ver la segunda entrada.
 
 ### Respaldos cifrados con contraseña
 
@@ -57,9 +57,17 @@ Endurecimiento de seguridad y pruebas automáticas (PR 71). **Exige correr una v
 - **Acción:** ninguna. En dispositivos donde Sirius ya está instalada, el nombre bajo el icono puede tardar en actualizarse o requerir reinstalarla.
 - **Manual:** desarrollador, hallazgo 5 del apartado 17.
 
+### Política de seguridad de contenido (CSP), en modo de observación
+
+- **Qué cambió:** el servidor ahora manda una política que describe de dónde puede cargar cosas la aplicación (solo lo propio, el mapa de Cobertura —Leaflet y OpenStreetMap— y nada más; **sin scripts en línea**). Por ahora es **solo de observación**: no bloquea nada, solo registra en el log de errores del servidor (líneas que empiezan con `CSP:`) lo que habría bloqueado.
+- **Afecta a:** nadie lo nota. En una revisión de 40 pantallas (incluido el mapa) no hubo ningún reporte.
+- **Acción:** ninguna por ahora. Pasados unos días, si en **cPanel → Errores** no aparecen líneas `CSP:` legítimas, se activa el modo estricto (cambio de una palabra en `.htaccess`).
+- **Por qué:** limita el daño si algún día se cuela texto malicioso en una pantalla.
+- **Manual:** desarrollador, apartado 16 (falta de CSP queda superado).
+
 ### Pruebas automáticas
 
-- **Qué cambió:** hay 17 pruebas unitarias/estructurales y 13 de integración (`tests/`), que GitHub corre en cada pull request. Cubren permisos, vacaciones y antigüedad, respaldo cifrado, el freno de login, el esquema, el precaché del service worker y el ciclo completo de login, CSRF y permisos.
+- **Qué cambió:** hay 18 pruebas unitarias/estructurales y 13 de integración (`tests/`), que GitHub corre en cada pull request. Cubren permisos, vacaciones y antigüedad, respaldo cifrado, el freno de login, el esquema, el precaché del service worker y el ciclo completo de login, CSRF y permisos.
 - **Afecta a:** desarrolladores. No cambia nada para los usuarios.
 - **Acción:** antes de abrir un PR, `tools\php\php.exe tests\run.php` y `tools\php\php.exe tests\api_smoke.php`.
 un.php` y `tools\php\php.exe testspi_smoke.php`.
