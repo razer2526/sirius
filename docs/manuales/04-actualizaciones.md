@@ -11,10 +11,36 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-2. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-3. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-4. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+2. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+3. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+4. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+5. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 8 de octubre de 2026 · Calendario: sincronización con Google
+
+Rediseño de la sincronización Google → Sirius (PR 74). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Se acabaron los avisos repetidos del calendario
+
+- **Qué pasaba:** Sirius pedía a Google «lo que cambió desde la última vez». Con un calendario que tiene un **evento diario desde hace años**, cualquier cambio a esa serie devolvía **miles de eventos** (todos los del pasado y los del futuro lejano), y cada uno mandaba su propio aviso a todo el equipo. Además, la fecha de modificación de cada evento se guardaba en un formato que MySQL alteraba, así que **todo parecía modificado en cada revisión** (cada 5 minutos) y los avisos se repetían.
+- **Qué cambió:**
+  - Sirius revisa en cada corrida solo una **ventana de eventos: de un mes atrás a seis meses adelante**, y compara cada evento con lo que ya tiene. Lo que ya está al día **no se reprocesa ni avisa**. Los eventos de fuera de la ventana **no se importan** (los diarios de hace años ya no estorban) y los que van entrando a la ventana con el paso de los días aparecen solos.
+  - La **primera sincronización** (o la que sigue a reconectar la cuenta) importa **en silencio**, sin avisar por cada evento.
+  - Cuando hay cambios, se avisan **juntos**: hasta 3 por separado; si son más, **un solo aviso-resumen** («12 cambios desde Google Calendar: …»).
+  - La bitácora anota un renglón por corrida («Google Calendar: N nuevas, …») en vez de uno por evento.
+- **Afecta a:** todos los que reciben avisos del calendario.
+- **Acción:** ninguna. Los avisos que ya llegaron siguen en la campana: puedes marcarlos como leídos. Si en la base ya se importaron eventos de años pasados, **no se borran solos**: avísanos y los limpiamos.
+- **Manual:** administrador, apartado 5 (API → Google Calendar); estándar, apartado 12 (Calendario).
+
+### Eventos de Google que no aparecían en el calendario de Sirius
+
+- **Qué cambió:** (1) los eventos de **todo el día** se ignoraban; ahora se importan de 00:00 a 23:59. (2) Un evento que **Sirius** creó en Google y cuyo identificador no se alcanzó a guardar ahora se **vuelve a enlazar** con la cita original, en vez de volver como duplicado. (3) Si un evento falla al importarse, **ya no detiene** a los demás ni deja la sincronización a medias.
+- **Afecta a:** quien usa Google Calendar junto con Sirius.
+- **Acción:** ninguna; los eventos aparecen en la siguiente sincronización (máximo 5 minutos). Si algo sigue sin aparecer, abre una vez `https://sirius-bpm.com/cron_calendar_sync.php?key=<cron_key>`: la respuesta indica cuántos eventos se importaron, cuántos tuvieron error y cuál fue el primer error.
+- **Manual:** administrador, apartado 5.
 
 ---
 
