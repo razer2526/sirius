@@ -132,7 +132,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 | Tabla | Qué es | Columnas clave | Rescate |
 |---|---|---|---|
 | `patients` | Expediente maestro, con demografía mexicana. | `file_number` UNIQUE, nombre partido en tres, `curp`, bloque de domicilio, texto libre clínico (alergias, crónicos, medicación), `is_deleted` | 🔴 → `contactos`/`clientes` |
-| `episodes` | Un encuentro de servicio por paciente. La entidad operativa central. | `service` ENUM(`laboratorio`,`control_peso`,`fisioterapia`,`podologia`), `status` ENUM(`activo`,`cerrado`), **`service_data` JSON**, `client_uuid` UNIQUE | 🟡 → `órdenes`/`casos` |
+| `episodes` | Un encuentro de servicio por paciente. La entidad operativa central. | `service` ENUM(`laboratorio`,`control_peso`,`fisioterapia`,`podologia`), `status` ENUM(`activo`,`cerrado`), **`service_data` JSON**, `client_uuid` UNIQUE | 🟡 → `órdenes`/`casos` **`service_data.captura = 'asistido'`** marca una admisión de laboratorio hecha con el wizard (la ficha omite los datos que ese modo no pregunta). |
 | `consultations` | Notas de seguimiento dentro de un episodio, con doble firma enfermería/médico. | **`params` JSON** (signos vitales), `nurse_closed_at`, `doctor_closed_at` | 🔴 |
 | `patient_documents` | Archivos adjuntos al expediente. | `stored_name`, `mime`, `size`, `category` | 🟡 |
 | `episode_studies` | Renglones: qué estudios consumió un episodio (alimenta comisiones). | `study_name` (snapshot), `commission_group`, `amount_charged` | 🟡 |

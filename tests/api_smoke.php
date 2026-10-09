@@ -202,6 +202,75 @@ test('se validan nombre, determinaciones y rangos', function () use ($admin, &$c
     eq(422, $post(['name' => 'Sin nombre det', 'tests' => [['name' => '']]]), 'determinación sin nombre');
 });
 
+echo "\nFicha de identificación y su correo\n";
+require_once SIRIUS_PUBLIC . '/includes/pdf_text.php';
+$fichaText = function (Http $http, int $episodeId): string {
+    $r = $http->req('GET', '/ficha.php?episode_id=' . $episodeId);
+    ok(str_starts_with($r['body'], '%PDF'), 'ficha.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/ficha_' . $episodeId . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    return (string)pdf_extract_text($tmp);
+};
+$createLab = function (Http $http, string $csrf, array $extra) {
+    $payload = array_merge([
+        'service' => 'laboratorio', 'referring_doctor' => 'Dr. Prueba',
+        'patient' => ['first_name' => 'Paciente', 'paternal_surname' => 'Asistido' . random_int(100, 999), 'mobile' => '5512345678'],
+        'service_data' => ['pago_metodo' => 'Efectivo', 'medicamentos' => 'ninguno'],
+        'study_lines' => [], 'ignore_duplicate' => true,
+    ], $extra);
+    $r = $http->json('POST', '/api/index.php?r=episodes/create', $payload, $csrf);
+    eq(200, $r['status'], $r['body']);
+    return (int)$r['json']['data']['episode_id'];
+};
+test('una admisión del asistido no imprime sexo, grupo sanguíneo, domicilio ni historia clínica como «No referido»', function () use ($admin, &$csrf, $fichaText, $createLab) {
+    $id = $createLab($admin, $csrf, ['assisted' => true]);
+    $txt = $fichaText($admin, $id);
+    ok(str_contains($txt, 'Fecha de nacimiento'), 'la fecha de nacimiento sí se preguntó y se imprime');
+    ok(str_contains($txt, 'Teléfono'));
+    ok(str_contains($txt, 'dico solicitante'));
+    foreach (['Sexo:', 'Grupo sangu', 'Direcci', 'Historia Cl', 'Fumador', 'Anticoagulantes', 'Legrado', 'Anticonceptivos', 'FUR:'] as $absent) {
+        ok(!str_contains($txt, $absent), "no debía aparecer «{$absent}» en una ficha del asistido");
+    }
+});
+test('una admisión del formulario completo sí imprime esos campos', function () use ($admin, &$csrf, $fichaText, $createLab) {
+    $id = $createLab($admin, $csrf, [
+        'patient' => ['first_name' => 'Paciente', 'paternal_surname' => 'Completo' . random_int(100, 999), 'sex' => 'F', 'blood_type' => 'O+', 'street' => 'Calle 1'],
+        'service_data' => ['fumador' => true, 'pago_metodo' => 'Efectivo'],
+    ]);
+    $txt = $fichaText($admin, $id);
+    foreach (['Sexo:', 'Grupo sangu', 'Direcci', 'Historia Cl', 'Fumador', 'Anticoagulantes'] as $present) {
+        ok(str_contains($txt, $present), "debía aparecer «{$present}» en la ficha del formulario completo");
+    }
+});
+test('si a una admisión asistida se le captura después un dato de historia clínica, ese bloque ya se imprime', function () use ($admin, &$csrf, $fichaText, $createLab) {
+    $id = $createLab($admin, $csrf, ['assisted' => true]);
+    $r = $admin->json('POST', '/api/index.php?r=episodes/update', ['episode_id' => $id, 'referring_doctor' => 'Dr. Prueba', 'service_data' => ['fumador' => true, 'pago_metodo' => 'Efectivo']], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $txt = $fichaText($admin, $id);
+    ok(str_contains($txt, 'Fumador'));
+    ok(!str_contains($txt, 'Sexo:'), 'lo demás sigue sin imprimirse');
+});
+test('API correo: devuelve los textos vigentes y los originales, y la vista previa escapa el HTML', function () use ($admin, &$csrf) {
+    $cfg = $admin->json('GET', '/api/index.php?r=mail/get', null)['json']['data']['config'];
+    ok(str_contains($cfg['ficha_subject'], '{paciente}'), 'sin personalizar se muestra el texto original');
+    ok(isset($cfg['ficha_defaults']['ficha_message'], $cfg['ficha_vars']['{folio}']));
+    $p = $admin->json('POST', '/api/index.php?r=mail/preview', ['ficha_subject' => 'Orden {folio}', 'ficha_message' => '<script>x</script> Hola {paciente}', 'ficha_signature' => 'Firma'], $csrf);
+    eq(200, $p['status'], $p['body']);
+    $m = $p['json']['data']['mail'];
+    eq('Orden 261009-01', $m['subject']);
+    ok(str_contains($m['html'], 'María Pérez López') && !str_contains($m['html'], '<script'));
+});
+test('API correo: guardar los textos y devolverlos; solo administradores', function () use ($admin, &$csrf, $base) {
+    $r = $admin->json('POST', '/api/index.php?r=mail/save', ['ficha_subject' => 'Tu ficha, {paciente}', 'ficha_message' => 'Mensaje propio', 'ficha_signature' => 'Mi firma'], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $cfg = $admin->json('GET', '/api/index.php?r=mail/get', null)['json']['data']['config'];
+    eq('Tu ficha, {paciente}', $cfg['ficha_subject']);
+    eq('Mi firma', $cfg['ficha_signature']);
+    $c = new Http($base);
+    $cs = $c->login('con_memb', 'Clave-prueba-1');
+    eq(403, $c->json('POST', '/api/index.php?r=mail/preview', ['ficha_message' => 'x'], $cs)['status'], 'un estándar no accede');
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

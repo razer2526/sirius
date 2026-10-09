@@ -1,7 +1,7 @@
 /** Módulo API (Admin Tools): configuración del asistente y del calendario. */
 
 import { apiGet, apiPost } from '../api.js';
-import { icon, escapeHtml, toast, spinner, inputCls, labelCls } from '../ui.js';
+import { icon, escapeHtml, toast, spinner, inputCls, labelCls, confirmDialog, debounce } from '../ui.js';
 
 export async function render(root, ctx) {
   const [view] = ctx.args;
@@ -327,6 +327,46 @@ async function renderMail(root) {
         </div>
       </section>
 
+      <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-4">
+        <div class="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Mensaje de la ficha de identificación</h4>
+            <p class="mt-0.5 text-xs text-slate-500">Lo que recibe el paciente junto con su ficha en PDF. El PDF y las copias internas no cambian.</p>
+          </div>
+          <button type="button" id="ficha-reset" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-500 ring-1 ring-slate-300 hover:bg-slate-50">Restablecer textos originales</button>
+        </div>
+        <div>
+          <label class="${labelCls}">Asunto</label>
+          <input type="text" maxlength="200" data-cfg="ficha_subject" value="${escapeHtml(config.ficha_subject)}" class="${inputCls}">
+        </div>
+        <div>
+          <label class="${labelCls}">Mensaje</label>
+          <textarea rows="7" maxlength="3000" data-cfg="ficha_message" class="${inputCls}">${escapeHtml(config.ficha_message)}</textarea>
+          <p class="mt-1 text-xs text-slate-400">Deja una línea en blanco para separar párrafos.</p>
+        </div>
+        <div>
+          <label class="${labelCls}">Firma</label>
+          <textarea rows="4" maxlength="1000" data-cfg="ficha_signature" class="${inputCls}">${escapeHtml(config.ficha_signature)}</textarea>
+          <p class="mt-1 text-xs text-slate-400">La primera línea sale en negrita; los teléfonos (55 1234 5678) y correos se vuelven enlaces.</p>
+        </div>
+        <div class="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">
+          <p class="text-xs font-semibold text-slate-600">Puedes usar estas variables en el asunto, el mensaje y la firma:</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            ${Object.entries(config.ficha_vars || {}).map(([token, label]) => `
+              <button type="button" data-ins-var="${escapeHtml(token)}" title="${escapeHtml(label)}"
+                      class="rounded-full bg-white px-3 py-1 font-mono text-xs font-semibold text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-50">${escapeHtml(token)}</button>`).join('')}
+          </div>
+          <p class="mt-2 text-xs text-slate-400">${Object.entries(config.ficha_vars || {}).map(([t, l]) => `<b>${escapeHtml(t)}</b> = ${escapeHtml(l)}`).join(' · ')}. Pulsa una para insertarla donde tengas el cursor.</p>
+        </div>
+        <div>
+          <p class="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Vista previa (con datos de ejemplo)</p>
+          <div class="overflow-hidden rounded-xl ring-1 ring-slate-200">
+            <p id="ficha-prev-subject" class="border-b border-slate-200 bg-slate-50 px-4 py-2 text-sm font-semibold text-slate-800"></p>
+            <div id="ficha-prev-body" class="bg-white px-4 py-3"></div>
+          </div>
+        </div>
+      </section>
+
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
         <h4 class="text-sm font-bold uppercase tracking-wide text-slate-700">Probar</h4>
         <div class="flex flex-wrap items-end gap-2">
@@ -336,6 +376,9 @@ async function renderMail(root) {
           </div>
           <button id="btn-test" type="button" class="rounded-lg px-4 py-2.5 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
             Enviar prueba
+          </button>
+          <button id="btn-test-ficha" type="button" class="rounded-lg px-4 py-2.5 text-sm font-semibold text-indigo-600 ring-1 ring-indigo-200 hover:bg-indigo-50">
+            Enviar prueba del mensaje de la ficha
           </button>
         </div>
         <div id="test-result" class="hidden rounded-xl px-4 py-3 text-sm"></div>
@@ -375,6 +418,63 @@ async function renderMail(root) {
       await apiPost('mail/save', collect());
       await apiPost('mail/test', { to });
       showResult(`Correo enviado a ${to}. Revisa la bandeja (y la carpeta de spam).`, true);
+    } catch (err) {
+      showResult(err.message, false);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  /* ---- Mensaje de la ficha: vista previa en vivo, variables y restablecer ---- */
+  const fichaFields = ['ficha_subject', 'ficha_message', 'ficha_signature']
+    .map((k) => root.querySelector(`[data-cfg="${k}"]`));
+  let lastFocus = fichaFields[1];
+  fichaFields.forEach((el) => el.addEventListener('focus', () => { lastFocus = el; }));
+
+  const refreshPreview = async () => {
+    try {
+      const { mail } = await apiPost('mail/preview', {
+        ficha_subject: fichaFields[0].value,
+        ficha_message: fichaFields[1].value,
+        ficha_signature: fichaFields[2].value,
+      });
+      root.querySelector('#ficha-prev-subject').textContent = mail.subject;
+      // El HTML lo genera y escapa el servidor (es el mismo que se envía)
+      root.querySelector('#ficha-prev-body').innerHTML = mail.html;
+    } catch { /* la vista previa es opcional */ }
+  };
+  fichaFields.forEach((el) => el.addEventListener('input', debounce(refreshPreview, 350)));
+  refreshPreview();
+
+  root.querySelectorAll('[data-ins-var]').forEach((b) => b.addEventListener('click', () => {
+    const el = lastFocus;
+    const token = b.dataset.insVar;
+    const start = el.selectionStart ?? el.value.length;
+    const end = el.selectionEnd ?? el.value.length;
+    el.value = el.value.slice(0, start) + token + el.value.slice(end);
+    el.focus();
+    el.setSelectionRange(start + token.length, start + token.length);
+    refreshPreview();
+  }));
+
+  root.querySelector('#ficha-reset').addEventListener('click', async () => {
+    const ok = await confirmDialog('Restablecer textos', 'Se vuelve al asunto, mensaje y firma originales. Los cambios se aplican al guardar la configuración.');
+    if (!ok) return;
+    fichaFields[0].value = config.ficha_defaults.ficha_subject;
+    fichaFields[1].value = config.ficha_defaults.ficha_message;
+    fichaFields[2].value = config.ficha_defaults.ficha_signature;
+    refreshPreview();
+  });
+
+  root.querySelector('#btn-test-ficha').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const to = root.querySelector('#test-to').value.trim();
+    if (!to) { showResult('Escribe un correo para la prueba.', false); return; }
+    btn.disabled = true;
+    try {
+      await apiPost('mail/save', collect());
+      await apiPost('mail/test', { to, ficha: true });
+      showResult(`Mensaje de la ficha enviado a ${to} (con datos de ejemplo y sin PDF adjunto). Revisa la bandeja y la carpeta de spam.`, true);
     } catch (err) {
       showResult(err.message, false);
     } finally {
