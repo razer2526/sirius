@@ -624,6 +624,8 @@ async function submit(root, ignoreDuplicate = false) {
     service_data: serviceData,
     study_lines: studyLines,
     ignore_duplicate: ignoreDuplicate,
+    // El asistido no pregunta sexo, grupo sanguíneo, domicilio ni historia clínica: la ficha no los imprime.
+    assisted: true,
   };
 
   try {
