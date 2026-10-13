@@ -78,6 +78,10 @@ function handle_episodes(string $action): void
 
             // Whitelist de campos específicos del servicio (catálogo de fichas)
             $serviceData = service_filter_data($service, 'admission', $b['service_data'] ?? []);
+            // Admisión hecha con el asistido (wizard): la ficha omite los datos que ese modo no pregunta.
+            if ($service === 'laboratorio' && !empty($b['assisted'])) {
+                $serviceData['captura'] = 'asistido';
+            }
 
             // Fecha de entrega estimada (solo Laboratorio): default admisión + 2 días, editable.
             $expectedDelivery = null;
@@ -274,6 +278,13 @@ function handle_episodes(string $action): void
 
             $service = (string)$episode['service'];
             $serviceData = service_filter_data($service, 'admission', $b['service_data'] ?? []);
+            // Una admisión asistida sigue siéndolo al corregirla: lo que se llene después se imprime,
+            // lo que sigue vacío no aparece como "No referido".
+            $prevData = is_array($episode['service_data'] ?? null)
+                ? $episode['service_data'] : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
+            if (($prevData['captura'] ?? '') === 'asistido') {
+                $serviceData['captura'] = 'asistido';
+            }
 
             // Responsable asignado. En una edición hay que distinguir "no lo mandaron"
             // (conservar el actual) de "lo mandaron vacío" (dejarlo sin responsable):

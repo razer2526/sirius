@@ -2050,75 +2050,105 @@ function render_ficha_pdf(
         $patient['city'] ?? null, $patient['state'] ?? null,
     ]))) ?: $nr;
 
+    $service = (string)($episode['service'] ?? '');
+    $serviceData = is_array($episode['service_data'] ?? null)
+        ? $episode['service_data']
+        : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
+
+    // Admisión hecha con el asistido (wizard): ese modo no pregunta sexo, grupo sanguíneo, domicilio ni
+    // la historia clínica, así que lo que sigue vacío NO se imprime como "No referido" (el campo ni
+    // existía en el formulario). Lo que sí se preguntó y quedó vacío (fecha de nacimiento, médico…)
+    // conserva su "No referido".
+    $hasAddress = trim(implode('', [
+        $patient['street'] ?? '', $patient['colonia'] ?? '', $patient['postal_code'] ?? '',
+        $patient['city'] ?? '', $patient['state'] ?? '',
+    ])) !== '';
+    $historyKeys = ['fumador', 'anticoagulantes', 'legrado', 'anticonceptivos', 'fur'];
+    $hasHistory = (bool)array_filter($historyKeys, static fn($k) => !empty($serviceData[$k]));
+    $hasSex = in_array($patient['sex'] ?? '', ['F', 'M', 'O'], true);
+    $hasBlood = trim((string)($patient['blood_type'] ?? '')) !== '';
+    // Fichas anteriores a la marca: el asistido nunca captura ninguno de esos datos.
+    $assisted = $service === 'laboratorio' && (
+        ($serviceData['captura'] ?? '') === 'asistido'
+        || (!$hasSex && !$hasBlood && !$hasAddress && !$hasHistory)
+    );
+    $showSex = !$assisted || $hasSex;
+    $showBlood = !$assisted || $hasBlood;
+    $showAddress = !$assisted || $hasAddress;
+    $showHistory = !$assisted || $hasHistory;
+
     // El bloque de identificación no se repite por página (a diferencia de
     // patientHeader()): la ficha es de una sola página casi siempre, y este
     // formato exige columnas y alineación por renglón que patientHeader() no
     // ofrece — ver identBlock().
     $pdf->AddPage();
     $pdf->pageTitle('Ficha de identificación básica');
-    $pdf->identBlock([
-        ['shade' => false, 'cells' => [
+    $birthCells = [
+        ['text' => 'Fecha de nacimiento: ' . (!empty($patient['birth_date']) ? date('d/m/Y', strtotime($patient['birth_date'])) : $nr)],
+        ['text' => 'Edad: ' . ($age !== null ? $age . ' años' : $nr)],
+    ];
+    if ($showSex) {
+        $birthCells[] = ['text' => 'Sexo: ' . $sex];
+    }
+    $phoneCells = [];
+    if ($showBlood) {
+        $phoneCells[] = ['text' => 'Grupo sanguíneo: ' . (($patient['blood_type'] ?? '') ?: $nr)];
+    }
+    $phoneCells[] = ['text' => 'Teléfono: ' . ((string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: $nr))];
+    if ($showBlood) {
+        $phoneCells[] = ['text' => ''];   // tercera columna vacía: el teléfono queda alineado con «Edad» del renglón de arriba
+    }
+    $identRows = [
+        ['cells' => [
             ['text' => 'Folio: ' . $folio, 'align' => 'L'],
             ['text' => 'Fecha y hora: ' . date('d/m/Y H:i', strtotime($admittedAt)), 'align' => 'R'],
         ]],
-        ['shade' => true, 'cells' => [
-            ['text' => 'Paciente: ' . ($fullName ?: $nr)],
-        ]],
-        ['shade' => false, 'cells' => [
-            ['text' => 'Fecha de nacimiento: ' . (!empty($patient['birth_date']) ? date('d/m/Y', strtotime($patient['birth_date'])) : $nr)],
-            ['text' => 'Edad: ' . ($age !== null ? $age . ' años' : $nr)],
-            ['text' => 'Sexo: ' . $sex],
-        ]],
-        ['shade' => true, 'cells' => [
-            ['text' => 'Grupo sanguíneo: ' . (($patient['blood_type'] ?? '') ?: $nr)],
-            ['text' => 'Teléfono: ' . ((string)(($patient['mobile'] ?? '') ?: ($patient['phone'] ?? '') ?: $nr))],
-            ['text' => ''],   // tercera columna vacía: el teléfono queda alineado con «Edad» del renglón de arriba
-        ]],
+        ['cells' => [['text' => 'Paciente: ' . ($fullName ?: $nr)]]],
+        ['cells' => $birthCells],
+        ['cells' => $phoneCells],
         // El correo va siempre en su propio renglón: es el dato más largo y variable, y así se
         // lee igual cuando es corto que cuando no cabría en una columna.
-        ['shade' => false, 'cells' => [
-            ['text' => 'Correo electrónico: ' . ((string)($patient['email'] ?? '') ?: $nr)],
-        ]],
-        ['shade' => true, 'cells' => [
-            ['text' => 'Dirección: ' . $direccion],
-        ]],
-    ]);
+        ['cells' => [['text' => 'Correo electrónico: ' . ((string)($patient['email'] ?? '') ?: $nr)]]],
+    ];
+    if ($showAddress) {
+        $identRows[] = ['cells' => [['text' => 'Dirección: ' . $direccion]]];
+    }
+    // Renglones alternados (claro/oscuro) sin huecos aunque se omitan datos
+    foreach ($identRows as $i => &$r) {
+        $r['shade'] = $i % 2 === 1;
+    }
+    unset($r);
+    $pdf->identBlock($identRows);
     $pdf->Ln(3);
-
-    $service = (string)($episode['service'] ?? '');
-    $serviceData = is_array($episode['service_data'] ?? null)
-        ? $episode['service_data']
-        : (json_decode((string)($episode['service_data'] ?? ''), true) ?: []);
 
     if ($service === 'laboratorio') {
         /* ---- Historia clínica: calcada línea por línea del formato de referencia ---- */
         $yn = static fn($v) => ($v === true || $v === '1' || $v === 1) ? 'Sí' : $nr;
-        $pdf->identBlock([
-            ['shade' => true, 'bold' => true, 'cells' => [['text' => 'Historia Clínica']]],
-            ['shade' => false, 'cells' => [
+        $histRows = [];
+        if ($showHistory) {
+            $histRows[] = ['bold' => true, 'cells' => [['text' => 'Historia Clínica']]];
+            $histRows[] = ['cells' => [
                 ['text' => 'Fumador: ' . $yn($serviceData['fumador'] ?? null)],
                 ['text' => 'Anticoagulantes: ' . $yn($serviceData['anticoagulantes'] ?? null)],
                 ['text' => 'Legrado: ' . $yn($serviceData['legrado'] ?? null)],
-            ]],
-            ['shade' => true, 'cells' => [
+            ]];
+            $histRows[] = ['cells' => [
                 ['text' => 'Anticonceptivos: ' . $yn($serviceData['anticonceptivos'] ?? null)],
                 ['text' => 'FUR: ' . ((string)($serviceData['fur'] ?? '') ?: $nr)],
-            ]],
-            ['shade' => false, 'cells' => [
-                ['text' => 'Médico solicitante: ' . ((string)($episode['referring_doctor'] ?? '') ?: $nr)],
-            ]],
-            ['shade' => true, 'cells' => [
-                ['text' => 'Síntomas: ' . (ficha_lab_sintomas_line($serviceData) ?: $nr)],
-            ]],
-            ['shade' => false, 'cells' => [
-                ['text' => 'Medicamentos: ' . ((string)($serviceData['medicamentos'] ?? '') ?: $nr)],
-            ]],
-            ['shade' => true, 'cells' => [
-                ['text' => 'Estudios a realizar: ' . ($studyLines
-                    ? implode(', ', array_map(static fn($l) => (string)($l['study_name'] ?? 'Estudio'), $studyLines))
-                    : $nr)],
-            ]],
-        ]);
+            ]];
+        }
+        $histRows[] = ['cells' => [['text' => 'Médico solicitante: ' . ((string)($episode['referring_doctor'] ?? '') ?: $nr)]]];
+        $histRows[] = ['cells' => [['text' => 'Síntomas: ' . (ficha_lab_sintomas_line($serviceData) ?: $nr)]]];
+        $histRows[] = ['cells' => [['text' => 'Medicamentos: ' . ((string)($serviceData['medicamentos'] ?? '') ?: $nr)]]];
+        $histRows[] = ['cells' => [['text' => 'Estudios a realizar: ' . ($studyLines
+            ? implode(', ', array_map(static fn($l) => (string)($l['study_name'] ?? 'Estudio'), $studyLines))
+            : $nr)]]];
+        // Con el encabezado «Historia Clínica» el primer renglón va oscuro; sin él, el bloque empieza claro.
+        foreach ($histRows as $i => &$r) {
+            $r['shade'] = $showHistory ? $i % 2 === 0 : $i % 2 === 1;
+        }
+        unset($r);
+        $pdf->identBlock($histRows);
         $pdf->Ln(3);
 
         /* ---- Método de pago y monto: el total ya no se calcula por estudio, se

@@ -11,14 +11,15 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-2. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-3. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-4. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-5. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-6. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-7. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-8. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+2. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+3. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+4. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+5. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+6. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+7. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+8. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+9. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
 
 ---
 
@@ -39,6 +40,35 @@ Función nueva (PR 76). No hay cambios de esquema: **no hace falta correr `setup
 - **Afecta a:** quien membreta análisis clínicos.
 - **Acción:** ninguna.
 - **Manual:** estándar, apartado 14.1 (Membretador); administrador, apartado 8 (Plantillas de Estudios).
+
+---
+
+## 9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable
+
+Mejoras (PR 79). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### La ficha de las admisiones del asistido ya no imprime datos que ese modo no pregunta
+
+- **Qué pasaba:** el formulario de admisión de laboratorio en modo **asistido (wizard)** no pregunta sexo, grupo sanguíneo, domicilio ni la historia clínica (fumador, anticoagulantes, legrado, anticonceptivos, FUR), pero la ficha los imprimía todos como «No referido».
+- **Qué cambió:** en las admisiones hechas con el asistido, la ficha **omite** esos datos. Los que **sí se preguntan** en el asistido y quedaron vacíos (fecha de nacimiento, edad, teléfono, correo, médico, síntomas, medicamentos…) siguen diciendo «No referido».
+  - Si después se **corrige** la admisión en el formulario completo y se captura alguno de esos datos, ese dato **sí aparece** (la historia clínica completa aparece en cuanto se captura cualquiera de sus datos).
+  - Las **fichas anteriores** hechas con el asistido (que aún no tenían marca) también se imprimen sin esos datos, porque nunca se capturaron.
+  - Las admisiones del **formulario completo** no cambian.
+- **Afecta a:** quien imprime o envía fichas de laboratorio hechas por los recolectores.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartados 6.6 (asistido) y 7.7 (la ficha).
+
+### Asunto, mensaje y firma del correo de la ficha, personalizables
+
+- **Qué cambió:** en **Admin Tools → API → Correo** hay una sección nueva, **Mensaje de la ficha de identificación**, con tres campos: **Asunto**, **Mensaje** y **Firma**.
+  - Se pueden usar las variables **`{paciente}`** (nombre completo), **`{folio}`** (folio de la orden) y **`{clinica}`** (nombre de la clínica); hay botones para insertarlas donde esté el cursor.
+  - En el mensaje, una **línea en blanco** separa párrafos. En la firma, la **primera línea sale en negrita** y los teléfonos (55 1234 5678) y correos se vuelven enlaces.
+  - Una **vista previa** con datos de ejemplo se actualiza mientras escribes, y **Enviar prueba del mensaje de la ficha** manda un correo de ejemplo a la dirección que indiques (sin el PDF).
+  - **Restablecer textos originales** vuelve al asunto, mensaje y firma de siempre. Con los campos vacíos se usan los originales.
+- **Qué no cambia:** el PDF adjunto, las copias internas (BCC), el remitente y el reenvío de la ficha. El texto, por seguridad, se trata como texto plano: no admite HTML y el asunto siempre queda en una sola línea.
+- **Afecta a:** administradores (quien configura el correo) y los pacientes, que reciben el nuevo texto.
+- **Acción:** si quieres otro texto, personalízalo y pulsa **Guardar configuración**. Si no haces nada, el correo sale igual que antes.
+- **Manual:** administrador, apartado 5.2 (Correo saliente).
 
 ---
 
