@@ -11,15 +11,42 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-2. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-3. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-4. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-5. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-6. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-7. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-8. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-9. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+2. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+3. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+4. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+5. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+6. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+7. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+8. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+9. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+10. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas
+
+Mejora (PR 80). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### La descripción se ve en la tarjeta de la tarea
+
+- **Qué cambió:** la descripción de una tarea ahora aparece **dentro de la tarjeta**, debajo de las etiquetas, sin tener que abrir «Editar». Si es larga, la caja de la descripción tiene su propia barra para desplazarse. Las descripciones anteriores (texto simple) se ven igual que antes, línea por línea.
+- **Afecta a:** todos los que usan Tareas.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 8.1 (Mis tareas).
+
+### Descripción con negritas, cursivas, subrayado y casillas
+
+- **Qué cambió:** el campo **Descripción** de la tarea (al crear o editar) ahora es un editor con una barra: **B** (negrita), **I** (cursiva), **U** (subrayado) y **Casillas**. Con **Casillas** el renglón se vuelve un **pendiente con casilla**; al pulsar **Enter** se crea otro pendiente, y **Enter en uno vacío** (o Retroceso al inicio) lo regresa a texto normal. Funciona igual que en el Pizarrón.
+- **Casillas desde la tarjeta:** las casillas de la descripción se pueden **marcar directamente en la tarjeta**, sin abrir la tarea. Junto a las etiquetas aparece el avance (**☑ 2/3**).
+- **La tarea se completa sola:** cuando se marca la **última casilla**, la tarea pasa a **Completada** (se pone verde, con el título y los pendientes tachados, y avisa a quien la creó, como al completarla a mano). Si después se **desmarca** una casilla, vuelve a **Pendiente**.
+- **Tareas frecuentes** (diarias o semanales): las casillas valen para **el periodo en curso**. Al marcar todas, la tarea queda **«Al día»** en ese periodo, y **al comenzar el día o la semana siguiente las casillas aparecen sin marcar** otra vez, sin hacer nada.
+- **Completar a mano:** el círculo de la tarjeta y el estado siguen funcionando como siempre; completar una tarea a mano **no** marca sus casillas.
+- **Lo que no admite:** colores, tamaños, tipografías ni imágenes (solo negrita, cursiva, subrayado y casillas). Al pegar texto se pega **sin formato**. Una tarea sin casillas se comporta como siempre.
+- **Más espacio para escribir:** el campo de la descripción en el formulario es más alto (unas 12 líneas, y se puede estirar) y la ventana es más ancha.
+- **Afecta a:** todos los que crean o trabajan tareas. Pueden marcar casillas quienes tienen acceso a la tarea (asignados, quien la creó o quien gestiona Tareas).
+- **Acción:** ninguna. Las descripciones existentes se convierten al formato nuevo la primera vez que alguien edite la tarea y la guarde.
+- **Manual:** estándar, apartados 8.1 y 8.2 (Crear una tarea).
 
 ---
 

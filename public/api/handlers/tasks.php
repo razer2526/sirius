@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/../../includes/task_recurrence.php';
+require_once __DIR__ . '/../../includes/rich_note.php';
 
 const TASK_PRIORITIES = ['baja', 'media', 'alta', 'urgente'];
 const TASK_STATUSES = ['pendiente', 'en_progreso', 'completada'];
@@ -95,6 +96,16 @@ function handle_tasks(string $action): void
                 $t['created_by'] = $t['created_by'] !== null ? (int)$t['created_by'] : null;
                 $t['weekday'] = $t['weekday'] !== null ? (int)$t['weekday'] : null;
                 $t['done_now'] = !empty($t['recurrence']) ? isset($doneNow[$t['id']]) : null;
+                // Descripción con formato (bloques) y avance de las casillas; en una tarea frecuente las
+                // casillas valen para el periodo actual (si lo guardado es de otro, se ven sin marcar).
+                $rn = rich_note_for_period(
+                    rich_note_decode($t['description'] ?? null),
+                    !empty($t['recurrence']) ? period_key($t['recurrence'], $t['weekday']) : null
+                );
+                [$t['todo_total'], $t['todo_done']] = rich_note_todo_counts($rn['blocks']);
+                $t['desc_blocks'] = $rn['blocks'];
+                // 'description' sigue siendo texto plano legible (☐/☑) para clientes que aún no conocen el formato.
+                $t['description'] = $rn['blocks'] ? rich_note_plain($rn['blocks']) : null;
                 $assignees = $assigneesByTask[$t['id']] ?? [];
                 $t['assigned_to'] = array_column($assignees, 'id');
                 $t['assigned_names'] = array_column($assignees, 'name');
@@ -218,7 +229,8 @@ function handle_tasks(string $action): void
                 $weekday = (int)$b['weekday'];
             }
             $due = valid_date($b['due_date'] ?? '');
-            $desc = trim((string)($b['description'] ?? '')) ?: null;
+            // Descripción con formato (bloques del editor) o texto plano de un cliente anterior
+            $desc = rich_note_normalize($b['description'] ?? null, $recurrence !== null ? period_key($recurrence, $weekday) : null);
             $projectId = isset($b['project_id']) && $b['project_id'] !== '' ? (int)$b['project_id'] : null;
             $parentId = isset($b['parent_id']) && $b['parent_id'] !== '' ? (int)$b['parent_id'] : null;
 
@@ -253,6 +265,13 @@ function handle_tasks(string $action): void
                 )->execute([$projectId, $parentId, $title, $desc, $priority, $due, $recurrence, $weekday, (int)$me['id']]);
                 $id = (int)db()->lastInsertId();
                 log_activity('tareas', 'task_create', "Creó tarea \"$title\"", 'task', $id);
+            }
+            // Si la descripción trae casillas y todas quedaron marcadas (o dejaron de estarlo), la tarea se ajusta.
+            $saved = find_task($id);
+            $dec = rich_note_decode($saved['description'] ?? null);
+            if (!$dec['legacy']) {
+                [$todoTotal, $todoDone] = rich_note_todo_counts($dec['blocks']);
+                task_sync_checklist($saved, $todoTotal, $todoDone, $me);
             }
             sync_task_assignees($id, $assignedTo);
             notify_new_assignees($oldAssignees, $assignedTo, (int)$me['id'],
@@ -313,6 +332,48 @@ function handle_tasks(string $action): void
                 }
             }
             json_ok(['done' => $done]);
+        }
+
+        /**
+         * Marca o desmarca UNA casilla de la descripción desde la tarjeta. Cuando todas las casillas quedan
+         * marcadas la tarea se completa sola (en una frecuente, queda al día en su periodo); si alguna se
+         * desmarca, vuelve a pendiente.
+         * Cuerpo: { id, index (n-ésima casilla, desde 0), done }
+         */
+        case 'toggle_check': {
+            $b = request_body();
+            $task = find_task((int)($b['id'] ?? 0));
+            require_task_access($task, $me, $canManage);
+            $dec = rich_note_decode($task['description'] ?? null);
+            if ($dec['legacy']) {
+                json_error('Esta descripción no tiene casillas', 422);
+            }
+            $key = !empty($task['recurrence'])
+                ? period_key($task['recurrence'], $task['weekday'] !== null ? (int)$task['weekday'] : null)
+                : null;
+            $dec = rich_note_for_period($dec, $key);
+            $index = (int)($b['index'] ?? -1);
+            $n = 0;
+            $found = false;
+            foreach ($dec['blocks'] as &$blk) {
+                if (($blk['t'] ?? '') !== 'todo') {
+                    continue;
+                }
+                if ($n === $index) {
+                    $blk['done'] = !empty($b['done']);
+                    $found = true;
+                }
+                $n++;
+            }
+            unset($blk);
+            if (!$found) {
+                json_error('Esa casilla ya no existe; recarga la página', 404);
+            }
+            db()->prepare('UPDATE tasks SET description = ? WHERE id = ?')
+                ->execute([rich_note_store($dec['blocks'], $key), (int)$task['id']]);
+            [$todoTotal, $todoDone] = rich_note_todo_counts($dec['blocks']);
+            $completed = task_sync_checklist($task, $todoTotal, $todoDone, $me);
+            json_ok(['todo_total' => $todoTotal, 'todo_done' => $todoDone, 'completed' => $completed]);
         }
 
         /**
@@ -534,6 +595,53 @@ function handle_tasks(string $action): void
             json_ok();
         }
     }
+}
+
+/**
+ * Ajusta el estado de una tarea según sus casillas: todas marcadas = completada (una frecuente queda al día
+ * en su periodo); alguna sin marcar = vuelve a pendiente. Sin casillas no toca nada. Devuelve si quedó completa.
+ */
+function task_sync_checklist(array $task, int $total, int $done, array $me): bool
+{
+    if ($total === 0) {
+        return false;
+    }
+    $all = $done === $total;
+    $pdo = db();
+    $id = (int)$task['id'];
+    $notify = function (string $body) use ($task, $me) {
+        if ($task['created_by'] !== null && (int)$task['created_by'] !== (int)$me['id']) {
+            require_once __DIR__ . '/../../includes/webpush.php';
+            webpush_notify((int)$task['created_by'], 'Tarea completada', $body, '#/tareas');
+        }
+    };
+
+    if (!empty($task['recurrence'])) {
+        $key = period_key($task['recurrence'], $task['weekday'] !== null ? (int)$task['weekday'] : null);
+        $st = $pdo->prepare('SELECT id FROM task_completions WHERE task_id = ? AND period_key = ?');
+        $st->execute([$id, $key]);
+        $row = $st->fetch();
+        if ($all && !$row) {
+            $pdo->prepare('INSERT INTO task_completions (task_id, period_key, completed_by) VALUES (?, ?, ?)')
+                ->execute([$id, $key, (int)$me['id']]);
+            log_activity('tareas', 'task_recurring_done', "Completó \"{$task['title']}\" ($key) con sus casillas", 'task', $id);
+            $notify("\"{$task['title']}\" ($key) fue marcada como completada.");
+        } elseif (!$all && $row) {
+            $pdo->prepare('DELETE FROM task_completions WHERE id = ?')->execute([$row['id']]);
+        }
+        return $all;
+    }
+
+    if ($all && $task['status'] !== 'completada') {
+        $pdo->prepare('UPDATE tasks SET status = ?, completed_at = ? WHERE id = ?')
+            ->execute(['completada', date('Y-m-d H:i:s'), $id]);
+        log_activity('tareas', 'task_status', "\"{$task['title']}\" → completada (todas sus casillas)", 'task', $id);
+        $notify("\"{$task['title']}\" fue marcada como completada.");
+    } elseif (!$all && $task['status'] === 'completada') {
+        $pdo->prepare('UPDATE tasks SET status = ?, completed_at = NULL WHERE id = ?')->execute(['pendiente', $id]);
+        log_activity('tareas', 'task_status', "\"{$task['title']}\" → pendiente (se desmarcó una casilla)", 'task', $id);
+    }
+    return $all;
 }
 
 function find_task(int $id): array

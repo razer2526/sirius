@@ -1,6 +1,7 @@
 /** Módulo Tareas: mis tareas (únicas y frecuentes, agrupadas por vencimiento),
  *  proyectos con subtareas, y seguimiento de resultados. */
 
+import { mountTaskEditor, taskDescriptionHtml } from '../task_desc_editor.js';
 import { apiGet, apiPost } from '../api.js';
 import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, inputCls, labelCls, spinner, fmtDate, debounce, isUserBusy } from '../ui.js';
 
@@ -310,7 +311,9 @@ function misTaskCard(t, { square = false, sectionKey } = {}) {
             ${t.recurrence === 'semanal' && t.weekday !== null && t.weekday !== undefined
               ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Cada ${WEEKDAY_NAMES[t.weekday].toLowerCase()}</span>` : ''}
             ${t.due_date ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${fmtDate(t.due_date)}</span>` : ''}
+            ${t.todo_total ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${t.todo_done === t.todo_total ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-50 text-sky-700'}" title="Casillas marcadas">☑ ${t.todo_done}/${t.todo_total}</span>` : ''}
           </div>
+          ${taskDescriptionHtml(t)}
           <div class="mt-1.5 space-y-0.5 text-[11px] text-slate-400">
             ${t.creator_name ? `<p class="truncate">Creó: ${escapeHtml(t.creator_name)}</p>` : ''}
             ${assigneeNames(t) ? `<p class="truncate">Asignado: ${escapeHtml(assigneeNames(t))}</p>` : ''}
@@ -926,6 +929,20 @@ function wireTaskEvents(view) {
         load(root());
       } catch (e) { toast(e.message, 'error'); }
     }));
+  // Casillas de la descripción: al marcar la última, el servidor completa la tarea.
+  view.querySelectorAll('[data-check]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const [id, index, done] = b.dataset.check.split(':').map(Number);
+      b.disabled = true;
+      try {
+        const res = await apiPost('tasks/toggle_check', { id, index, done: !!done });
+        if (res.completed) toast('Tarea completada');
+        load(root());
+      } catch (e) {
+        b.disabled = false;
+        toast(e.message, 'error');
+      }
+    }));
   view.querySelectorAll('[data-subtask]').forEach((b) =>
     b.addEventListener('click', () => openTaskModal(null, { parent_id: +b.dataset.subtask })));
   view.querySelectorAll('[data-edit]').forEach((b) =>
@@ -971,7 +988,9 @@ function openTaskModal(task, presets) {
   form.innerHTML = `
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       ${field({ key: 'title', label: isSub ? 'Subtarea' : 'Título', type: 'text', required: true, span: 'sm:col-span-2' }, task?.title || '')}
-      ${field({ key: 'description', label: 'Descripción', type: 'textarea', rows: 2, span: 'sm:col-span-2' }, task?.description || '')}
+      <div class="sm:col-span-2"><label class="${labelCls}">Descripción</label>
+        <div id="f-desc-editor"></div>
+      </div>
       ${data.can_manage ? `
       <div class="sm:col-span-2"><label class="${labelCls}">Asignar a</label>
         ${assigneeCheckboxesHtml(task?.assigned_to || [])}
@@ -990,6 +1009,8 @@ function openTaskModal(task, presets) {
         </select></div>` : ''}
     </div>`;
 
+  const descEditor = mountTaskEditor(form.querySelector('#f-desc-editor'), task?.desc_blocks || []);
+
   form.querySelector('[name="recurrence"]')?.addEventListener('change', (e) => {
     form.querySelector('#f-weekday-wrap')?.classList.toggle('hidden', e.target.value !== 'semanal');
   });
@@ -997,7 +1018,7 @@ function openTaskModal(task, presets) {
   modal({
     title: task ? 'Editar tarea' : (isSub ? 'Nueva subtarea' : 'Nueva tarea'),
     content: form,
-    size: 'max-w-xl',
+    size: 'max-w-3xl',
     actions: [
       { label: 'Cancelar' },
       {
@@ -1016,7 +1037,7 @@ function openTaskModal(task, presets) {
           try {
             await apiPost('tasks/save', {
               ...(task ? { id: task.id } : {}),
-              title: v.title, description: v.description,
+              title: v.title, description: descEditor.content(),
               assigned_to: checkedAssignees(form), priority: v.priority,
               due_date: v.due_date, recurrence: v.recurrence ?? '',
               weekday: v.recurrence === 'semanal' ? v.weekday : '',

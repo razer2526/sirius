@@ -108,7 +108,7 @@ const TICK_SVG = '<svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="c
 
 const TODO_BOX_BASE ='todo-box mt-[3px] flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border';
 
-function paintTodoState(block) {
+export function paintTodoState(block) {
   const done = block.dataset.done === '1';
   const box = block.querySelector('.todo-box');
   const txt = block.querySelector('.todo-text');
@@ -177,7 +177,7 @@ function buildBlockEl(block, editable = false) {
   return el;
 }
 
-function fillDoc(root, blocks, editable) {
+export function fillDoc(root, blocks, editable) {
   root.innerHTML = '';
   (blocks.length ? blocks : [{ t: 'p', runs: [] }]).forEach((b) => root.appendChild(buildBlockEl(b, editable)));
   // Después de una imagen tiene que haber un renglón donde poder seguir escribiendo.
@@ -185,7 +185,7 @@ function fillDoc(root, blocks, editable) {
 }
 
 /** El elemento que contiene el texto de un bloque (en un pendiente, el de la derecha de la casilla). */
-const contentOf = (block) => (block.dataset.b === 'todo' ? block.querySelector('.todo-text') : block);
+export const contentOf = (block) => (block.dataset.b === 'todo' ? block.querySelector('.todo-text') : block);
 
 function rgbToHex(str) {
   const m = /rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(str || '');
@@ -255,7 +255,7 @@ function alignOf(contentEl) {
 }
 
 /** Lee el DOM del editor y devuelve los bloques. No modifica el DOM. */
-function serializeDoc(root) {
+export function serializeDoc(root) {
   const blocks = [];
   let stray = [];
 
@@ -346,7 +346,7 @@ function blockOf(root, node) {
 }
 
 /** Bloque donde está el cursor, incluso si el navegador lo dejó a nivel del contenedor (entre bloques). */
-function blockAtSelection(root) {
+export function blockAtSelection(root) {
   const sel = getSelection();
   if (!sel.rangeCount) return null;
   const { startContainer, startOffset } = sel.getRangeAt(0);
@@ -593,7 +593,7 @@ function removeImageWithUndo(ed, block) {
 
 /* ---- Teclado dentro de la nota ---- */
 
-function handleKeydown(e, ed) {
+export function handleKeydown(e, ed) {
   const { root } = ed;
   // Durante una composición (acento con tecla muerta, IME) Enter la confirma: no es un salto de línea.
   if (e.isComposing) return;
@@ -681,7 +681,7 @@ function convertBlocks(ed, blocks, to) {
 
 /* ---- Formato ---- */
 
-function exec(cmd, value) {
+export function exec(cmd, value) {
   document.execCommand('styleWithCSS', false, true);
   return document.execCommand(cmd, false, value);
 }
@@ -746,7 +746,7 @@ function stepSize(dir) {
   applySize(next);
 }
 
-function toggleTodo(ed) {
+export function toggleTodo(ed) {
   let blocks = blocksInSelection(ed.root);
   if (!blocks.length) {
     const b = blockAtSelection(ed.root);

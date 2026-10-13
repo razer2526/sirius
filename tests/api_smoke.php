@@ -271,6 +271,85 @@ test('API correo: guardar los textos y devolverlos; solo administradores', funct
     eq(403, $c->json('POST', '/api/index.php?r=mail/preview', ['ficha_message' => 'x'], $cs)['status'], 'un estándar no accede');
 });
 
+echo "\nTareas con casillas en la descripción\n";
+$todo = fn(string $t, bool $done = false) => ['t' => 'todo', 'done' => $done, 'runs' => [['s' => $t]]];
+$mkTask = function (Http $http, string $csrf, string $title, array $blocks, array $extra = []) {
+    $r = $http->json('POST', '/api/index.php?r=tasks/save', array_merge([
+        'title' => $title, 'description' => ['v' => 2, 'blocks' => $blocks], 'priority' => 'media',
+    ], $extra), $csrf);
+    eq(200, $r['status'], $r['body']);
+    return (int)$r['json']['data']['id'];
+};
+$getTask = function (Http $http, int $id): array {
+    $tasks = $http->json('GET', '/api/index.php?r=tasks/list', null)['json']['data']['tasks'];
+    $t = array_values(array_filter($tasks, fn($x) => $x['id'] === $id))[0] ?? null;
+    ok($t !== null, "la tarea $id no aparece en la lista");
+    return $t;
+};
+test('la lista trae la descripción con formato, el avance de casillas y un texto plano de respaldo', function () use ($admin, &$csrf, $todo, $mkTask, $getTask) {
+    $id = $mkTask($admin, $csrf, 'Comprar', [
+        ['t' => 'p', 'runs' => [['s' => 'Pedido', 'b' => true]]], $todo('Windex'), $todo('Tubos', true),
+    ]);
+    $t = $getTask($admin, $id);
+    eq([2, 1], [$t['todo_total'], $t['todo_done']]);
+    eq(3, count($t['desc_blocks']));
+    eq(true, $t['desc_blocks'][0]['runs'][0]['b']);
+    eq("Pedido\n☐ Windex\n☑ Tubos", $t['description']);
+    eq('pendiente', $t['status']);
+});
+test('una descripción en texto plano (anterior) se lee como párrafos y se guarda tal cual si un cliente viejo la manda', function () use ($admin, &$csrf, $getTask) {
+    $r = $admin->json('POST', '/api/index.php?r=tasks/save', ['title' => 'Vieja', 'description' => "línea 1\nlínea 2", 'priority' => 'media'], $csrf);
+    $t = $getTask($admin, (int)$r['json']['data']['id']);
+    eq(2, count($t['desc_blocks']));
+    eq([0, 0], [$t['todo_total'], $t['todo_done']]);
+    eq("línea 1\nlínea 2", $t['description']);
+});
+test('al marcar la última casilla la tarea se completa sola; al desmarcar una, vuelve a pendiente', function () use ($admin, &$csrf, $todo, $mkTask, $getTask) {
+    $id = $mkTask($admin, $csrf, 'Lista', [$todo('a'), $todo('b'), $todo('c')]);
+    $tg = fn(int $i, bool $d) => $admin->json('POST', '/api/index.php?r=tasks/toggle_check', ['id' => $id, 'index' => $i, 'done' => $d], $csrf);
+    $r = $tg(0, true); eq(200, $r['status'], $r['body']); eq(false, $r['json']['data']['completed']);
+    $tg(1, true);
+    eq('pendiente', $getTask($admin, $id)['status'], 'con 2 de 3 sigue pendiente');
+    $r = $tg(2, true);
+    eq(true, $r['json']['data']['completed']);
+    $t = $getTask($admin, $id);
+    eq('completada', $t['status']);
+    eq([3, 3], [$t['todo_total'], $t['todo_done']]);
+    $tg(1, false);
+    $t = $getTask($admin, $id);
+    eq('pendiente', $t['status'], 'al desmarcar vuelve a pendiente');
+    eq([3, 2], [$t['todo_total'], $t['todo_done']]);
+    eq(404, $tg(9, true)['status'], 'una casilla inexistente se rechaza');
+});
+test('una tarea frecuente con casillas queda al día al marcarlas todas y se reinicia sola en el periodo siguiente', function () use ($admin, &$csrf, $todo, $mkTask, $getTask) {
+    $id = $mkTask($admin, $csrf, 'Diaria', [$todo('x'), $todo('y')], ['recurrence' => 'diaria']);
+    $tg = fn(int $i) => $admin->json('POST', '/api/index.php?r=tasks/toggle_check', ['id' => $id, 'index' => $i, 'done' => true], $csrf);
+    $tg(0);
+    eq(false, $getTask($admin, $id)['done_now']);
+    $tg(1);
+    $t = $getTask($admin, $id);
+    eq(true, $t['done_now'], 'al día con todas marcadas');
+    eq([2, 2], [$t['todo_total'], $t['todo_done']]);
+    // Simula que el periodo guardado es de ayer: hoy las casillas deben verse sin marcar
+    $row = db()->query('SELECT description FROM tasks WHERE id = ' . $id)->fetch();
+    $d = json_decode($row['description'], true);
+    $d['period'] = '2000-01-01';
+    db()->prepare('UPDATE tasks SET description = ? WHERE id = ?')->execute([json_encode($d), $id]);
+    $t = $getTask($admin, $id);
+    eq([2, 0], [$t['todo_total'], $t['todo_done']], 'periodo nuevo: sin marcar');
+});
+test('un usuario sin acceso a la tarea no puede marcar sus casillas', function () use ($admin, &$csrf, $todo, $mkTask, $base) {
+    $id = $mkTask($admin, $csrf, 'Privada', [$todo('a')]);
+    // Usuario con el módulo Tareas pero sin la tarea (ni creada por él ni asignada)
+    $u = $admin->json('POST', '/api/index.php?r=users/create', ['username' => 'solo_tareas', 'full_name' => 'Solo tareas', 'password' => 'Clave-prueba-1', 'role' => 'estandar', 'permissions' => ['tareas' => []]], $csrf);
+    eq(200, $u['status'], $u['body']);
+    $c = new Http($base);
+    $cs = $c->login('solo_tareas', 'Clave-prueba-1');
+    $r = $c->json('POST', '/api/index.php?r=tasks/toggle_check', ['id' => $id, 'index' => 0, 'done' => true], $cs);
+    eq(403, $r['status'], $r['body']);
+    eq('No tienes acceso a esta tarea', $r['json']['error'] ?? '');
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

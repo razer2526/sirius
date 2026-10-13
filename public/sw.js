@@ -28,6 +28,7 @@ const SHELL = [
   'assets/js/forms.js',
   'assets/js/progress_chart.js',
   'assets/js/board_note_editor.js',
+  'assets/js/task_desc_editor.js',
   'assets/js/board_share.js',
   'assets/js/push_sync.js',
   'assets/js/scale_connect.js',
