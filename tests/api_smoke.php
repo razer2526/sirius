@@ -269,6 +269,8 @@ test('API correo: guardar los textos y devolverlos; solo administradores', funct
     $c = new Http($base);
     $cs = $c->login('con_memb', 'Clave-prueba-1');
     eq(403, $c->json('POST', '/api/index.php?r=mail/preview', ['ficha_message' => 'x'], $cs)['status'], 'un estándar no accede');
+});
+
 echo "\nTareas con casillas en la descripción\n";
 $todo = fn(string $t, bool $done = false) => ['t' => 'todo', 'done' => $done, 'runs' => [['s' => $t]]];
 $mkTask = function (Http $http, string $csrf, string $title, array $blocks, array $extra = []) {
