@@ -103,6 +103,8 @@ Inventario por lotes de manual. Lo clínico son literalmente dos constantes de t
 ### 🟢 `tareas` — Tareas
 `modules/tareas.js` + `handlers/tasks.php`
 
+**Descripción con formato y casillas.** `tasks.description` guarda JSON de bloques (`{v:2, blocks:[{t:'p'|'todo', runs:[{s,b?,i?,u?}], done?}], period?}`), el mismo formato que las notas del Pizarrón pero reducido a negrita/cursiva/subrayado y casillas (`includes/rich_note.php`; todo lo demás se descarta, nunca HTML). El texto plano anterior sigue leyéndose (`legacy`). `tasks/list` devuelve `desc_blocks`, `todo_total`/`todo_done` y deja `description` como texto plano (☐/☑) para clientes viejos. `tasks/toggle_check {id,index,done}` marca una casilla desde la tarjeta; `task_sync_checklist()` completa la tarea al marcar la última (una frecuente queda al día en su periodo) y la regresa a pendiente si se desmarca una. En tareas frecuentes las casillas valen para un periodo (`period`): al cambiar el periodo se ven sin marcar, sin cron. El editor es `assets/js/task_desc_editor.js` (reutiliza el motor de `board_note_editor.js`).
+
 Tareas propias y asignadas agrupadas por ventana de vencimiento, prioridades y estatus con avance de un clic, proyectos con subtareas, tareas recurrentes, consulta por rango de fechas que alimenta al dashboard y al calendario, borrado suave a la papelera.
 
 Incluye además un tablero aparte de "Resultados por entregar" — que en realidad es **un rastreador genérico de entregables con lista de verificación**, vale la pena generalizarlo en vez de tirarlo.
