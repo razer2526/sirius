@@ -403,6 +403,21 @@ test('el estado de cuenta por periodo se genera con folio y trae el desglose', f
     eq(790.0, (float)$g['total_commission']);
     eq(2, count($g['lines']['items']));
 });
+test('el PDF del estado de cuenta trae Fecha, Nombre del paciente, Estudios y Monto, y el folio de página', function () use ($admin, $pdo) {
+    $id = (int)$pdo->query('SELECT MAX(id) FROM commission_statements')->fetchColumn();
+    $r = $admin->req('GET', '/comision.php?id=' . $id);
+    ok(str_starts_with($r['body'], '%PDF'), 'comision.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/comision_' . $id . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    $txt = (string)pdf_extract_text($tmp);
+    foreach (['FECHA', 'NOMBRE DEL PACIENTE', 'ESTUDIOS', 'MONTO', 'gina 1 de 1'] as $present) {
+        ok(str_contains($txt, $present), "debía aparecer «{$present}» en el PDF");
+    }
+    foreach (['PACIENTE / ESTUDIO', 'COMISI'] as $absent) {
+        ok(!str_contains($txt, $absent) || $absent === 'COMISI' && str_contains($txt, 'Total comisi'), "no debía aparecer «{$absent}» como columna");
+    }
+    ok(str_contains($txt, 'Biometr') && str_contains($txt, 'FilmArray GI'), 'los estudios de una misma visita van juntos en un renglón');
+});
 
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
