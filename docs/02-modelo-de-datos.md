@@ -208,7 +208,7 @@ Inventario por lotes con caducidad es genérico (farmacia, alimentos, químicos)
 |---|---|---|
 | `board_items` | Notas, listas y dibujos en un lienzo. `scope` ENUM(`private`,`public`), `type` ENUM(`note`,`checklist`,`drawing`), **`content` JSON** (una nota guarda bloques `{v:2, blocks:[…]}`, nunca HTML), geometría `pos_x/pos_y/width/height/z_index`. | 🟢 |
 | `board_assets` | Imágenes pegadas en notas: `item_id` (sin FK a propósito: la papelera hace DELETE antes de archivar y una cascada dejaría la nota restaurada sin imágenes), `stored_name`, `mime`, `size`. Los archivos van en `uploads/board/`, servidos solo por `board_asset.php`. | 🟢 |
-| `task_assets` | Imágenes y notas a mano de la descripción de una tarea: `task_id` (NULL hasta que se guarda la tarea; sin FK a propósito, igual que `board_assets`), `stored_name`, `mime`, `size`, `created_by`. Los archivos van en `uploads/tasks/`, servidos solo por `task_asset.php` (a quien ve la tarea). | 🟢 |
+| `task_assets` | Imágenes y notas a mano de la descripción de una tarea o de un proyecto: `task_id` o `project_id` (ambos NULL hasta que se guarda; sin FK a propósito, igual que `board_assets`), `stored_name`, `mime`, `size`, `created_by`. Los archivos van en `uploads/tasks/`, servidos solo por `task_asset.php` (a quien ve la tarea). | 🟢 |
 | `file_folders` | Carpetas jerárquicas, auto-FK `parent_id`. | 🟢 |
 | `files` | Metadatos; el binario vive en disco bajo `stored_name`. | 🟢 |
 

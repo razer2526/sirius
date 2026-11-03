@@ -407,6 +407,58 @@ test('imágenes y notas a mano de una tarea: se suben, se enlazan al guardar y s
     eq(403, $deny['status'], $deny['body']);
 });
 
+test('proyectos: descripción con formato, imágenes y casillas; solo quien ve el proyecto las ve', function () use ($admin, &$csrf, $mkTask, $base, $pdo) {
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+    $up = $admin->upload('/api/index.php?r=tasks/asset_upload', [], $png, 'plano.png', $csrf);
+    $asset = (int)$up['json']['data']['asset']['id'];
+    $url = '/' . $up['json']['data']['asset']['url'];
+
+    $blocks = [
+        ['t' => 'li', 'runs' => [['s' => 'Alcance']]],
+        ['t' => 'todo', 'runs' => [['s' => 'Cotizar']]],
+        ['t' => 'img', 'asset' => $asset],
+        ['t' => 'img', 'asset' => 99999],
+    ];
+    $r = $admin->json('POST', '/api/index.php?r=tasks/project_save', ['name' => 'Remodelación', 'description' => ['v' => 2, 'blocks' => $blocks], 'status' => 'activo', 'assigned_to' => []], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $pid = (int)$r['json']['data']['id'];
+    $getProject = function () use ($admin, $pid) {
+        $projects = $admin->json('GET', '/api/index.php?r=tasks/list', null)['json']['data']['projects'];
+        return array_values(array_filter($projects, fn($p) => $p['id'] === $pid))[0];
+    };
+    $p = $getProject();
+    eq(['li', 'todo', 'img'], array_column($p['desc_blocks'], 't'), 'la imagen ajena se descarta');
+    eq([1, 0], [$p['todo_total'], $p['todo_done']]);
+    eq("• Alcance\n☐ Cotizar\n[imagen]", $p['description']);
+    eq($pid, (int)$pdo->query("SELECT project_id FROM task_assets WHERE id = $asset")->fetch()['project_id'], 'la imagen queda enlazada al proyecto');
+
+    // Casilla del proyecto
+    $c = $admin->json('POST', '/api/index.php?r=tasks/project_toggle_check', ['id' => $pid, 'index' => 0, 'done' => true], $csrf);
+    eq(200, $c['status'], $c['body']);
+    eq([1, 1], [$getProject()['todo_total'], $getProject()['todo_done']]);
+    eq(404, $admin->json('POST', '/api/index.php?r=tasks/project_toggle_check', ['id' => $pid, 'index' => 5, 'done' => true], $csrf)['status'], 'casilla inexistente');
+
+    // Un estándar sin relación con el proyecto no ve la imagen ni marca casillas; con una tarea suya dentro, sí las ve
+    $u = $admin->json('POST', '/api/index.php?r=users/create', ['username' => 'miembro_proy', 'full_name' => 'Miembro', 'password' => 'Clave-prueba-1', 'role' => 'estandar', 'permissions' => ['tareas' => []]], $csrf);
+    eq(200, $u['status'], $u['body']);
+    $uid = (int)$pdo->query("SELECT id FROM users WHERE username = 'miembro_proy'")->fetch()['id'];
+    $m = new Http($base);
+    $mCsrf = $m->login('miembro_proy', 'Clave-prueba-1');
+    eq(404, $m->req('GET', $url)['status'], 'sin relación con el proyecto no ve la imagen');
+    eq(403, $m->json('POST', '/api/index.php?r=tasks/project_toggle_check', ['id' => $pid, 'index' => 0, 'done' => false], $mCsrf)['status']);
+    $mkTask($admin, $csrf, 'Tarea del proyecto', [['t' => 'p', 'runs' => [['s' => 'x']]]], ['project_id' => $pid, 'assigned_to' => [$uid]]);
+    eq(200, $m->req('GET', $url)['status'], 'con una tarea asignada dentro del proyecto sí la ve');
+
+    // Solo quien gestiona Tareas edita la descripción del proyecto (y le sube imágenes)
+    eq(403, $m->upload('/api/index.php?r=tasks/asset_upload', ['project_id' => (string)$pid], $png, 'x.png', $mCsrf)['status']);
+    eq(403, $m->json('POST', '/api/index.php?r=tasks/project_save', ['id' => $pid, 'name' => 'x'], $mCsrf)['status']);
+
+    // Una descripción en texto plano (cliente anterior) se sigue aceptando
+    $r = $admin->json('POST', '/api/index.php?r=tasks/project_save', ['id' => $pid, 'name' => 'Remodelación', 'description' => "Solo texto\nen dos líneas", 'status' => 'activo'], $csrf);
+    eq(200, $r['status'], $r['body']);
+    eq("Solo texto\nen dos líneas", $getProject()['description']);
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

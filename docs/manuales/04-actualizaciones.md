@@ -11,17 +11,52 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Tareas: tarjetas verticales, imágenes y notas a mano](#3-de-noviembre-de-2026--tareas-tarjetas-verticales-imágenes-y-notas-a-mano)
-2. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-3. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-4. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-5. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-6. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-7. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-8. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-9. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-10. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-11. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [3 de noviembre de 2026 · Proyectos: tarjetas, descripción con formato y tablero](#3-de-noviembre-de-2026--proyectos-tarjetas-descripción-con-formato-y-tablero)
+2. [3 de noviembre de 2026 · Tareas: tarjetas verticales, imágenes y notas a mano](#3-de-noviembre-de-2026--tareas-tarjetas-verticales-imágenes-y-notas-a-mano)
+3. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+4. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+5. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+6. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+7. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+8. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+9. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+10. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+11. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+12. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 3 de noviembre de 2026 · Proyectos: tarjetas, descripción con formato y tablero
+
+Mejora (PR 82, se apoya en el PR 81). **Hay un cambio de esquema** (una columna nueva en `task_assets`): después del despliegue, el administrador debe abrir `install/setup.php` y aplicar la actualización (si ya la había corrido por el PR 81, hay que correrla otra vez; es seguro repetirla). Sin eso, subir imágenes a la descripción de un proyecto falla con «Error de base de datos».
+
+### Tarjetas de proyecto con más información
+
+- **Qué cambió:** en **Tareas → Proyectos**, cada tarjeta muestra ahora el **avance**, la **fecha límite** (en rojo y con «Vencido» si ya pasó y el proyecto no está terminado), el número de tareas, las **casillas** de su descripción, los **responsables** y **lo siguiente por hacer** (las 3 tareas pendientes más urgentes y cuántas más hay). Están en cuadrícula: 3 por fila en pantalla grande, 2 en tablet y 1 en el celular.
+- **Afecta a:** todos los que ven proyectos.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 8.3 (Proyectos).
+
+### Dentro del proyecto: pestañas «Tareas» y «Descripción»
+
+- **Qué cambió:** al abrir un proyecto hay dos pestañas.
+  - **Tareas:** las tareas del proyecto, como siempre, en **tarjetas** o en **tablero** (ver abajo).
+  - **Descripción:** notas del proyecto con **el mismo editor que las tareas**: negrita, cursiva, subrayado, alineación, viñetas, casillas, imágenes (botón, Ctrl+V o arrastrar) y **notas a mano**. Sirve para el alcance, listas de pendientes, planos o dibujos. Un punto verde junto al nombre de la pestaña indica que ya tiene contenido.
+- **Quién la edita:** quien gestiona Tareas (con el botón **Editar proyecto** o **Editar descripción**; el formulario del proyecto ahora usa ese mismo editor). **Todos los que ven el proyecto** pueden verla y marcar sus casillas, y ven sus imágenes.
+- **Las descripciones anteriores** (texto simple) se ven igual y pasan al formato nuevo la primera vez que se editen y guarden.
+- **Afecta a:** todos los que usan proyectos; edita quien gestiona Tareas.
+- **Acción:** el administrador corre **`install/setup.php`** una vez tras el despliegue.
+- **Manual:** estándar, apartado 8.3.
+
+### Vista de tablero
+
+- **Qué cambió:** en la pestaña **Tareas** de un proyecto hay un selector **Tarjetas / Tablero**. El **tablero** tiene tres columnas: **Pendiente**, **En progreso** y **Completada**. Para cambiar el estado de una tarea **arrastra su tarjeta desde el asa (✥) a otra columna** (con el mouse, el dedo o el lápiz), o toca la etiqueta de estado de la tarjeta, que lo cambia sin arrastrar. Al soltar en **Completada**, la tarea se completa como si la hubieras marcado a mano (y avisa a quien la creó).
+- **Tareas frecuentes** (diarias o semanales): aparecen en **Pendiente** o **Completada** (al día) según su periodo y **no se arrastran**; su etiqueta las alterna.
+- **En el celular:** las columnas se deslizan de lado.
+- **Se recuerda** la última vista que elegiste (tarjetas o tablero) en ese navegador.
+- **Afecta a:** todos los que usan proyectos.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 8.3 (Proyectos).
 
 ---
 

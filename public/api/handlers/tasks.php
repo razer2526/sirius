@@ -114,6 +114,11 @@ function handle_tasks(string $action): void
             unset($t);
             foreach ($projects as &$p) {
                 $p['id'] = (int)$p['id'];
+                // Igual que en las tareas: bloques para el editor y texto plano de respaldo.
+                $prn = rich_note_decode($p['description'] ?? null);
+                [$p['todo_total'], $p['todo_done']] = rich_note_todo_counts($prn['blocks']);
+                $p['desc_blocks'] = $prn['blocks'];
+                $p['description'] = $prn['blocks'] ? rich_note_plain($prn['blocks']) : null;
                 $p['created_by'] = $p['created_by'] !== null ? (int)$p['created_by'] : null;
                 $assignees = $assigneesByProject[$p['id']] ?? [];
                 $p['assigned_to'] = array_column($assignees, 'id');
@@ -138,10 +143,11 @@ function handle_tasks(string $action): void
             if ($name === '') {
                 json_error('El nombre del proyecto es obligatorio', 422);
             }
-            $desc = trim((string)($b['description'] ?? '')) ?: null;
+            $id = (int)($b['id'] ?? 0);
+            // Descripción con formato (como la de una tarea) o texto plano de un cliente anterior
+            $desc = rich_note_normalize($b['description'] ?? null, null, project_assets_usable_ids($id, (int)$me['id']));
             $due = valid_date($b['due_date'] ?? '');
             $status = in_array($b['status'] ?? '', ['activo', 'completado', 'archivado'], true) ? $b['status'] : 'activo';
-            $id = (int)($b['id'] ?? 0);
             $oldAssignees = $id > 0 ? assignee_ids('project_assignees', 'project_id', $id) : [];
             if ($id > 0) {
                 db()->prepare('UPDATE projects SET name = ?, description = ?, due_date = ?, status = ? WHERE id = ?')
@@ -153,6 +159,10 @@ function handle_tasks(string $action): void
                 $id = (int)db()->lastInsertId();
                 log_activity('tareas', 'project_create', "Creó proyecto \"$name\"", 'project', $id);
             }
+            $usedAssets = rich_note_asset_ids(rich_note_decode($desc)['blocks']);
+            project_assets_attach($id, $usedAssets, (int)$me['id']);
+            project_assets_prune($id, $usedAssets);
+            task_assets_prune_orphans();
             if (array_key_exists('assigned_to', $b)) {
                 sync_project_assignees($id, (array)$b['assigned_to']);
                 notify_new_assignees($oldAssignees, (array)$b['assigned_to'], (int)$me['id'],
@@ -174,7 +184,15 @@ function handle_tasks(string $action): void
                 json_error('Solo puedes eliminar tus propios proyectos', 403);
             }
             if ($canManage) {
+                $taskIds = db()->prepare('SELECT id FROM tasks WHERE project_id = ?');
+                $taskIds->execute([$id]);
+                $taskIds = array_map('intval', $taskIds->fetchAll(PDO::FETCH_COLUMN));
                 db()->prepare('DELETE FROM projects WHERE id = ?')->execute([$id]);
+                // Borrado definitivo: también las imágenes del proyecto y las de sus tareas.
+                project_assets_delete($id);
+                foreach ($taskIds as $tid) {
+                    task_assets_delete_for_task($tid);
+                }
                 log_activity('tareas', 'project_delete', "Eliminó proyecto \"{$p['name']}\" (y sus tareas)", 'project', $id);
             } else {
                 require_once __DIR__ . '/../../includes/trash.php';
@@ -292,6 +310,17 @@ function handle_tasks(string $action): void
         /* Imagen o nota manuscrita para la descripción (multipart: los datos llegan en $_POST/$_FILES) */
         case 'asset_upload': {
             $taskId = (int)($_POST['task_id'] ?? 0);
+            $projectId = (int)($_POST['project_id'] ?? 0);
+            if ($projectId > 0) {
+                // La descripción de un proyecto la edita quien gestiona Tareas (igual que el proyecto mismo).
+                require_task_manager($canManage);
+                $st = db()->prepare('SELECT id FROM projects WHERE id = ?');
+                $st->execute([$projectId]);
+                if (!$st->fetch()) {
+                    json_error('Proyecto no encontrado', 404);
+                }
+                $taskId = 0;
+            }
             if ($taskId > 0) {
                 // Solo quien puede editar la tarea le agrega imágenes.
                 $task = find_task($taskId);
@@ -315,7 +344,8 @@ function handle_tasks(string $action): void
             if (!is_uploaded_file($file['tmp_name'])) {
                 json_error('Subida no válida', 422);
             }
-            if (count(task_assets_usable_ids($taskId, (int)$me['id'])) >= TASK_ASSETS_PER_TASK) {
+            $usable = $projectId > 0 ? project_assets_usable_ids($projectId, (int)$me['id']) : task_assets_usable_ids($taskId, (int)$me['id']);
+            if (count($usable) >= TASK_ASSETS_PER_TASK) {
                 json_error('Esta tarea ya tiene demasiadas imágenes', 422);
             }
             if (!is_dir(TASK_ASSET_DIR)) {
@@ -327,8 +357,8 @@ function handle_tasks(string $action): void
             }
             @chmod(TASK_ASSET_DIR . $stored, 0644);
             // Con tarea existente nace ya enlazada; en una tarea nueva queda sin tarea hasta que se guarde.
-            db()->prepare('INSERT INTO task_assets (task_id, stored_name, mime, size, created_by) VALUES (?, ?, ?, ?, ?)')
-                ->execute([$taskId > 0 ? $taskId : null, $stored, $info['mime'] ?? 'image/*', (int)$file['size'], (int)$me['id']]);
+            db()->prepare('INSERT INTO task_assets (task_id, project_id, stored_name, mime, size, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+                ->execute([$taskId > 0 ? $taskId : null, $projectId > 0 ? $projectId : null, $stored, $info['mime'] ?? 'image/*', (int)$file['size'], (int)$me['id']]);
             $assetId = (int)db()->lastInsertId();
             json_ok(['asset' => ['id' => $assetId, 'url' => 'task_asset.php?id=' . $assetId]]);
         }
@@ -353,6 +383,44 @@ function handle_tasks(string $action): void
                     "\"{$task['title']}\" fue marcada como completada.", '#/tareas'
                 );
             }
+            json_ok();
+        }
+
+        /** Marca o desmarca UNA casilla de la descripción de un proyecto. Cuerpo: { id, index, done } */
+        case 'project_toggle_check': {
+            $b = request_body();
+            $st = db()->prepare('SELECT * FROM projects WHERE id = ?');
+            $st->execute([(int)($b['id'] ?? 0)]);
+            $project = $st->fetch();
+            if (!$project) {
+                json_error('Proyecto no encontrado', 404);
+            }
+            if (!project_user_can_view($project, $me, $canManage)) {
+                json_error('No tienes acceso a este proyecto', 403);
+            }
+            $dec = rich_note_decode($project['description'] ?? null);
+            if ($dec['legacy']) {
+                json_error('Esta descripción no tiene casillas', 422);
+            }
+            $index = (int)($b['index'] ?? -1);
+            $n = 0;
+            $found = false;
+            foreach ($dec['blocks'] as &$blk) {
+                if (($blk['t'] ?? '') !== 'todo') {
+                    continue;
+                }
+                if ($n === $index) {
+                    $blk['done'] = !empty($b['done']);
+                    $found = true;
+                }
+                $n++;
+            }
+            unset($blk);
+            if (!$found) {
+                json_error('Esa casilla ya no existe; recarga la página', 404);
+            }
+            db()->prepare('UPDATE projects SET description = ? WHERE id = ?')
+                ->execute([rich_note_store($dec['blocks'], null), (int)$project['id']]);
             json_ok();
         }
 

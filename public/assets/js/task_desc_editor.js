@@ -24,10 +24,12 @@ const MAX_IMAGES = 20;   // igual que RICH_NOTE_MAX_IMAGES (includes/rich_note.p
 
 export const taskAssetUrl =(id) => `task_asset.php?id=${encodeURIComponent(id)}`;
 
-async function uploadTaskImage(taskId, blob, name) {
+async function uploadTaskImage(owner, blob, name) {
   const fd = new FormData();
   fd.append('file', blob, name || 'imagen.png');
-  if (taskId) fd.append('task_id', String(taskId));
+  // Una tarea o un proyecto ya guardados enlazan la imagen de una vez; uno nuevo la deja sin dueño hasta guardarse.
+  if (owner.taskId) fd.append('task_id', String(owner.taskId));
+  if (owner.projectId) fd.append('project_id', String(owner.projectId));
   const res = await fetch('api/index.php?r=tasks/asset_upload', {
     method: 'POST',
     headers: { 'X-CSRF-Token': window.__siriusCsrf || '' },
@@ -42,10 +44,10 @@ async function uploadTaskImage(taskId, blob, name) {
 /**
  * @param {HTMLElement} container  donde se monta (barra + área de texto)
  * @param {Array} blocks           bloques iniciales ([] = vacío)
- * @param {{taskId?: number}} [opts]  tarea que se edita (las imágenes se enlazan a ella); sin id = tarea nueva
+ * @param {{taskId?: number, projectId?: number}} [opts]  tarea o proyecto que se edita (las imágenes se enlazan a él); sin id = nuevo
  * @returns {{ content: () => (object|string), isEmpty: () => boolean, busy: () => boolean, focus: () => void }}
  */
-export function mountTaskEditor(container, blocks, { taskId = 0 } = {}) {
+export function mountTaskEditor(container, blocks, { taskId = 0, projectId = 0 } = {}) {
   container.innerHTML = `
     <div class="rounded-lg bg-slate-50 ring-1 ring-inset ring-slate-300 focus-within:ring-2 focus-within:ring-indigo-500">
       <div class="flex flex-wrap items-center gap-0.5 border-b border-slate-200 px-1.5 py-1" role="toolbar" aria-label="Formato">
@@ -130,7 +132,7 @@ export function mountTaskEditor(container, blocks, { taskId = 0 } = {}) {
     uploading++;
     try {
       const blob = await prepareImage(file);
-      const asset = await uploadTaskImage(taskId, blob, file.name);
+      const asset = await uploadTaskImage({ taskId, projectId }, blob, file.name);
       if (!wait.isConnected) return;
       const block = buildImageBlock(asset.id, true, asset.url);
       wait.replaceWith(block);
@@ -259,14 +261,15 @@ const runHtml = (r) => {
 const ALIGN_CLS = { center: 'text-center', right: 'text-right', justify: 'text-justify' };
 
 /**
- * HTML de la descripción para la tarjeta. Las casillas son botones `data-check="<tarea>:<n>:<0|1>"`
+ * HTML de la descripción para la tarjeta. Las casillas son botones `data-check="<tarea>:<n>:<0|1>"` (`data-pcheck` si es la de un proyecto)
  * (n = posición de la casilla, 0|1 = el estado al que pasaría) que la lista de tareas conecta a la API;
  * las imágenes llevan `data-zoom` para abrirlas en grande. Todo el texto sale escapado.
  *
  * `size`: 'card' (ocupa el alto sobrante de la tarjeta vertical y se desplaza), 'full' (sin límite de alto,
  * para la vista completa de la tarea).
  */
-export function taskDescriptionHtml(task, { canCheck = true, size = 'card' } = {}) {
+export function taskDescriptionHtml(task, { canCheck = true, size = 'card', owner = 'task' } = {}) {
+  const checkAttr = owner === 'project' ? 'data-pcheck' : 'data-check';
   const blocks = task.desc_blocks || [];
   if (!blocks.length) return '';
   let n = 0;
@@ -285,7 +288,7 @@ export function taskDescriptionHtml(task, { canCheck = true, size = 'card' } = {
           <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>`;
       const label = `<span class="min-w-0 flex-1 ${align} ${done ? 'text-slate-400 line-through' : ''}">${text || '&nbsp;'}</span>`;
       return canCheck
-        ? `<button type="button" data-check="${task.id}:${idx}:${done ? 0 : 1}" role="checkbox" aria-checked="${done}"
+        ? `<button type="button" ${checkAttr}="${task.id}:${idx}:${done ? 0 : 1}" role="checkbox" aria-checked="${done}"
                    class="flex w-full items-start gap-2 rounded px-0.5 py-0.5 text-left hover:bg-slate-100">${box}${label}</button>`
         : `<div class="flex items-start gap-2 px-0.5 py-0.5">${box}${label}</div>`;
     }
