@@ -419,6 +419,22 @@ test('el PDF del estado de cuenta trae Fecha, Nombre del paciente, Estudios y Mo
     ok(str_contains($txt, 'Biometr') && str_contains($txt, 'FilmArray GI'), 'los estudios de una misma visita van juntos en un renglón');
 });
 
+test('un estado manual hecho antes de guardar la fecha la toma de sus registros y la imprime como la ventana (AAAA-MM-DD)', function () use ($admin, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $items = [['patient_name' => 'Paciente Manual Viejo', 'study_name' => 'FILM ARRAY GASTROINTESTINAL MULTIPLEX', 'amount_charged' => 5300, 'commission_pct' => 14.2, 'commission_amount' => 750]];
+    $pdo->prepare("INSERT INTO commission_statements (folio, party_type, party_id, period_start, period_end, `lines`, total_commission, created_by) VALUES ('010126-77', 'doctor', ?, '2026-10-01', '2026-10-31', ?, 750, 1)")
+        ->execute([$docId, json_encode(['source' => 'manual', 'party_name' => 'Rodolfo Ramírez del Pilar', 'items' => $items], JSON_UNESCAPED_UNICODE)]);
+    $id = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO commission_entries (doctor_id, patient_name, entry_date, studies, total_amount, total_commission, statement_id) VALUES (?, 'Paciente Manual Viejo', '2026-10-28', '[]', 5300, 750, ?)")
+        ->execute([$docId, $id]);
+    $r = $admin->req('GET', '/comision.php?id=' . $id);
+    ok(str_starts_with($r['body'], '%PDF'), 'comision.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/comision_' . $id . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    $txt = (string)pdf_extract_text($tmp);
+    ok(str_contains($txt, '2026-10-28'), 'debía aparecer la fecha 2026-10-28 del registro original');
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);
