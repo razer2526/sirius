@@ -387,6 +387,7 @@ function handle_commissions(string $action): void
                     $commission = (float)($s['commission_amount'] ?? 0);
                     $items[] = [
                         'patient_name'      => $e['patient_name'],
+                        'entry_date'        => $e['entry_date'],
                         'study_name'        => (string)($s['name'] ?? ''),
                         'amount_charged'    => $amount,
                         'commission_pct'    => $amount > 0 ? round($commission / $amount * 100, 1) : 0,

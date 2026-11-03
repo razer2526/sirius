@@ -11,17 +11,35 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
-2. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-3. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-4. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-5. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-6. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-7. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-8. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-9. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-10. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-11. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
+2. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+3. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+4. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+5. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+6. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+7. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+8. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+9. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+10. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+11. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+12. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta
+
+Mejora (PR 84). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Columnas, pie y numeración del PDF
+
+- **Qué cambió:** el PDF del estado de cuenta de comisiones cambia en tres cosas.
+  - **Columnas:** ahora son **Fecha**, **Nombre del paciente**, **Estudios** y **Monto**. Hay **un renglón por visita del paciente**: si en la misma admisión se hicieron varios estudios, van juntos en la columna Estudios y el Monto es la **comisión** de esa visita (ya no se imprime lo cobrado al paciente ni el porcentaje). La barra de **Total comisión** sigue al final y suma los montos.
+  - **Pie de página:** el pie corporativo (razón social, dirección, teléfonos) aparece **solo en la última hoja**. Antes se repetía en todas.
+  - **Numeración:** todas las hojas llevan **«Página X de Y»**, incluida la primera.
+  El mismo pie y la misma numeración aplican al estado de cuenta hecho desde **Pegar lista (imagen)**, que conserva sus columnas.
+- **Afecta a:** quien genera o descarga estados de cuenta de comisiones. Los **estados ya generados** también se ven con el formato nuevo al volver a abrirlos. Los hechos con **Registro manual** antes de este cambio no guardaron la fecha de la visita, y en ellos la columna Fecha muestra «—».
+- **Acción:** ninguna.
+- **Manual:** administrador, apartado 9 («Estado de cuenta en PDF»).
 
 ---
 
