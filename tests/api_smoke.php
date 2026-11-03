@@ -435,6 +435,56 @@ test('un estado manual hecho antes de guardar la fecha la toma de sus registros 
     ok(str_contains($txt, '2026-10-28'), 'debía aparecer la fecha 2026-10-28 del registro original');
 });
 
+$commPdfText = function (int $id) use ($admin): string {
+    $r = $admin->req('GET', '/comision.php?id=' . $id);
+    ok(str_starts_with($r['body'], '%PDF'), 'comision.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/comision_pago_' . $id . '_' . mt_rand() . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    return (string)pdf_extract_text($tmp);
+};
+test('un estado de cuenta sin pagar dice «Pendiente de pago» y no lleva clave SPEI', function () use ($pdo, $commPdfText) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    $txt = $commPdfText($id);
+    ok(str_contains($txt, 'Pendiente de pago'), 'debía decir Pendiente de pago');
+    ok(!str_contains($txt, 'RASTREO'), 'no debía traer clave de rastreo');
+});
+test('marcar pagado exige la clave de rastreo SPEI y la imprime junto con el estatus «Pagado»', function () use ($admin, &$csrf, $pdo, $commPdfText) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    foreach (['', 'ab', 'clave con $ raros'] as $bad) {
+        eq(422, $admin->json('POST', '/api/index.php?r=commissions/statement_pay', ['id' => $id, 'payment_reference' => $bad], $csrf)['status'], "«{$bad}» no debía aceptarse");
+    }
+    $r = $admin->json('POST', '/api/index.php?r=commissions/statement_pay', ['id' => $id, 'payment_reference' => 'MBAN 0100 2611 03ABC'], $csrf);
+    eq(200, $r['status'], $r['body']);
+    eq('MBAN0100261103ABC', $r['json']['data']['payment_reference'], 'la clave se guarda sin espacios');
+    $txt = $commPdfText($id);
+    ok(str_contains($txt, 'Pagado'), 'debía decir Pagado');
+    ok(str_contains($txt, 'MBAN0100261103ABC'), 'debía imprimir la clave de rastreo');
+    ok(str_contains($txt, 'RASTREO SPEI'), 'debía rotular la clave de rastreo SPEI');
+    ok(!str_contains($txt, 'Pendiente de pago'));
+});
+test('un estado pagado no se puede eliminar hasta quitarle el pago', function () use ($admin, &$csrf, $pdo, $commPdfText) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    eq(422, $admin->json('POST', '/api/index.php?r=commissions/statement_delete', ['id' => $id], $csrf)['status']);
+    eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_unpay', ['id' => $id], $csrf)['status']);
+    $row = $pdo->query("SELECT paid_at, payment_reference FROM commission_statements WHERE id = $id")->fetch();
+    ok($row['paid_at'] === null && $row['payment_reference'] === null, 'al quitar el pago se borra la clave');
+    ok(str_contains($commPdfText($id), 'Pendiente de pago'));
+});
+test('la cuenta del médico se filtra por periodo y avisa de los pendientes de otros periodos', function () use ($admin, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $ins = $pdo->prepare("INSERT INTO commission_entries (doctor_id, patient_name, entry_date, studies, total_amount, total_commission) VALUES (?, ?, ?, '[]', 100, 10)");
+    $ins->execute([$docId, 'Pendiente de octubre', '2026-10-10']);
+    $ins->execute([$docId, 'Pendiente de marzo', '2026-03-05']);
+    $all = $admin->json('GET', '/api/index.php?r=commissions/entries_list&doctor_id=' . $docId, null)['json']['data'];
+    $names = array_column($all['entries'], 'patient_name');
+    ok(in_array('Pendiente de marzo', $names, true) && in_array('Pendiente de octubre', $names, true), 'sin periodo trae todo');
+    $d = $admin->json('GET', '/api/index.php?r=commissions/entries_list&doctor_id=' . $docId . '&from=2026-09-01&to=2026-10-31', null)['json']['data'];
+    $names = array_column($d['entries'], 'patient_name');
+    ok(in_array('Pendiente de octubre', $names, true) && !in_array('Pendiente de marzo', $names, true), 'con periodo solo trae ese bimestre');
+    eq(1, $d['pending_outside'], 'debía avisar del pendiente de marzo');
+    ok(array_key_exists('paid_at', $d['entries'][0]), 'cada registro trae el estado de pago de su estado de cuenta');
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

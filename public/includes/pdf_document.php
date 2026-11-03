@@ -33,6 +33,10 @@ class SiriusDocPDF extends FPDF
     private array $info = [];      // pares etiqueta/valor del encabezado del paciente
     private bool $lastPage = false;
     private bool $footerAtEnd = false;    // el pie se decide al cerrar el documento (ver footerOnLastPageOnly)
+    /** Estado de pago de un estado de cuenta de comisiones (null en los demás documentos). */
+    private ?array $payment = null;
+    /** Alto que se deja libre arriba del pie para la clave SPEI. */
+    private float $paymentReserve = 0.0;
     private bool $numberAlways = false;   // "Página X de Y" también en la primera hoja y en documentos de una sola
     private ?string $headerImg;
     private ?string $footerImg;
@@ -57,7 +61,48 @@ class SiriusDocPDF extends FPDF
 
     public function setPatientInfo(array $rows): void
     {
+        if ($this->payment !== null) {
+            $rows[] = ['Estatus de pago', $this->payment['paid'] ? 'Pagado' : 'Pendiente de pago', null, null, 'bold' => true];
+        }
         $this->info = $rows;
+    }
+
+    /**
+     * Estado de cuenta de comisiones: agrega el «Estatus de pago» a la información de arriba (llamar antes de
+     * setPatientInfo) y, si está pagado, la clave de rastreo SPEI justo arriba del pie de la última hoja.
+     */
+    public function setPaymentStatus(bool $paid, string $reference = ''): void
+    {
+        $this->payment = ['paid' => $paid, 'reference' => $reference];
+        $this->paymentReserve = ($paid && $reference !== '') ? 16.0 : 0.0;
+    }
+
+    /** Recuadro con la clave de rastreo SPEI, pegado arriba del pie corporativo (o a continuación si no hay pie). */
+    private function paymentBlock(): void
+    {
+        $h = 11.0;
+        $x = $this->left();
+        $w = $this->usableWidth();
+        if ($this->footerAtEnd && $this->footerImg) {
+            $y = $this->GetPageHeight() - (float)$this->lh['footer_bottom'] - (float)$this->lh['footer_height'] - 8 - $h;
+        } else {
+            $this->ensureSpace($h + 4);
+            $y = $this->GetY() + 2;
+        }
+        $this->SetAutoPageBreak(false);
+        $this->SetFillColor(236, 253, 245);
+        $this->SetDrawColor(167, 243, 208);
+        $this->SetLineWidth(0.2);
+        $this->roundedRect($x, $y, $w, $h, 2, 'FD');
+        $this->SetXY($x + 4, $y + 1.6);
+        $this->SetFont('Helvetica', '', 7.5);
+        $this->SetTextColor(...PDF_MUTED);
+        $this->Cell($w - 8, 3.6, pdf_t('PAGADO · CLAVE DE RASTREO SPEI'), 0, 0, 'L');
+        $this->SetXY($x + 4, $y + 5.4);
+        $this->SetFont('Helvetica', 'B', 10);
+        $this->SetTextColor(...PDF_INK);
+        $this->Cell($w - 8, 4.6, pdf_t($this->payment['reference']), 0, 0, 'L');
+        $this->SetAutoPageBreak(true, 20);
     }
 
     public function markLastPage(): void
@@ -81,6 +126,9 @@ class SiriusDocPDF extends FPDF
     {
         if ($this->footerAtEnd) {
             $this->lastPage = true;
+            if ($this->payment !== null && $this->payment['paid'] && $this->payment['reference'] !== '') {
+                $this->paymentBlock();
+            }
         }
     }
 
@@ -95,7 +143,7 @@ class SiriusDocPDF extends FPDF
             return;
         }
         $footerY = $this->GetPageHeight() - (float)$this->lh['footer_bottom'] - (float)$this->lh['footer_height'];
-        if ($this->GetY() + $needed > $footerY - 8) {
+        if ($this->GetY() + $needed > $footerY - 8 - $this->paymentReserve) {
             $this->AddPage();
         }
     }
@@ -2767,6 +2815,7 @@ function render_commission_pdf(array $statement, ?string $path = null): string
 
     $lh = letterhead_config();
     $pdf = new SiriusDocPDF($lh, $clinicName);
+    $pdf->setPaymentStatus(!empty($statement['paid_at']), trim((string)($statement['payment_reference'] ?? '')));
 
     if ($source === 'image') {
         render_commission_referral_body($pdf, $statement, $partyName, $items);

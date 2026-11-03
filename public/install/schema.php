@@ -541,6 +541,9 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 -- CREATE TABLE falla y aborta todo el instalador. SQLite sí las acepta.
                 `lines` JSON NOT NULL,
                 total_commission DECIMAL(10,2) NOT NULL DEFAULT 0,
+                paid_at DATETIME NULL,
+                payment_reference VARCHAR(60) NULL,
+                paid_by INT UNSIGNED NULL,
                 created_by INT UNSIGNED NULL,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 INDEX idx_cstatement_party (party_type, party_id),
@@ -1222,6 +1225,9 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 period_end TEXT NOT NULL,
                 lines TEXT NOT NULL,
                 total_commission REAL NOT NULL DEFAULT 0,
+                paid_at TEXT NULL,
+                payment_reference TEXT NULL,
+                paid_by INTEGER NULL,
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
@@ -1556,6 +1562,11 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
         "ALTER TABLE tasks ADD COLUMN weekday " . ($isMysql ? 'TINYINT UNSIGNED NULL' : 'INTEGER NULL'),
         // Tema de color elegido por el usuario para su sidebar y Dashboard (NULL = índigo por defecto).
         "ALTER TABLE users ADD COLUMN theme " . ($isMysql ? 'VARCHAR(20) NULL' : 'TEXT NULL'),
+        // Cierre del estado de cuenta de comisiones: fecha de pago y clave de rastreo SPEI de la
+        // transferencia (NULL = pendiente de pago).
+        "ALTER TABLE commission_statements ADD COLUMN paid_at " . ($isMysql ? 'DATETIME NULL' : 'TEXT NULL'),
+        "ALTER TABLE commission_statements ADD COLUMN payment_reference {$varchar(60)}",
+        "ALTER TABLE commission_statements ADD COLUMN paid_by " . ($isMysql ? 'INT UNSIGNED NULL' : 'INTEGER NULL'),
         // Referencia larga: bloque de texto libre con saltos de línea (ej. categorías
         // de hemoglobina glicosilada) para cuando el criterio no es sexo/edad/condición
         // filtrable — alternativa al sistema estructurado, no lo reemplaza.
