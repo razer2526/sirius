@@ -350,6 +350,60 @@ test('un usuario sin acceso a la tarea no puede marcar sus casillas', function (
     eq('No tienes acceso a esta tarea', $r['json']['error'] ?? '');
 });
 
+echo "\nComisiones por periodo\n";
+$comm = (function () use ($admin, &$csrf) {
+    $doctor = function (string $name) use ($admin, &$csrf): int {
+        $r = $admin->json('POST', '/api/index.php?r=vinculacion/doctors_save', ['name' => $name], $csrf);
+        eq(200, $r['status'], $r['body']);
+        return (int)$r['json']['data']['id'];
+    };
+    $studies = fn(array $lines) => ['study_lines' => array_map(fn($l) => ['study_name' => $l[0], 'amount_charged' => $l[1]], $lines)];
+    $params = fn(int $doctorId) => ['party_type' => 'doctor', 'party_id' => $doctorId, 'period_start' => date('Y-m-d', strtotime('-1 day')), 'period_end' => date('Y-m-d', strtotime('+1 day'))];
+    $preview = function (int $doctorId) use ($admin, $params): array {
+        $r = $admin->json('GET', '/api/index.php?r=commissions/preview&' . http_build_query($params($doctorId)), null);
+        eq(200, $r['status'], $r['body']);
+        return $r['json']['data'];
+    };
+    return compact('doctor', 'studies', 'params', 'preview');
+})();
+test('una admisión del asistido (nombre escrito, estudios sin grupo) entra a la cuenta del médico y se liga al guardar', function () use ($admin, &$csrf, $createLab, $comm, $pdo) {
+    $docId = $comm['doctor']('Rodolfo Ramírez del Pilar');
+    $ep = $createLab($admin, $csrf, ['referring_doctor' => 'Dr. Rodolfo Ramírez', 'assisted' => true] + $comm['studies']([['Biometría hemática', 400], ['FilmArray GI', 0]]));
+    eq($docId, (int)$pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep)->fetchColumn(), 'el nombre escrito debía ligarse al único médico que coincide');
+    $ep2 = $createLab($admin, $csrf, ['referring_doctor' => 'Dr. Otro Nombre'] + $comm['studies']([['Glucosa', 100]]));
+    ok($pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep2)->fetchColumn() === null, 'un nombre sin coincidencia no se liga');
+
+    $d = $comm['preview']($docId);
+    eq(['Biometría hemática', 'FilmArray GI'], array_column($d['lines'], 'study_name'));
+    eq([40.0, 750.0], array_map('floatval', array_column($d['lines'], 'commission_amount')), 'clínico 10%; FilmArray monto fijo');
+    eq(790.0, (float)$d['total']);
+});
+test('las admisiones capturadas antes de dar de alta al médico también se encuentran por el nombre escrito', function () use ($admin, &$csrf, $createLab, $comm, $pdo) {
+    $ep = $createLab($admin, $csrf, ['referring_doctor' => 'Mariana Pérez Gómez'] + $comm['studies']([['Perfil lipídico', 500]]));
+    ok($pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep)->fetchColumn() === null);
+    $docId = $comm['doctor']('Mariana Pérez Gómez');
+    $d = $comm['preview']($docId);
+    eq(1, count($d['lines']), 'debía aparecer la admisión anterior');
+    eq(50.0, (float)$d['lines'][0]['commission_amount']);
+    eq('Mariana Pérez Gómez', $d['lines'][0]['typed_doctor'], 'se avisa que el médico fue escrito a mano');
+});
+test('si el nombre escrito encaja con dos médicos no se le asigna a ninguno', function () use ($admin, &$csrf, $createLab, $comm, $pdo) {
+    $a = $comm['doctor']('Ana López Ruiz');
+    $b = $comm['doctor']('Ana López Soto');
+    $ep = $createLab($admin, $csrf, ['referring_doctor' => 'Dra. Ana López'] + $comm['studies']([['Glucosa', 100]]));
+    ok($pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep)->fetchColumn() === null);
+    eq(0, count($comm['preview']($a)['lines']));
+    eq(0, count($comm['preview']($b)['lines']));
+});
+test('el estado de cuenta por periodo se genera con folio y trae el desglose', function () use ($admin, &$csrf, $comm, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $r = $admin->json('POST', '/api/index.php?r=commissions/save', $comm['params']($docId), $csrf);
+    eq(200, $r['status'], $r['body']);
+    $g = $admin->json('GET', '/api/index.php?r=commissions/get&id=' . $r['json']['data']['id'], null)['json']['data']['statement'];
+    eq(790.0, (float)$g['total_commission']);
+    eq(2, count($g['lines']['items']));
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

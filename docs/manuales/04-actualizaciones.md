@@ -11,16 +11,41 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-2. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-3. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-4. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-5. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-6. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-7. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-8. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-9. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-10. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+2. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+3. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+4. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+5. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+6. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+7. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+8. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+9. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+10. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+11. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo
+
+Corrección y mejora (PR 83). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Ya encuentra las admisiones del médico
+
+- **Qué cambió:** en **Apps → Comisiones → Nuevo estado de cuenta → Por periodo** la vista previa salía vacía («No hay estudios comisionables») aunque el médico sí tuviera pacientes. Había dos causas: (1) la admisión del **asistido** solo deja **escribir** el nombre del médico, no elegirlo de la lista de convenio, y Comisiones solo veía las admisiones ligadas a un médico de la lista; (2) solo contaba los estudios que tuvieran **grupo de comisión** en el catálogo, y casi ninguno lo tiene (ni los estudios capturados a mano). Ahora:
+  - Al guardar una admisión, si el nombre escrito (por ejemplo «Dr. Rodolfo Ramírez») corresponde a **un solo** médico de Vinculación, la admisión queda ligada a él. Si coincide con dos o con ninguno, no se liga.
+  - Las admisiones **anteriores** también se encuentran por el nombre escrito; en la vista previa aparecen con la nota «Médico escrito en Admisión: …» para que las revises.
+  - Los estudios **sin grupo** se calculan como en el **Registro manual**: **FilmArray, monto fijo de $750**; cualquier otro estudio, la tasa de **Análisis clínicos** de Vinculación (10 % de fábrica). Los estudios que sí traen grupo siguen usando su tasa de Vinculación.
+  - **Pegar lista (imagen)** usa las mismas reglas.
+- **Afecta a:** quien genera estados de cuenta de comisiones.
+- **Acción:** revisa los montos de la vista previa antes de generar. Si un nombre no se encontró, escríbelo en Admisión igual que en **Vinculación** (nombre y primer apellido, como mínimo).
+- **Manual:** estándar, apartado 14.3 (Comisiones).
+
+### La vista previa aparece sola y el periodo es por bimestre
+
+- **Qué cambió:** ya no hay botón **Vista previa**: al elegir **médico (o concierge)** y **periodo**, los estudios aparecen solos. El selector **Periodo** ofrece los bimestres (por ejemplo «Septiembre – Octubre 2026») y arranca en el **último bimestre terminado**, que es el que toca facturar; **Otro rango de fechas…** y los campos **Desde / Hasta** siguen disponibles. Cada línea muestra ahora también la **fecha de admisión**.
+- **Afecta a:** quien genera estados de cuenta de comisiones.
+- **Acción:** ninguna. Se siguen pudiendo **excluir líneas** antes de **Generar estado de cuenta**.
+- **Manual:** estándar, apartado 14.3.
 
 ---
 

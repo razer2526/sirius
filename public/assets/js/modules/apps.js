@@ -2005,6 +2005,23 @@ function defaultPeriodEnd() {
   return new Date().toISOString().slice(0, 10);
 }
 
+const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Bimestres (los estados de cuenta se hacen cada dos meses) de este año y el anterior, del más reciente al más antiguo. `done`: ya terminó. */
+function bimesterOptions(today = new Date()) {
+  const opts = [];
+  for (let y = today.getFullYear(); y >= today.getFullYear() - 1; y--) {
+    for (let b = 5; b >= 0; b--) {
+      const start = new Date(y, b * 2, 1);
+      if (start > today) continue;
+      const end = new Date(y, b * 2 + 2, 0); // día 0 del mes siguiente = último día del segundo mes
+      opts.push({ key: `${y}-${b}`, label: `${MONTH_NAMES[b * 2]} – ${MONTH_NAMES[b * 2 + 1]} ${y}`, from: localYmd(start), to: localYmd(end), done: end < today });
+    }
+  }
+  return opts;
+}
+
 let commissionFormMode = 'auto';
 
 /** Envoltorio: elige entre armar el estado de cuenta por periodo (hoy) o pegando la lista de un médico (imagen + IA). */
@@ -2048,13 +2065,16 @@ async function renderCommissionForm(root) {
 
 /** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
 function renderCommissionFormAuto(root, doctors, concierge) {
+  const periods = bimesterOptions();
   let lines = [];
   let saving = false;
+  let loaded = false;
+  let seq = 0; // descarta respuestas viejas si el usuario cambia de médico o periodo mientras carga
 
   root.innerHTML = `
     <div class="space-y-5">
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label class="${labelCls}">Tipo</label>
             <select id="c-party-type" class="${inputCls}">
@@ -2062,22 +2082,29 @@ function renderCommissionFormAuto(root, doctors, concierge) {
               <option value="concierge">Concierge</option>
             </select>
           </div>
-          <div class="sm:col-span-2 lg:col-span-1">
+          <div>
             <label class="${labelCls}">Médico / Concierge</label>
             <select id="c-party-id" class="${inputCls}"></select>
           </div>
+          <div class="sm:col-span-2 lg:col-span-1">
+            <label class="${labelCls}">Periodo</label>
+            <select id="c-period" class="${inputCls}">
+              ${periods.map((o) => `<option value="${o.key}">${o.label}${o.done ? '' : ' (en curso)'}</option>`).join('')}
+              <option value="custom">Otro rango de fechas…</option>
+            </select>
+          </div>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-4 sm:max-w-md">
           <div>
             <label class="${labelCls}">Desde</label>
-            <input type="date" id="c-from" value="${defaultPeriodStart()}" class="${inputCls}">
+            <input type="date" id="c-from" class="${inputCls}">
           </div>
           <div>
             <label class="${labelCls}">Hasta</label>
-            <input type="date" id="c-to" value="${defaultPeriodEnd()}" class="${inputCls}">
+            <input type="date" id="c-to" class="${inputCls}">
           </div>
         </div>
-        <div class="mt-4">
-          <button id="btn-preview" type="button" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Vista previa</button>
-        </div>
+        <p id="c-status" class="mt-3 text-xs text-slate-500" aria-live="polite"></p>
       </section>
 
       <div id="c-lines-box"></div>
@@ -2092,22 +2119,42 @@ function renderCommissionFormAuto(root, doctors, concierge) {
 
   const typeSel = root.querySelector('#c-party-type');
   const partySel = root.querySelector('#c-party-id');
+  const periodSel = root.querySelector('#c-period');
+  const fromInput = root.querySelector('#c-from');
+  const toInput = root.querySelector('#c-to');
+  const statusEl = root.querySelector('#c-status');
   const linesBox = root.querySelector('#c-lines-box');
   const genBtn = root.querySelector('#btn-generate');
 
+  const emptyBox = (html) => `<div class="rounded-2xl bg-white px-6 py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">${html}</div>`;
+
   const paintPartyOptions = () => {
-    const opts = typeSel.value === 'concierge'
+    const isConcierge = typeSel.value === 'concierge';
+    const opts = isConcierge
       ? concierge.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
       : doctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}${d.concierge_name ? ' — ' + escapeHtml(d.concierge_name) : ''}</option>`);
-    partySel.innerHTML = opts.join('') || '<option value="">— Sin registros —</option>';
+    partySel.innerHTML = opts.length
+      ? `<option value="">— Elige ${isConcierge ? 'un concierge' : 'un médico'} —</option>${opts.join('')}`
+      : '<option value="">— Sin registros —</option>';
   };
-  typeSel.addEventListener('change', paintPartyOptions);
-  paintPartyOptions();
+
+  // El periodo elegido llena las fechas; si se editan a mano, el selector pasa a "Otro rango".
+  const applyPeriod = () => {
+    const o = periods.find((x) => x.key === periodSel.value);
+    if (o) { fromInput.value = o.from; toInput.value = o.to; }
+  };
+  const syncPeriodFromDates = () => {
+    const o = periods.find((x) => x.from === fromInput.value && x.to === toInput.value);
+    periodSel.value = o ? o.key : 'custom';
+  };
 
   const paintLines = () => {
     genBtn.disabled = !lines.length;
     if (!lines.length) {
-      linesBox.innerHTML = '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">Sin vista previa todavía.</div>';
+      linesBox.innerHTML = emptyBox(loaded
+        ? `No hay estudios de laboratorio de esta persona entre ${escapeHtml(fromInput.value)} y ${escapeHtml(toInput.value)}.<br>
+           <span class="text-xs">Revisa que en Admisión se haya capturado su nombre como médico, o prueba con otro periodo.</span>`
+        : 'Elige un médico y un periodo: los estudios aparecen aquí solos.');
       return;
     }
     const total = lines.reduce((sum, l) => sum + (l.commission_included ? l.commission_amount : 0), 0);
@@ -2130,7 +2177,8 @@ function renderCommissionFormAuto(root, doctors, concierge) {
                   <td class="px-3 py-2"><input type="checkbox" data-toggle="${l.id}" ${l.commission_included ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
                   <td class="px-3 py-2">
                     <span class="block font-medium text-slate-800">${escapeHtml(l.patient_name)}</span>
-                    <span class="block text-xs text-slate-500">${escapeHtml(l.study_name)} · ${escapeHtml(l.file_number)}</span>
+                    <span class="block text-xs text-slate-500">${escapeHtml(l.study_name)} · ${escapeHtml(l.file_number)} · ${escapeHtml(String(l.admission_date).slice(0, 10))}</span>
+                    ${l.typed_doctor ? `<span class="block text-xs text-amber-600">Médico escrito en Admisión: ${escapeHtml(l.typed_doctor)}</span>` : ''}
                   </td>
                   <td class="px-3 py-2 text-right text-slate-700">$${Number(l.amount_charged).toFixed(2)}</td>
                   <td class="px-3 py-2 text-center text-slate-500">${Number(l.commission_pct).toFixed(1)}%</td>
@@ -2159,27 +2207,52 @@ function renderCommissionFormAuto(root, doctors, concierge) {
         }
       }));
   };
-  paintLines();
 
   const currentParams = () => ({
     party_type: typeSel.value,
     party_id: +partySel.value || 0,
-    period_start: root.querySelector('#c-from').value,
-    period_end: root.querySelector('#c-to').value,
+    period_start: fromInput.value,
+    period_end: toInput.value,
   });
 
-  root.querySelector('#btn-preview').addEventListener('click', async () => {
+  /** Carga sola la vista previa en cuanto hay médico y un rango de fechas válido. */
+  const loadPreview = async () => {
     const p = currentParams();
-    if (!p.party_id) { toast('Elige un médico o concierge', 'error'); return; }
+    const mine = ++seq;
+    lines = [];
+    loaded = false;
+    statusEl.textContent = '';
+    if (!p.party_id || !p.period_start || !p.period_end || p.period_start > p.period_end) {
+      paintLines();
+      if (p.period_start > p.period_end) statusEl.textContent = 'La fecha «Desde» no puede ser posterior a «Hasta».';
+      return;
+    }
+    genBtn.disabled = true;
+    statusEl.textContent = 'Buscando estudios…';
     try {
       const res = await apiGet('commissions/preview', p);
+      if (mine !== seq) return;
       lines = res.lines;
-      paintLines();
-      if (!lines.length) toast('No hay estudios comisionables en ese periodo', 'info');
+      loaded = true;
+      statusEl.textContent = '';
     } catch (e) {
+      if (mine !== seq) return;
+      statusEl.textContent = '';
       toast(e.message, 'error');
     }
-  });
+    paintLines();
+  };
+
+  typeSel.addEventListener('change', () => { paintPartyOptions(); loadPreview(); });
+  partySel.addEventListener('change', loadPreview);
+  periodSel.addEventListener('change', () => { applyPeriod(); loadPreview(); });
+  [fromInput, toInput].forEach((el) => el.addEventListener('change', () => { syncPeriodFromDates(); loadPreview(); }));
+
+  // Arranca en el último bimestre ya terminado (el que toca facturar); si no hay, en el primero.
+  periodSel.value = (periods.find((o) => o.done) || periods[0]).key;
+  applyPeriod();
+  paintPartyOptions();
+  paintLines();
 
   genBtn.addEventListener('click', async () => {
     if (saving) return;
