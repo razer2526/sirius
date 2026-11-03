@@ -11,21 +11,39 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo](#3-de-noviembre-de-2026--comisiones-boton-de-corte-solo-para-administradores-estatus-visible-y-pdf-con-el-estatus-abajo)
-2. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
-3. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
-4. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
-5. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
-6. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-7. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-8. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-9. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-10. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-11. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-12. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-13. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-14. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-15. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [3 de noviembre de 2026 · Comisiones: filtro por estatus y botones Pagado / Pendiente en las acciones](#3-de-noviembre-de-2026--comisiones-filtro-por-estatus-y-botones-pagado--pendiente-en-las-acciones)
+2. [3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo](#3-de-noviembre-de-2026--comisiones-boton-de-corte-solo-para-administradores-estatus-visible-y-pdf-con-el-estatus-abajo)
+3. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
+4. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
+5. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
+6. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+7. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+8. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+9. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+10. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+11. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+12. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+13. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+14. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+15. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+16. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: filtro por estatus y botones Pagado / Pendiente en las acciones
+
+Mejora (PR 88). No hay cambios de esquema: **no hace falta correr `setup.php`**. Si no ves los cambios, entra a **Configuración → Buscar actualizaciones**.
+
+### Listado de estados de cuenta
+
+- **Filtro de estatus:** junto al selector de periodo hay ahora un selector **Estatus** con **Todos**, **Pendiente de pago** y **Pagado**.
+- **Acciones:** cada estado de cuenta tiene un par de botones, **Pagado** y **Pendiente**, y el administrador decide cuál es. El que está activo se ve resaltado (verde si está pagado, amarillo si está pendiente).
+  - **Pagado:** pide la clave de rastreo SPEI. Si ya estaba pagado, abre el pago para corregir la clave.
+  - **Pendiente:** regresa el estado de cuenta a pendiente de pago (pide confirmación) y borra la clave de rastreo.
+- **Quién puede:** solo los administradores ven estos botones. Los demás ven el estatus pero no lo pueden cambiar.
+- **Afecta a:** quien administra Comisiones. Los mismos botones aparecen en la sección de estados de cuenta dentro de la cuenta de cada médico.
+- **Acción:** ninguna.
+- **Manual:** administrador, apartado 9 («Vinculación y comisiones»).
 
 ---
 

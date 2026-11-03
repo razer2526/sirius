@@ -1880,10 +1880,20 @@ async function renderCommissionList(root) {
       <section>
         <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
           <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
-          <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-            Generados en
-            <select id="c-period" class="${inputCls} !w-auto normal-case"></select>
-          </label>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Estatus
+              <select id="c-status" class="${inputCls} !w-auto normal-case">
+                <option value="">Todos</option>
+                <option value="pending">Pendiente de pago</option>
+                <option value="paid">Pagado</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Generados en
+              <select id="c-period" class="${inputCls} !w-auto normal-case"></select>
+            </label>
+          </div>
         </div>
         <div id="c-list">${spinner()}</div>
       </section>
@@ -1896,17 +1906,20 @@ async function renderCommissionList(root) {
   periodSel.innerHTML = periods.map((o) => `<option value="${o.key}">${escapeHtml(o.label)}${o.done ? '' : ' · en curso'}</option>`).join('')
     + '<option value="all">Todos los periodos</option>';
   periodSel.value = periods[0].key;
+  const statusSel = root.querySelector('#c-status');
   const load = async (resetPage = true) => {
     if (resetPage) commissionFilters.page = 1;
     commissionFilters.q = input.value.trim();
     const period = periods.find((o) => o.key === periodSel.value);
     commissionFilters.from = period?.from;
     commissionFilters.to = period?.to;
+    commissionFilters.status = statusSel.value;
     commissionListState = await apiGet('commissions/list', commissionFilters);
     paintCommissionList(root.querySelector('#c-list'), load);
   };
   input.addEventListener('input', debounce(() => load(), 300));
   periodSel.addEventListener('change', () => load());
+  statusSel.addEventListener('change', () => load());
 
   root.querySelector('#btn-new-entry').addEventListener('click', () => openCommissionEntryModal(null, null));
 
@@ -1941,8 +1954,8 @@ function paintCommissionList(box, load) {
   if (!items.length) {
     box.innerHTML = `
       <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
-        <p class="text-sm font-medium text-slate-600">${commissionFilters.from ? 'Sin estados de cuenta generados en este periodo' : 'Sin estados de cuenta generados'}</p>
-        <p class="mt-1 text-xs text-slate-400">${commissionFilters.from ? 'Elige otro periodo arriba o crea uno nuevo con el botón de arriba.' : 'Crea el primero con el botón de arriba.'}</p>
+        <p class="text-sm font-medium text-slate-600">${commissionFilters.from || commissionFilters.status ? 'Sin estados de cuenta con ese periodo y estatus' : 'Sin estados de cuenta generados'}</p>
+        <p class="mt-1 text-xs text-slate-400">${commissionFilters.from || commissionFilters.status ? 'Cambia el periodo o el estatus arriba, o crea uno nuevo con el botón de arriba.' : 'Crea el primero con el botón de arriba.'}</p>
       </div>`;
     return;
   }
@@ -1972,7 +1985,8 @@ function paintCommissionList(box, load) {
                 <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(s.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
                 <td class="px-4 py-3">${commissionPayCell(s)}</td>
                 <td class="px-4 py-3">
-                  <div class="flex justify-end gap-1">
+                  <div class="flex items-center justify-end gap-1">
+                    ${commissionPayToggle(s, s.id)}
                     <a href="comision.php?id=${s.id}" target="_blank" title="Ver PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
                     <a href="comision.php?id=${s.id}&download=1" title="Descargar PDF"
@@ -2024,20 +2038,26 @@ function commissionStatusBadge(s, { withFolio = false } = {}) {
   return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${paid ? 'Pagado' : 'Pendiente de pago'}${withFolio && s.folio ? ' · ' + escapeHtml(s.folio) : ''}</span>`;
 }
 
-/** Botón del corte: «Marcar como pagado» (o «Editar pago» si ya lo está). Solo lo ve el administrador. */
-function commissionPayButton(s, id) {
+/**
+ * Decide el estatus de pago de un estado de cuenta (solo administradores): «Pagado» pide la clave de rastreo
+ * SPEI (si ya está pagado, abre el pago para corregir la clave) y «Pendiente» lo regresa a pendiente de pago.
+ */
+function commissionPayToggle(s, id) {
   if (!isCommissionAdmin()) return '';
   const paid = !!s.paid_at;
-  return `<button type="button" data-pay-statement="${id}"
-                  class="rounded-lg px-3 py-1.5 text-xs font-semibold ${paid ? 'text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50' : 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-500'}">${paid ? 'Editar pago' : 'Marcar como pagado'}</button>`;
+  return `<div class="mr-1 inline-flex overflow-hidden rounded-lg text-xs font-semibold ring-1 ring-slate-300" role="group" aria-label="Estatus de pago">
+    <button type="button" data-pay-statement="${id}" title="${paid ? 'Pagado: clic para corregir la clave de rastreo SPEI' : 'Marcar como pagado (pide la clave de rastreo SPEI)'}"
+            class="px-2.5 py-1.5 ${paid ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}">Pagado</button>
+    <button type="button" data-unpay-statement="${id}" ${paid ? '' : 'disabled'} title="${paid ? 'Regresar a pendiente de pago' : 'Pendiente de pago'}"
+            class="border-l border-slate-300 px-2.5 py-1.5 ${paid ? 'bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-700' : 'bg-amber-500 text-white'}">Pendiente</button>
+  </div>`;
 }
 
-/** Estatus + clave SPEI + botón del corte, apilados (celda "Pago" del listado). */
+/** Estatus + clave SPEI, apilados (celda "Pago" del listado). */
 function commissionPayCell(s) {
   return `<div class="flex flex-col items-start gap-1">
     ${commissionStatusBadge(s)}
     ${s.paid_at && s.payment_reference ? `<span class="font-mono text-[11px] text-slate-500">SPEI ${escapeHtml(s.payment_reference)}</span>` : ''}
-    ${commissionPayButton(s, s.id)}
   </div>`;
 }
 
@@ -2047,6 +2067,20 @@ function bindCommissionPayChips(box, find, onDone) {
     btn.addEventListener('click', () => {
       const statement = find(+btn.dataset.payStatement);
       if (statement) openCommissionPaymentModal(statement, onDone);
+    }));
+  box.querySelectorAll('[data-unpay-statement]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const statement = find(+btn.dataset.unpayStatement);
+      if (!statement) return;
+      const ok = await confirmDialog('Marcar como pendiente de pago', `El estado de cuenta ${statement.folio || ''} vuelve a «Pendiente de pago» y se borra la clave de rastreo SPEI.`, { confirmLabel: 'Marcar pendiente' });
+      if (!ok) return;
+      try {
+        await apiPost('commissions/statement_unpay', { id: statement.id });
+        toast('Marcado como pendiente de pago');
+        if (onDone) onDone();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
     }));
 }
 
@@ -2907,7 +2941,7 @@ function paintDoctorStatements(box, statements, load) {
           ${x.paid_at && x.payment_reference ? `<span class="font-mono text-[11px] text-slate-500">SPEI ${escapeHtml(x.payment_reference)}</span>` : ''}
           <span class="ml-auto flex items-center gap-2">
             <a href="comision.php?id=${x.id}" target="_blank" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">Ver PDF</a>
-            ${commissionPayButton(x, x.id)}
+            ${commissionPayToggle(x, x.id)}
           </span>
         </div>`).join('')}
     </div>`;

@@ -510,6 +510,12 @@ function handle_commissions(string $action): void
                 $where .= ' AND party_type = ? AND party_id = ?';
                 array_push($params, $partyType, $partyId);
             }
+            $status = (string)($_GET['status'] ?? '');
+            if ($status === 'paid') {
+                $where .= ' AND paid_at IS NOT NULL';
+            } elseif ($status === 'pending') {
+                $where .= ' AND paid_at IS NULL';
+            }
             $from = commissions_valid_date($_GET['from'] ?? '');
             $to = commissions_valid_date($_GET['to'] ?? '');
             if ($from !== null && $to !== null) {
