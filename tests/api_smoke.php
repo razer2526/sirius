@@ -445,8 +445,8 @@ $commPdfText = function (int $id) use ($admin): string {
 test('un estado de cuenta sin pagar dice «Pendiente de pago» y no lleva clave SPEI', function () use ($pdo, $commPdfText) {
     $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
     $txt = $commPdfText($id);
-    ok(str_contains($txt, 'Pendiente de pago'), 'debía decir Pendiente de pago');
-    ok(!str_contains($txt, 'RASTREO'), 'no debía traer clave de rastreo');
+    ok(stripos($txt, 'Pendiente de pago') !== false, 'debía decir Pendiente de pago');
+    ok(!str_contains($txt, 'rastreo'), 'no debía traer clave de rastreo');
 });
 test('marcar pagado exige la clave de rastreo SPEI y la imprime junto con el estatus «Pagado»', function () use ($admin, &$csrf, $pdo, $commPdfText) {
     $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
@@ -457,10 +457,10 @@ test('marcar pagado exige la clave de rastreo SPEI y la imprime junto con el est
     eq(200, $r['status'], $r['body']);
     eq('MBAN0100261103ABC', $r['json']['data']['payment_reference'], 'la clave se guarda sin espacios');
     $txt = $commPdfText($id);
-    ok(str_contains($txt, 'Pagado'), 'debía decir Pagado');
+    ok(stripos($txt, 'Pagado') !== false, 'debía decir Pagado');
     ok(str_contains($txt, 'MBAN0100261103ABC'), 'debía imprimir la clave de rastreo');
-    ok(str_contains($txt, 'RASTREO SPEI'), 'debía rotular la clave de rastreo SPEI');
-    ok(!str_contains($txt, 'Pendiente de pago'));
+    ok(str_contains($txt, 'rastreo SPEI'), 'debía rotular la clave de rastreo SPEI');
+    ok(stripos($txt, 'Pendiente de pago') === false, 'ya no debía decir Pendiente de pago');
 });
 test('un estado pagado no se puede eliminar hasta quitarle el pago', function () use ($admin, &$csrf, $pdo, $commPdfText) {
     $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
@@ -468,7 +468,7 @@ test('un estado pagado no se puede eliminar hasta quitarle el pago', function ()
     eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_unpay', ['id' => $id], $csrf)['status']);
     $row = $pdo->query("SELECT paid_at, payment_reference FROM commission_statements WHERE id = $id")->fetch();
     ok($row['paid_at'] === null && $row['payment_reference'] === null, 'al quitar el pago se borra la clave');
-    ok(str_contains($commPdfText($id), 'Pendiente de pago'));
+    ok(stripos($commPdfText($id), 'Pendiente de pago') !== false);
 });
 test('la cuenta del médico se filtra por periodo y avisa de los pendientes de otros periodos', function () use ($admin, $pdo) {
     $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
@@ -483,6 +483,32 @@ test('la cuenta del médico se filtra por periodo y avisa de los pendientes de o
     ok(in_array('Pendiente de octubre', $names, true) && !in_array('Pendiente de marzo', $names, true), 'con periodo solo trae ese bimestre');
     eq(1, $d['pending_outside'], 'debía avisar del pendiente de marzo');
     ok(array_key_exists('paid_at', $d['entries'][0]), 'cada registro trae el estado de pago de su estado de cuenta');
+});
+
+test('solo el administrador puede marcar pagado, corregir o quitar el pago', function () use ($std, $pdo) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    $csrf = $std->json('GET', '/api/index.php?r=auth/session', null)['json']['data']['csrf'];
+    // con acceso a Comisiones, para que el rechazo sea por no ser administrador y no por falta de acceso
+    $stdId = (int)$std->json('GET', '/api/index.php?r=auth/session', null)['json']['data']['user']['id'];
+    $pdo->prepare("INSERT INTO user_permissions (user_id, module_key, flags) VALUES (?, 'apps', ?)")
+        ->execute([$stdId, json_encode(['comisiones' => true])]);
+    foreach (['statement_pay', 'statement_unpay'] as $action) {
+        $r = $std->json('POST', '/api/index.php?r=commissions/' . $action, ['id' => $id, 'payment_reference' => 'MBAN0100261103ABC'], $csrf);
+        ok($r['status'] === 403, "$action debía rechazar a un usuario estándar (HTTP {$r['status']})");
+    }
+    ok($pdo->query("SELECT paid_at FROM commission_statements WHERE id = $id")->fetchColumn() === null, 'no debía quedar pagado');
+});
+test('el listado de estados de cuenta se filtra por periodo de generación y por médico', function () use ($admin, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $today = date('Y-m-d');
+    $in = $admin->json('GET', '/api/index.php?r=commissions/list&from=' . $today . '&to=' . $today, null)['json']['data'];
+    ok($in['total'] >= 1, 'los estados generados hoy debían aparecer en un periodo que incluye hoy');
+    $out = $admin->json('GET', '/api/index.php?r=commissions/list&from=2020-01-01&to=2020-02-29', null)['json']['data'];
+    eq(0, $out['total'], 'un periodo viejo no debía traer estados recientes');
+    $mine = $admin->json('GET', '/api/index.php?r=commissions/list&party_type=doctor&party_id=' . $docId, null)['json']['data'];
+    ok($mine['total'] >= 1);
+    $other = $admin->json('GET', '/api/index.php?r=commissions/list&party_type=doctor&party_id=999999', null)['json']['data'];
+    eq(0, $other['total']);
 });
 
 echo "\nRespaldo cifrado\n";

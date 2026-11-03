@@ -61,26 +61,31 @@ class SiriusDocPDF extends FPDF
 
     public function setPatientInfo(array $rows): void
     {
-        if ($this->payment !== null) {
-            $rows[] = ['Estatus de pago', $this->payment['paid'] ? 'Pagado' : 'Pendiente de pago', null, null, 'bold' => true];
-        }
         $this->info = $rows;
     }
 
     /**
-     * Estado de cuenta de comisiones: agrega el «Estatus de pago» a la información de arriba (llamar antes de
-     * setPatientInfo) y, si está pagado, la clave de rastreo SPEI justo arriba del pie de la última hoja.
+     * Estado de cuenta de comisiones: el estatus de pago (verde «Pagado» / amarillo «Pendiente de pago») y,
+     * si está pagado, la clave de rastreo SPEI en el recuadro que se dibuja justo arriba del pie de la última hoja.
      */
     public function setPaymentStatus(bool $paid, string $reference = ''): void
     {
-        $this->payment = ['paid' => $paid, 'reference' => $reference];
-        $this->paymentReserve = ($paid && $reference !== '') ? 16.0 : 0.0;
+        $this->payment = ['paid' => $paid, 'reference' => $paid ? $reference : ''];
+        // lo que cierra el documento (barra de total) deja libre el alto del recuadro más un respiro
+        $this->paymentReserve = $this->paymentBlockHeight() + 6.0;
     }
 
-    /** Recuadro con la clave de rastreo SPEI, pegado arriba del pie corporativo (o a continuación si no hay pie). */
+    private function paymentBlockHeight(): float
+    {
+        return ($this->payment['reference'] ?? '') !== '' ? 20.0 : 9.0;
+    }
+
+    /** Recuadro del estatus de pago, pegado arriba del pie corporativo (o a continuación si no hay pie). */
     private function paymentBlock(): void
     {
-        $h = 11.0;
+        $paid = (bool)$this->payment['paid'];
+        $reference = (string)$this->payment['reference'];
+        $h = $this->paymentBlockHeight();
         $x = $this->left();
         $w = $this->usableWidth();
         if ($this->footerAtEnd && $this->footerImg) {
@@ -89,19 +94,29 @@ class SiriusDocPDF extends FPDF
             $this->ensureSpace($h + 4);
             $y = $this->GetY() + 2;
         }
+        [$fill, $border, $ink] = $paid
+            ? [[236, 253, 245], [134, 239, 172], [21, 128, 61]]     // verde: pagado
+            : [[254, 249, 195], [250, 204, 21], [133, 77, 14]];     // amarillo: pendiente de pago
         $this->SetAutoPageBreak(false);
-        $this->SetFillColor(236, 253, 245);
-        $this->SetDrawColor(167, 243, 208);
-        $this->SetLineWidth(0.2);
+        $this->SetFillColor(...$fill);
+        $this->SetDrawColor(...$border);
+        $this->SetLineWidth(0.3);
         $this->roundedRect($x, $y, $w, $h, 2, 'FD');
-        $this->SetXY($x + 4, $y + 1.6);
-        $this->SetFont('Helvetica', '', 7.5);
-        $this->SetTextColor(...PDF_MUTED);
-        $this->Cell($w - 8, 3.6, pdf_t('PAGADO · CLAVE DE RASTREO SPEI'), 0, 0, 'L');
-        $this->SetXY($x + 4, $y + 5.4);
+        $this->SetXY($x + 4, $y + 2.2);
         $this->SetFont('Helvetica', 'B', 10);
+        $this->SetTextColor(...$ink);
+        $this->Cell($w - 8, 4.6, pdf_t($paid ? 'PAGADO' : 'PENDIENTE DE PAGO'), 0, 0, 'L');
+        if ($reference !== '') {
+            // un renglón en blanco y, abajo, la clave de rastreo de la transferencia
+            $this->SetXY($x + 4, $y + 11.8);
+            $this->SetFont('Helvetica', '', 9);
+            $this->SetTextColor(...PDF_INK);
+            $label = pdf_t('Clave de rastreo SPEI:  ');
+            $this->Cell($this->GetStringWidth($label) + 1, 5.2, $label, 0, 0, 'L');
+            $this->SetFont('Helvetica', 'B', 10.5);
+            $this->Cell($w - 8 - $this->GetStringWidth($label) - 1, 5.2, pdf_t($reference), 0, 0, 'L');
+        }
         $this->SetTextColor(...PDF_INK);
-        $this->Cell($w - 8, 4.6, pdf_t($this->payment['reference']), 0, 0, 'L');
         $this->SetAutoPageBreak(true, 20);
     }
 
@@ -126,7 +141,7 @@ class SiriusDocPDF extends FPDF
     {
         if ($this->footerAtEnd) {
             $this->lastPage = true;
-            if ($this->payment !== null && $this->payment['paid'] && $this->payment['reference'] !== '') {
+            if ($this->payment !== null) {
                 $this->paymentBlock();
             }
         }

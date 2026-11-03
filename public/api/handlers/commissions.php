@@ -465,6 +465,7 @@ function handle_commissions(string $action): void
 
         /** Cierre del estado de cuenta: se marca pagado con la clave de rastreo SPEI de la transferencia (también corrige la clave). */
         case 'statement_pay': {
+            commissions_require_admin($me);
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
             $statement = commissions_find_statement($id);
@@ -483,6 +484,7 @@ function handle_commissions(string $action): void
 
         /** Regresa el estado de cuenta a «pendiente de pago» (por si se marcó por error). */
         case 'statement_unpay': {
+            commissions_require_admin($me);
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
             $statement = commissions_find_statement($id);
@@ -500,6 +502,19 @@ function handle_commissions(string $action): void
             if ($q !== '') {
                 $where .= ' AND folio LIKE ?';
                 $params[] = '%' . $q . '%';
+            }
+            // De quién es el estado de cuenta (cuenta de un médico) y en qué periodo se generó (por defecto, el bimestre en curso)
+            $partyType = in_array($_GET['party_type'] ?? '', ['doctor', 'concierge'], true) ? $_GET['party_type'] : null;
+            $partyId = (int)($_GET['party_id'] ?? 0);
+            if ($partyType !== null && $partyId > 0) {
+                $where .= ' AND party_type = ? AND party_id = ?';
+                array_push($params, $partyType, $partyId);
+            }
+            $from = commissions_valid_date($_GET['from'] ?? '');
+            $to = commissions_valid_date($_GET['to'] ?? '');
+            if ($from !== null && $to !== null) {
+                $where .= ' AND DATE(created_at) BETWEEN ? AND ?';
+                array_push($params, $from, $to);
             }
             $pdo = db();
             $st = $pdo->prepare("SELECT COUNT(*) c FROM commission_statements WHERE $where");
@@ -749,6 +764,14 @@ function commissions_concierge_name(int $id): string
     $st = db()->prepare('SELECT name FROM vinculacion_concierge WHERE id = ?');
     $st->execute([$id]);
     return (string)($st->fetch()['name'] ?? '');
+}
+
+/** El corte (marcar pagado, corregir la clave o quitar el pago) es solo del administrador. */
+function commissions_require_admin(array $me): void
+{
+    if (!is_admin_role($me)) {
+        json_error('Solo un administrador puede registrar el pago de un estado de cuenta', 403);
+    }
 }
 
 /** Clave de rastreo SPEI: sin espacios (se quitan al pegarla), de 4 a 60 letras, números o guiones; null si no sirve. */
