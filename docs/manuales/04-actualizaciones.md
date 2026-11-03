@@ -11,20 +11,40 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
-2. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
-3. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
-4. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
-5. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-6. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-7. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-8. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-9. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-10. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-11. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-12. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-13. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-14. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo](#3-de-noviembre-de-2026--comisiones-boton-de-corte-solo-para-administradores-estatus-visible-y-pdf-con-el-estatus-abajo)
+2. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
+3. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
+4. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
+5. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+6. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+7. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+8. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+9. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+10. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+11. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+12. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+13. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+14. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+15. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo
+
+Mejora (PR 87). No hay cambios de esquema: **no hace falta correr `setup.php`**. Si no ves los cambios, entra a **Configuración → Buscar actualizaciones** para cargar la versión nueva.
+
+### Pantalla de Comisiones
+
+- **Qué cambió:** el listado de **Estados de cuenta** tiene ahora un selector **Generados en** (abre en el bimestre en curso; también «Todos los periodos»). Cada estado de cuenta muestra su **estatus**: verde **Pagado** (con su clave de rastreo SPEI) o amarillo **Pendiente de pago**.
+- **Botón del corte:** **Marcar como pagado** (o **Editar pago** si ya lo está) aparece en cada estado de cuenta, en el listado y en la cuenta de cada médico, y **solo lo ven y lo pueden usar los administradores**. Pide la clave de rastreo SPEI. En la cuenta del médico se muestran sus estados de cuenta del periodo elegido y, siempre, los que siguen pendientes de pago.
+- **Registros sin estado de cuenta:** en la cuenta del médico, los registros que aún no están en un estado de cuenta dicen **Sin estado de cuenta** (antes decían «Pendiente», que se confundía con el pago).
+
+### PDF del estado de cuenta
+
+- **Qué cambió:** el estatus ya no va en el encabezado. Ahora está **abajo, justo arriba del pie de la última hoja**: un recuadro **verde «PAGADO»** o **amarillo «PENDIENTE DE PAGO»**. Si está pagado, **un renglón más abajo** viene la **clave de rastreo SPEI**.
+- **Afecta a:** quien administra Comisiones. Los PDF ya generados se ven con el formato nuevo al volver a descargarlos.
+- **Acción:** ninguna.
+- **Manual:** administrador, apartado 9 («Vinculación y comisiones»).
 
 ---
 

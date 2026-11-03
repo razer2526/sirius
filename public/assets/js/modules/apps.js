@@ -1878,19 +1878,35 @@ async function renderCommissionList(root) {
       </section>
 
       <section>
-        <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+          <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Generados en
+            <select id="c-period" class="${inputCls} !w-auto normal-case"></select>
+          </label>
+        </div>
         <div id="c-list">${spinner()}</div>
       </section>
     </div>`;
 
   const input = root.querySelector('#c-search');
+  // Abre en el bimestre en curso (estados generados en él) para no listar todo el historial
+  const periods = bimesterOptions();
+  const periodSel = root.querySelector('#c-period');
+  periodSel.innerHTML = periods.map((o) => `<option value="${o.key}">${escapeHtml(o.label)}${o.done ? '' : ' · en curso'}</option>`).join('')
+    + '<option value="all">Todos los periodos</option>';
+  periodSel.value = periods[0].key;
   const load = async (resetPage = true) => {
     if (resetPage) commissionFilters.page = 1;
     commissionFilters.q = input.value.trim();
+    const period = periods.find((o) => o.key === periodSel.value);
+    commissionFilters.from = period?.from;
+    commissionFilters.to = period?.to;
     commissionListState = await apiGet('commissions/list', commissionFilters);
     paintCommissionList(root.querySelector('#c-list'), load);
   };
   input.addEventListener('input', debounce(() => load(), 300));
+  periodSel.addEventListener('change', () => load());
 
   root.querySelector('#btn-new-entry').addEventListener('click', () => openCommissionEntryModal(null, null));
 
@@ -1925,8 +1941,8 @@ function paintCommissionList(box, load) {
   if (!items.length) {
     box.innerHTML = `
       <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
-        <p class="text-sm font-medium text-slate-600">Sin estados de cuenta generados</p>
-        <p class="mt-1 text-xs text-slate-400">Crea el primero con el botón de arriba.</p>
+        <p class="text-sm font-medium text-slate-600">${commissionFilters.from ? 'Sin estados de cuenta generados en este periodo' : 'Sin estados de cuenta generados'}</p>
+        <p class="mt-1 text-xs text-slate-400">${commissionFilters.from ? 'Elige otro periodo arriba o crea uno nuevo con el botón de arriba.' : 'Crea el primero con el botón de arriba.'}</p>
       </div>`;
     return;
   }
@@ -1954,7 +1970,7 @@ function paintCommissionList(box, load) {
                 </td>
                 <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(s.period_start)} — ${escapeHtml(s.period_end)}</td>
                 <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(s.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
-                <td class="px-4 py-3">${commissionPayChip(s, { id: s.id })}</td>
+                <td class="px-4 py-3">${commissionPayCell(s)}</td>
                 <td class="px-4 py-3">
                   <div class="flex justify-end gap-1">
                     <a href="comision.php?id=${s.id}" target="_blank" title="Ver PDF"
@@ -2000,12 +2016,29 @@ function paintCommissionList(box, load) {
     }));
 }
 
-/** Botón-etiqueta del estado de pago de un estado de cuenta: abre el modal para registrar o corregir el pago. */
-function commissionPayChip(s, { id, withFolio = false }) {
+const isCommissionAdmin = () => ['administrador', 'developper'].includes(ctx.user.role);
+
+/** Estatus de pago de un estado de cuenta: verde «Pagado» o amarillo «Pendiente de pago» (solo lectura). */
+function commissionStatusBadge(s, { withFolio = false } = {}) {
+  const paid = !!s.paid_at;
+  return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${paid ? 'Pagado' : 'Pendiente de pago'}${withFolio && s.folio ? ' · ' + escapeHtml(s.folio) : ''}</span>`;
+}
+
+/** Botón del corte: «Marcar como pagado» (o «Editar pago» si ya lo está). Solo lo ve el administrador. */
+function commissionPayButton(s, id) {
+  if (!isCommissionAdmin()) return '';
   const paid = !!s.paid_at;
   return `<button type="button" data-pay-statement="${id}"
-                  title="${paid ? 'Clave de rastreo SPEI: ' + escapeHtml(s.payment_reference || '') : 'Clic para registrar el pago'}"
-                  class="rounded-full px-2 py-0.5 text-xs font-semibold ${paid ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'}">${paid ? 'Pagado' : 'Pendiente de pago'}${withFolio && s.folio ? ' · ' + escapeHtml(s.folio) : ''}</button>`;
+                  class="rounded-lg px-3 py-1.5 text-xs font-semibold ${paid ? 'text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50' : 'bg-emerald-600 text-white shadow-sm hover:bg-emerald-500'}">${paid ? 'Editar pago' : 'Marcar como pagado'}</button>`;
+}
+
+/** Estatus + clave SPEI + botón del corte, apilados (celda "Pago" del listado). */
+function commissionPayCell(s) {
+  return `<div class="flex flex-col items-start gap-1">
+    ${commissionStatusBadge(s)}
+    ${s.paid_at && s.payment_reference ? `<span class="font-mono text-[11px] text-slate-500">SPEI ${escapeHtml(s.payment_reference)}</span>` : ''}
+    ${commissionPayButton(s, s.id)}
+  </div>`;
 }
 
 /** Conecta los botones de pago de `box`; `find(id)` devuelve el estado de cuenta (id, folio, party_name, paid_at, payment_reference). */
@@ -2816,6 +2849,7 @@ async function renderCommissionDoctorDetail(root, doctorId) {
         <label for="cd-period" class="text-xs font-semibold uppercase tracking-wide text-slate-500">Periodo</label>
         <select id="cd-period" class="${inputCls} !w-auto"></select>
       </div>
+      <div id="cd-statements"></div>
       <div id="cd-list">${spinner()}</div>
     </div>`;
 
@@ -2836,9 +2870,13 @@ async function renderCommissionDoctorDetail(root, doctorId) {
 
   const load = async () => {
     const period = periods.find((o) => o.key === periodSel.value);
-    const { entries, pending_outside: pendingOutside } = await apiGet('commissions/entries_list', {
-      doctor_id: doctorId, from: period?.from, to: period?.to,
-    });
+    const [{ entries, pending_outside: pendingOutside }, statementsRes] = await Promise.all([
+      apiGet('commissions/entries_list', { doctor_id: doctorId, from: period?.from, to: period?.to }),
+      apiGet('commissions/list', { party_type: 'doctor', party_id: doctorId, per_page: 100 }),
+    ]);
+    // Los del periodo elegido y, siempre, los que siguen pendientes de pago (son los que hay que cerrar)
+    const statements = statementsRes.items.filter((x) => !x.paid_at || !period || (x.period_start <= period.to && x.period_end >= period.from));
+    paintDoctorStatements(root.querySelector('#cd-statements'), statements, load);
     paintCommissionEntries(root.querySelector('#cd-list'), entries, load, doctorId, {
       doctorName: doctor.name,
       periodLabel: period ? period.label : '',
@@ -2849,6 +2887,31 @@ async function renderCommissionDoctorDetail(root, doctorId) {
   periodSel.addEventListener('change', () => { root.querySelector('#cd-list').innerHTML = spinner(); load(); });
   root.querySelector('#cd-new').addEventListener('click', () => openCommissionEntryModal(null, doctorId, load));
   await load();
+}
+
+/** Estados de cuenta del médico con su estatus de pago y, para el administrador, el botón del corte. */
+function paintDoctorStatements(box, statements, load) {
+  if (!statements.length) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `
+    <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+    <div class="space-y-2">
+      ${statements.map((x) => `
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+          <span class="font-mono text-xs font-semibold text-slate-700">${escapeHtml(x.folio)}</span>
+          <span class="text-xs text-slate-500">${escapeHtml(x.period_start)} — ${escapeHtml(x.period_end)}</span>
+          <span class="text-sm font-semibold text-slate-700">$${Number(x.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+          ${commissionStatusBadge(x)}
+          ${x.paid_at && x.payment_reference ? `<span class="font-mono text-[11px] text-slate-500">SPEI ${escapeHtml(x.payment_reference)}</span>` : ''}
+          <span class="ml-auto flex items-center gap-2">
+            <a href="comision.php?id=${x.id}" target="_blank" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">Ver PDF</a>
+            ${commissionPayButton(x, x.id)}
+          </span>
+        </div>`).join('')}
+    </div>`;
+  bindCommissionPayChips(box, (id) => statements.find((x) => x.id === id), load);
 }
 
 function paintCommissionEntries(box, entries, load, doctorId, { doctorName = '', periodLabel = '', pendingOutside = 0, showAll = null } = {}) {
@@ -2896,8 +2959,8 @@ function paintCommissionEntries(box, entries, load, doctorId, { doctorName = '',
                 <td class="px-4 py-3 text-right font-semibold text-slate-800">$${Number(e.total_commission).toFixed(2)}</td>
                 <td class="px-4 py-3">
                   ${e.statement_id
-                    ? commissionPayChip(e, { id: e.statement_id, withFolio: true })
-                    : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Pendiente</span>'}
+                    ? commissionStatusBadge(e, { withFolio: true })
+                    : '<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Sin estado de cuenta</span>'}
                 </td>
                 <td class="px-4 py-3">
                   ${e.statement_id ? '' : `
@@ -2917,14 +2980,6 @@ function paintCommissionEntries(box, entries, load, doctorId, { doctorName = '',
     </div>${outsideNote}`;
 
   box.querySelector('#cd-show-all')?.addEventListener('click', () => showAll && showAll());
-  bindCommissionPayChips(
-    box,
-    (id) => {
-      const e = entries.find((x) => x.statement_id === id);
-      return e && { id, folio: e.folio, party_name: doctorName, paid_at: e.paid_at, payment_reference: e.payment_reference };
-    },
-    load
-  );
 
   box.querySelectorAll('[data-edit-entry]').forEach((btn) =>
     btn.addEventListener('click', () => {
