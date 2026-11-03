@@ -17,11 +17,35 @@ test('normalize: conserva negritas/cursivas/subrayado y casillas, y descarta tod
         'no-es-un-bloque',
     ]]);
     $d = json_decode($stored, true);
-    eq(2, count($d['blocks']), 'solo p y todo');
+    eq(2, count($d['blocks']), 'solo p y todo (la imagen 5 no está entre las permitidas)');
     eq(['s' => 'Hola ', 'b' => true], $d['blocks'][0]['runs'][0], 'sin color, tipografía ni tamaño');
     eq(['s' => 'mundo', 'i' => true, 'u' => true], $d['blocks'][0]['runs'][1]);
     eq(true, $d['blocks'][1]['done']);
-    ok(!isset($d['blocks'][0]['align']), 'sin alineación');
+    eq('center', $d['blocks'][0]['align'], 'la alineación sí se conserva');
+    ok(!isset($d['blocks'][1]['align']), 'izquierda es lo normal: no se guarda');
+});
+
+test('normalize: viñetas, alineación e imágenes (solo las permitidas)', function () {
+    $d = json_decode(rich_note_normalize(['v' => 2, 'blocks' => [
+        ['t' => 'li', 'align' => 'right', 'runs' => [['s' => 'Guantes']]],
+        ['t' => 'img', 'asset' => 7],
+        ['t' => 'img', 'asset' => 99],     // de otra tarea o de otra persona: se descarta
+        ['t' => 'img', 'asset' => 'x'],
+        ['t' => 'p', 'align' => 'diagonal', 'runs' => [['s' => 'fin']]],
+    ]], null, [7, 8]), true);
+    eq(['li', 'img', 'p'], array_column($d['blocks'], 't'));
+    eq('right', $d['blocks'][0]['align']);
+    eq(7, $d['blocks'][1]['asset']);
+    ok(!isset($d['blocks'][2]['align']), 'una alineación inventada se ignora');
+    eq([7], rich_note_asset_ids($d['blocks']));
+    eq("• Guantes\n[imagen]\nfin", rich_note_plain($d['blocks']), 'texto plano para clientes anteriores');
+    $many = [];
+    for ($i = 1; $i <= 25; $i++) {
+        $many[] = ['t' => 'img', 'asset' => $i];
+    }
+    $capped = json_decode(rich_note_normalize(['blocks' => $many], null, range(1, 25)), true);
+    eq(RICH_NOTE_MAX_IMAGES, count($capped['blocks']), 'tope de imágenes por tarea');
+    eq(null, rich_note_normalize(['blocks' => [['t' => 'img', 'asset' => 3]]]), 'sin imágenes permitidas no queda nada');
 });
 
 test('normalize: texto plano, vacío, límites y párrafos vacíos al final', function () {

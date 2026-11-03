@@ -1,6 +1,6 @@
 # 02 · Modelo de datos
 
-Las 52 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
+Las 53 tablas de Sirius, agrupadas por dominio, y los tres patrones de esquema que las mantienen.
 
 Todo el esquema vive en **un solo archivo**: `public/install/schema.php` (~1,730 líneas), con cuatro funciones:
 
@@ -114,7 +114,7 @@ Todos siguen la misma forma: **`SELECT` por clave de negocio → `INSERT` solo s
 
 ## Inventario de tablas
 
-52 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
+53 tablas. La columna **Rescate** anticipa el [06](06-producto-nuevo.md): 🟢 genérica · 🟡 genérica con renombre · 🔴 específica de clínica.
 
 ### A · Identidad, sesión y permisos
 
@@ -208,6 +208,7 @@ Inventario por lotes con caducidad es genérico (farmacia, alimentos, químicos)
 |---|---|---|
 | `board_items` | Notas, listas y dibujos en un lienzo. `scope` ENUM(`private`,`public`), `type` ENUM(`note`,`checklist`,`drawing`), **`content` JSON** (una nota guarda bloques `{v:2, blocks:[…]}`, nunca HTML), geometría `pos_x/pos_y/width/height/z_index`. | 🟢 |
 | `board_assets` | Imágenes pegadas en notas: `item_id` (sin FK a propósito: la papelera hace DELETE antes de archivar y una cascada dejaría la nota restaurada sin imágenes), `stored_name`, `mime`, `size`. Los archivos van en `uploads/board/`, servidos solo por `board_asset.php`. | 🟢 |
+| `task_assets` | Imágenes y notas a mano de la descripción de una tarea: `task_id` (NULL hasta que se guarda la tarea; sin FK a propósito, igual que `board_assets`), `stored_name`, `mime`, `size`, `created_by`. Los archivos van en `uploads/tasks/`, servidos solo por `task_asset.php` (a quien ve la tarea). | 🟢 |
 | `file_folders` | Carpetas jerárquicas, auto-FK `parent_id`. | 🟢 |
 | `files` | Metadatos; el binario vive en disco bajo `stored_name`. | 🟢 |
 

@@ -83,6 +83,18 @@ class Http
         return $this->req('POST', $path, ['Content-Type: application/x-www-form-urlencoded'], http_build_query($fields));
     }
 
+    /** Subida multipart con un archivo (campo "file") y campos de texto. */
+    public function upload(string $path, array $fields, string $bytes, string $filename, string $csrf): array
+    {
+        $boundary = 'sirius' . bin2hex(random_bytes(8));
+        $body = '';
+        foreach ($fields as $k => $v) {
+            $body .= "--$boundary\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n$v\r\n";
+        }
+        $body .= "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$filename\"\r\nContent-Type: application/octet-stream\r\n\r\n$bytes\r\n--$boundary--\r\n";
+        return $this->req('POST', $path, ["Content-Type: multipart/form-data; boundary=$boundary", 'X-CSRF-Token: ' . $csrf], $body);
+    }
+
     public function json(string $method, string $path, ?array $body, string $csrf = ''): array
     {
         $h = ['Content-Type: application/json'];
@@ -348,6 +360,51 @@ test('un usuario sin acceso a la tarea no puede marcar sus casillas', function (
     $r = $c->json('POST', '/api/index.php?r=tasks/toggle_check', ['id' => $id, 'index' => 0, 'done' => true], $cs);
     eq(403, $r['status'], $r['body']);
     eq('No tienes acceso a esta tarea', $r['json']['error'] ?? '');
+});
+test('imágenes y notas a mano de una tarea: se suben, se enlazan al guardar y solo las ve quien ve la tarea', function () use ($admin, &$csrf, $mkTask, $getTask, $base, $pdo) {
+    $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==');
+    $up = $admin->upload('/api/index.php?r=tasks/asset_upload', [], $png, 'nota-a-mano.png', $csrf);
+    eq(200, $up['status'], $up['body']);
+    $asset = (int)$up['json']['data']['asset']['id'];
+    $url = '/' . $up['json']['data']['asset']['url'];
+    $row = $pdo->query("SELECT task_id FROM task_assets WHERE id = $asset")->fetch();
+    eq(null, $row['task_id'], 'recién subida: aún sin tarea');
+
+    $bad = $admin->upload('/api/index.php?r=tasks/asset_upload', [], 'esto no es una imagen', 'x.png', $csrf);
+    eq(422, $bad['status'], 'un archivo que no es imagen se rechaza aunque se llame .png');
+
+    $u = $admin->json('POST', '/api/index.php?r=users/create', ['username' => 'otro_tareas', 'full_name' => 'Otro', 'password' => 'Clave-prueba-1', 'role' => 'estandar', 'permissions' => ['tareas' => []]], $csrf);
+    eq(200, $u['status'], $u['body']);
+    $other = new Http($base);
+    $otherCsrf = $other->login('otro_tareas', 'Clave-prueba-1');
+
+    eq(200, $admin->req('GET', $url)['status'], 'quien la subió la ve');
+    eq(404, $other->req('GET', $url)['status'], 'sin tarea, nadie más la ve');
+
+    $id = $mkTask($admin, $csrf, 'Con imagen', [
+        ['t' => 'li', 'align' => 'center', 'runs' => [['s' => 'Pedido']]], ['t' => 'img', 'asset' => $asset],
+    ]);
+    $t = $getTask($admin, $id);
+    eq(['li', 'img'], array_column($t['desc_blocks'], 't'));
+    eq('center', $t['desc_blocks'][0]['align']);
+    eq($asset, $t['desc_blocks'][1]['asset']);
+    $row = $pdo->query("SELECT task_id FROM task_assets WHERE id = $asset")->fetch();
+    eq($id, (int)$row['task_id'], 'al guardar la tarea la imagen queda enlazada');
+    eq(404, $other->req('GET', $url)['status'], 'quien no ve la tarea no ve su imagen');
+
+    // La imagen de una tarea no se puede colar en otra
+    $id2 = $mkTask($admin, $csrf, 'Otra', [['t' => 'p', 'runs' => [['s' => 'texto']]], ['t' => 'img', 'asset' => $asset]]);
+    eq(['p'], array_column($getTask($admin, $id2)['desc_blocks'], 't'));
+
+    // Al asignársela, la persona sí ve la imagen
+    $uid = (int)$pdo->query("SELECT id FROM users WHERE username = 'otro_tareas'")->fetch()['id'];
+    $r = $admin->json('POST', '/api/index.php?r=tasks/save', ['id' => $id, 'title' => 'Con imagen', 'description' => ['v' => 2, 'blocks' => $t['desc_blocks']], 'assigned_to' => [$uid], 'priority' => 'media'], $csrf);
+    eq(200, $r['status'], $r['body']);
+    eq(200, $other->req('GET', $url)['status'], 'un asignado ve la imagen');
+
+    // Un estándar no sube imágenes a una tarea ajena
+    $deny = $other->upload('/api/index.php?r=tasks/asset_upload', ['task_id' => (string)$id], $png, 'x.png', $otherCsrf);
+    eq(403, $deny['status'], $deny['body']);
 });
 
 echo "\nRespaldo cifrado\n";

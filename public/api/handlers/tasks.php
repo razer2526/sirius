@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../../includes/task_recurrence.php';
 require_once __DIR__ . '/../../includes/rich_note.php';
+require_once __DIR__ . '/../../includes/task_assets.php';
 
 const TASK_PRIORITIES = ['baja', 'media', 'alta', 'urgente'];
 const TASK_STATUSES = ['pendiente', 'en_progreso', 'completada'];
@@ -229,8 +230,13 @@ function handle_tasks(string $action): void
                 $weekday = (int)$b['weekday'];
             }
             $due = valid_date($b['due_date'] ?? '');
-            // Descripción con formato (bloques del editor) o texto plano de un cliente anterior
-            $desc = rich_note_normalize($b['description'] ?? null, $recurrence !== null ? period_key($recurrence, $weekday) : null);
+            // Descripción con formato (bloques del editor) o texto plano de un cliente anterior. Las imágenes
+            // solo valen si son de esta tarea o recién subidas por quien guarda (nunca de otra tarea).
+            $desc = rich_note_normalize(
+                $b['description'] ?? null,
+                $recurrence !== null ? period_key($recurrence, $weekday) : null,
+                task_assets_usable_ids($id, (int)$me['id'])
+            );
             $projectId = isset($b['project_id']) && $b['project_id'] !== '' ? (int)$b['project_id'] : null;
             $parentId = isset($b['parent_id']) && $b['parent_id'] !== '' ? (int)$b['parent_id'] : null;
 
@@ -269,6 +275,10 @@ function handle_tasks(string $action): void
             // Si la descripción trae casillas y todas quedaron marcadas (o dejaron de estarlo), la tarea se ajusta.
             $saved = find_task($id);
             $dec = rich_note_decode($saved['description'] ?? null);
+            $usedAssets = rich_note_asset_ids($dec['blocks']);
+            task_assets_attach($id, $usedAssets, (int)$me['id']);
+            task_assets_prune($id, $usedAssets);
+            task_assets_prune_orphans();
             if (!$dec['legacy']) {
                 [$todoTotal, $todoDone] = rich_note_todo_counts($dec['blocks']);
                 task_sync_checklist($saved, $todoTotal, $todoDone, $me);
@@ -277,6 +287,50 @@ function handle_tasks(string $action): void
             notify_new_assignees($oldAssignees, $assignedTo, (int)$me['id'],
                 'Nueva tarea asignada', "Te asignaron la tarea \"$title\".", '#/tareas');
             json_ok(['id' => $id]);
+        }
+
+        /* Imagen o nota manuscrita para la descripción (multipart: los datos llegan en $_POST/$_FILES) */
+        case 'asset_upload': {
+            $taskId = (int)($_POST['task_id'] ?? 0);
+            if ($taskId > 0) {
+                // Solo quien puede editar la tarea le agrega imágenes.
+                $task = find_task($taskId);
+                if (!$canManage && (int)$task['created_by'] !== (int)$me['id']) {
+                    json_error('Solo puedes editar tus propias tareas', 403);
+                }
+            }
+            if (empty($_FILES['file']) || $_FILES['file']['error'] !== UPLOAD_ERR_OK) {
+                json_error('No se recibió la imagen', 422);
+            }
+            $file = $_FILES['file'];
+            if ($file['size'] > TASK_ASSET_MAX_SIZE) {
+                json_error('La imagen supera 8 MB', 422);
+            }
+            // getimagesize lee el contenido real: renombrar un archivo a .png no lo vuelve imagen.
+            $allowed = [IMAGETYPE_PNG => 'png', IMAGETYPE_JPEG => 'jpg', IMAGETYPE_GIF => 'gif', IMAGETYPE_WEBP => 'webp'];
+            $info = @getimagesize($file['tmp_name']);
+            if (!$info || !isset($allowed[$info[2]])) {
+                json_error('Solo se aceptan imágenes PNG, JPG, GIF o WEBP', 422);
+            }
+            if (!is_uploaded_file($file['tmp_name'])) {
+                json_error('Subida no válida', 422);
+            }
+            if (count(task_assets_usable_ids($taskId, (int)$me['id'])) >= TASK_ASSETS_PER_TASK) {
+                json_error('Esta tarea ya tiene demasiadas imágenes', 422);
+            }
+            if (!is_dir(TASK_ASSET_DIR)) {
+                @mkdir(TASK_ASSET_DIR, 0775, true);
+            }
+            $stored = 'img-' . date('YmdHis') . '-' . bin2hex(random_bytes(6)) . '.' . $allowed[$info[2]];
+            if (!move_uploaded_file($file['tmp_name'], TASK_ASSET_DIR . $stored)) {
+                json_error('No se pudo guardar la imagen', 500);
+            }
+            @chmod(TASK_ASSET_DIR . $stored, 0644);
+            // Con tarea existente nace ya enlazada; en una tarea nueva queda sin tarea hasta que se guarde.
+            db()->prepare('INSERT INTO task_assets (task_id, stored_name, mime, size, created_by) VALUES (?, ?, ?, ?, ?)')
+                ->execute([$taskId > 0 ? $taskId : null, $stored, $info['mime'] ?? 'image/*', (int)$file['size'], (int)$me['id']]);
+            $assetId = (int)db()->lastInsertId();
+            json_ok(['asset' => ['id' => $assetId, 'url' => 'task_asset.php?id=' . $assetId]]);
         }
 
         case 'set_status': {
@@ -413,8 +467,16 @@ function handle_tasks(string $action): void
             if (!$canManage && (int)$task['created_by'] !== (int)$me['id']) {
                 json_error('Solo puedes eliminar tus propias tareas', 403);
             }
+            $subSt = db()->prepare('SELECT id FROM tasks WHERE parent_id = ?');
+            $subSt->execute([$id]);
+            $subtaskIds = array_map('intval', $subSt->fetchAll(PDO::FETCH_COLUMN));
             if ($canManage) {
                 db()->prepare('DELETE FROM tasks WHERE id = ?')->execute([$id]);
+                // Borrado definitivo: también las imágenes de la tarea y las de sus subtareas.
+                task_assets_delete_for_task($id);
+                foreach ($subtaskIds as $subId) {
+                    task_assets_delete_for_task($subId);
+                }
                 log_activity('tareas', 'task_delete', "Eliminó tarea \"{$task['title']}\"", 'task', $id);
             } else {
                 require_once __DIR__ . '/../../includes/trash.php';

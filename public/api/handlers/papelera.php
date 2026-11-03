@@ -85,6 +85,11 @@ function handle_papelera(string $action): void
                 require_once __DIR__ . '/../../includes/thumbnails.php';
                 file_thumbnail_purge((int)$trashRow['entity_id']);
             }
+            if ($trashRow['entity_type'] === 'task') {
+                // Borrado definitivo: ya no hay a dónde restaurar, así que se van también las imágenes de la tarea.
+                require_once __DIR__ . '/../../includes/task_assets.php';
+                task_assets_delete_for_task((int)$trashRow['entity_id']);
+            }
             db()->prepare('DELETE FROM trash_items WHERE id = ?')->execute([$id]);
             log_activity('papelera', 'purge', 'Eliminó permanentemente ' . $trashRow['summary'], $trashRow['entity_type'], (int)$trashRow['entity_id']);
             json_ok();

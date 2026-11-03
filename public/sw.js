@@ -29,6 +29,7 @@ const SHELL = [
   'assets/js/progress_chart.js',
   'assets/js/board_note_editor.js',
   'assets/js/task_desc_editor.js',
+  'assets/js/ink_pad.js',
   'assets/js/board_share.js',
   'assets/js/push_sync.js',
   'assets/js/scale_connect.js',
@@ -99,7 +100,7 @@ self.addEventListener('fetch', (e) => {
       || path.endsWith('print.php') || path.endsWith('documento.php') || path.endsWith('cotizacion.php')
       || path.endsWith('comision.php')
       || path.endsWith('documento_expediente.php') || path.endsWith('membrete_prueba.php')
-      || path.endsWith('respaldo.php') || path.endsWith('archivo.php') || path.endsWith('board_asset.php')
+      || path.endsWith('respaldo.php') || path.endsWith('archivo.php') || path.endsWith('board_asset.php') || path.endsWith('task_asset.php')
       || path.endsWith('whatsapp_webhook.php') || path.endsWith('whatsapp_media.php')
       || path.endsWith('manifest.php')
       || path.includes('/install/') || path.includes('/uploads/')) {
