@@ -11,18 +11,32 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
-2. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
-3. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-4. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-5. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-6. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-7. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-8. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-9. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-10. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-11. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-12. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
+2. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
+3. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+4. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+5. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+6. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+7. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+8. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+9. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+10. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+11. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+12. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+13. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana
+
+Corrección (PR 85). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Fecha en el PDF del estado de cuenta
+
+- **Qué cambió:** en el PDF del estado de cuenta la columna **Fecha** salía con guiones («--») en los estados hechos con **Registro manual** antes del cambio anterior. Ahora la fecha se toma del registro original y se imprime **como la muestra la ventana de Comisiones** (año-mes-día, por ejemplo 2026-10-28). Las filas van ordenadas de la fecha más reciente a la más antigua, igual que en la ventana.
+- **Afecta a:** quien descarga estados de cuenta de comisiones. Los estados ya generados se corrigen solos al volver a descargarlos.
+- **Acción:** ninguna. Descarga de nuevo el PDF.
+- **Manual:** administrador, apartado 9 («Estado de cuenta en PDF»).
 
 ---
 

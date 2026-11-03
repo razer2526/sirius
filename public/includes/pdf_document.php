@@ -2709,6 +2709,35 @@ function render_quote_logistics_page(SiriusDocPDF $pdf, array $items): void
 }
 
 /**
+ * Los estados de «Registro manual» hechos antes de guardar la fecha en cada línea no la traen en su copia:
+ * se toma de los registros que quedaron ligados al estado (si el paciente solo tiene una fecha ahí).
+ */
+function commission_fill_manual_dates(array $items, int $statementId): array
+{
+    if (!array_filter($items, static fn($i) => empty($i['entry_date']))) {
+        return $items;
+    }
+    $byPatient = [];
+    try {
+        $st = db()->prepare('SELECT patient_name, entry_date FROM commission_entries WHERE statement_id = ?');
+        $st->execute([$statementId]);
+        foreach ($st->fetchAll() as $r) {
+            $byPatient[(string)$r['patient_name']][(string)$r['entry_date']] = true;
+        }
+    } catch (Throwable $e) {
+        return $items;
+    }
+    foreach ($items as &$item) {
+        $dates = array_keys($byPatient[(string)($item['patient_name'] ?? '')] ?? []);
+        if (empty($item['entry_date']) && count($dates) === 1) {
+            $item['entry_date'] = $dates[0];
+        }
+    }
+    unset($item);
+    return $items;
+}
+
+/**
  * Dibuja el estado de cuenta de comisiones: barra de folio/periodo/médico o
  * concierge, tabla de partidas (paciente/estudio/monto/%/comisión) y la barra
  * de Total comisión. Sin firma, es un reporte interno, no un documento clínico.
@@ -2730,6 +2759,10 @@ function render_commission_pdf(array $statement, ?string $path = null): string
             $clinicName = $row['svalue'];
         }
     } catch (Throwable $e) {
+    }
+
+    if ($source === 'manual' && !empty($statement['id'])) {
+        $items = commission_fill_manual_dates($items, (int)$statement['id']);
     }
 
     $lh = letterhead_config();
@@ -2768,13 +2801,17 @@ function render_commission_auto_body(SiriusDocPDF $pdf, array $statement, string
         $rawDate = (string)($item['admission_date'] ?? $item['entry_date'] ?? '');
         $patient = (string)($item['patient_name'] ?? '');
         $key = !empty($item['episode_id']) ? 'e' . $item['episode_id'] : 'p' . $patient . '|' . substr($rawDate, 0, 10);
-        $visits[$key] ??= ['date' => $rawDate !== '' ? date('d/m/Y', strtotime($rawDate)) : '—', 'patient' => $patient, 'studies' => [], 'commission' => 0.0];
+        $visits[$key] ??= ['date' => $rawDate !== '' ? substr($rawDate, 0, 10) : '—', 'patient' => $patient, 'studies' => [], 'commission' => 0.0];
         $study = (string)($item['study_name'] ?? '');
         if ($study !== '') {
             $visits[$key]['studies'][] = $study;
         }
         $visits[$key]['commission'] += (float)($item['commission_amount'] ?? 0);
     }
+
+    // Del más reciente al más antiguo, igual que en la ventana de Comisiones (el orden previo se conserva dentro de cada fecha)
+    $visits = array_values($visits);
+    usort($visits, static fn($a, $b) => strcmp($b['date'] === '—' ? '' : $b['date'], $a['date'] === '—' ? '' : $a['date']));
 
     $pdf->footerOnLastPageOnly();
     $pdf->AddPage();
