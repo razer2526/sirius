@@ -11,6 +11,10 @@
 require_once __DIR__ . '/vinculacion.php';
 require_once __DIR__ . '/../../includes/ai.php';
 require_once __DIR__ . '/../../includes/assistant_tools.php';
+require_once __DIR__ . '/../../includes/doctor_match.php';
+
+/** Comisión fija por estudio FilmArray (biología molecular), sea cual sea su precio. */
+const COMMISSIONS_FILMARRAY_FIXED = 750.00;
 
 function handle_commissions(string $action): void
 {
@@ -138,6 +142,7 @@ function handle_commissions(string $action): void
 
             $rate = vinculacion_commission_rates();
             $fullName = sql_full_name('p');
+            [$doctorFilter, $doctorParams] = commissions_doctor_filter([$partyId]);
             $items = [];
             $dates = [];
             foreach ($included as $r) {
@@ -152,9 +157,9 @@ function handle_commissions(string $action): void
                      FROM episode_studies es
                      JOIN episodes e ON e.id = es.episode_id
                      JOIN patients p ON p.id = e.patient_id
-                     WHERE e.linked_doctor_id = ? AND es.commission_group IS NOT NULL AND es.id IN ($placeholders)"
+                     WHERE $doctorFilter AND es.id IN ($placeholders)"
                 );
-                $st2->execute(array_merge([$partyId], $ids));
+                $st2->execute(array_merge($doctorParams, $ids));
                 $studyRows = $st2->fetchAll();
                 if (!$studyRows) {
                     continue;
@@ -163,10 +168,8 @@ function handle_commissions(string $action): void
                 $commission = 0.0;
                 $studyNames = [];
                 foreach ($studyRows as $sr) {
-                    $amt = (float)$sr['amount_charged'];
-                    $pct = (float)($rate[$sr['commission_group']] ?? 0);
-                    $amount += $amt;
-                    $commission += round($amt * $pct / 100, 2);
+                    $amount += (float)$sr['amount_charged'];
+                    $commission += commissions_study_commission($sr, $rate)[1];
                     $studyNames[] = $sr['study_name'];
                     $dates[] = (string)$sr['admission_date'];
                 }
@@ -495,9 +498,72 @@ function commissions_find_statement(int $id): array
  */
 function commissions_calc_study(string $studyName, float $amountCharged): array
 {
-    $isFilmArray = stripos($studyName, 'filmarray') !== false || stripos($studyName, 'film array') !== false;
-    $commission = $isFilmArray ? 750.00 : round($amountCharged * 0.10, 2);
+    $isFilmArray = commissions_is_filmarray($studyName);
+    $commission = $isFilmArray ? COMMISSIONS_FILMARRAY_FIXED : round($amountCharged * 0.10, 2);
     return ['is_filmarray' => $isFilmArray, 'commission_amount' => $commission];
+}
+
+function commissions_is_filmarray(string $studyName): bool
+{
+    return stripos($studyName, 'filmarray') !== false || stripos($studyName, 'film array') !== false;
+}
+
+/**
+ * Comisión de UN estudio capturado en Admisión, para un médico. Devuelve [pct, monto].
+ * Si el estudio trae grupo de comisión (Biología molecular / Análisis clínicos) manda la
+ * tasa de Vinculación de ese grupo. Casi ningún estudio del catálogo lo trae, y los
+ * capturados a mano nunca, así que sin grupo se clasifica por nombre como en el registro
+ * manual: FilmArray es un monto fijo y todo lo demás lleva la tasa de Análisis clínicos.
+ */
+function commissions_study_commission(array $study, array $rate): array
+{
+    $amount = (float)$study['amount_charged'];
+    $group = (string)($study['commission_group'] ?? '');
+    if ($group !== '' && isset($rate[$group])) {
+        $pct = (float)$rate[$group];
+        return [$pct, round($amount * $pct / 100, 2)];
+    }
+    if (commissions_is_filmarray((string)$study['study_name'])) {
+        return [$amount > 0 ? round(COMMISSIONS_FILMARRAY_FIXED / $amount * 100, 1) : 0.0, COMMISSIONS_FILMARRAY_FIXED];
+    }
+    $pct = (float)($rate['clinico'] ?? 0);
+    return [$pct, round($amount * $pct / 100, 2)];
+}
+
+/**
+ * Médicos a los que se les cuenta la comisión: el propio médico, o todos los de un concierge.
+ * @return int[]
+ */
+function commissions_party_doctor_ids(string $partyType, int $partyId): array
+{
+    if ($partyType === 'doctor') {
+        return [$partyId];
+    }
+    $st = db()->prepare('SELECT id FROM vinculacion_doctors WHERE concierge_id = ?');
+    $st->execute([$partyId]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * Condición SQL (sobre `episodes e`) de las admisiones de esos médicos: las ligadas por el
+ * catálogo, más las que el asistido capturó escribiendo el nombre a mano si ese nombre
+ * identifica a uno solo de ellos (ver includes/doctor_match.php).
+ * @return array{0:string, 1:array}
+ */
+function commissions_doctor_filter(array $doctorIds): array
+{
+    if (!$doctorIds) {
+        return ['1 = 0', []];
+    }
+    $ph = implode(',', array_fill(0, count($doctorIds), '?'));
+    $sql = "(e.linked_doctor_id IN ($ph)";
+    $params = $doctorIds;
+    $names = doctor_typed_names_for($doctorIds);
+    if ($names) {
+        $sql .= ' OR (e.linked_doctor_id IS NULL AND e.referring_doctor IN (' . implode(',', array_fill(0, count($names), '?')) . '))';
+        $params = array_merge($params, $names);
+    }
+    return [$sql . ')', $params];
 }
 
 /** Registros manuales pendientes (sin facturar) de un médico en un rango de fechas, uno por línea (no por estudio). */
@@ -563,43 +629,40 @@ function commissions_resolve_params(array $b): array
     return [$partyType, $partyId, $from, $to, $rate];
 }
 
-/** Estudios comisionables (con grupo asignado) de un médico o de los médicos de un concierge, en el rango dado. */
+/**
+ * Estudios de laboratorio de un médico o de los médicos de un concierge, en el rango dado.
+ * No exige que el estudio tenga grupo de comisión ni que el médico se haya elegido de la
+ * lista: ver commissions_study_commission() y commissions_doctor_filter().
+ */
 function commissions_query_lines(string $partyType, int $partyId, string $from, string $to, array $rate): array
 {
     $fullName = sql_full_name('p');
-    if ($partyType === 'doctor') {
-        $doctorFilter = 'e.linked_doctor_id = ?';
-        $params = [$partyId];
-    } else {
-        $doctorFilter = 'e.linked_doctor_id IN (SELECT id FROM vinculacion_doctors WHERE concierge_id = ?)';
-        $params = [$partyId];
-    }
+    [$doctorFilter, $params] = commissions_doctor_filter(commissions_party_doctor_ids($partyType, $partyId));
 
     $st = db()->prepare(
         "SELECT es.id, es.study_name, es.commission_group, es.amount_charged, es.commission_included,
-                e.id AS episode_id, e.service_folio, e.admission_date, e.linked_doctor_id,
+                e.id AS episode_id, e.service_folio, e.admission_date, e.linked_doctor_id, e.referring_doctor,
                 $fullName AS patient_name, p.file_number
          FROM episode_studies es
          JOIN episodes e ON e.id = es.episode_id
          JOIN patients p ON p.id = e.patient_id
          WHERE $doctorFilter
-           AND es.commission_group IS NOT NULL
            AND DATE(e.admission_date) BETWEEN ? AND ?
-         ORDER BY e.admission_date"
+         ORDER BY e.admission_date, es.id"
     );
     $st->execute(array_merge($params, [$from, $to]));
     $rows = $st->fetchAll();
 
-    $pct = $partyType === 'doctor'
-        ? null // se resuelve por línea según su commission_group
-        : (float)$rate['concierge'];
-
     foreach ($rows as &$r) {
-        $amount = (float)$r['amount_charged'];
-        $linePct = $partyType === 'doctor' ? (float)($rate[$r['commission_group']] ?? 0) : $pct;
-        $r['amount_charged'] = $amount;
-        $r['commission_pct'] = $linePct;
-        $r['commission_amount'] = round($amount * $linePct / 100, 2);
+        $r['amount_charged'] = (float)$r['amount_charged'];
+        if ($partyType === 'doctor') {
+            [$r['commission_pct'], $r['commission_amount']] = commissions_study_commission($r, $rate);
+        } else {
+            $r['commission_pct'] = (float)$rate['concierge'];
+            $r['commission_amount'] = round($r['amount_charged'] * $r['commission_pct'] / 100, 2);
+        }
+        // Capturado a mano en Admisión (no elegido de la lista): se avisa en pantalla para que se revise
+        $r['typed_doctor'] = $r['linked_doctor_id'] === null ? (string)$r['referring_doctor'] : null;
         $r['commission_included'] = (bool)$r['commission_included'];
     }
     unset($r);
@@ -728,17 +791,18 @@ TXT;
 function commissions_doctor_studies_for_matching(int $doctorId): array
 {
     $fullName = sql_full_name('p');
+    [$doctorFilter, $params] = commissions_doctor_filter([$doctorId]);
     $st = db()->prepare(
         "SELECT es.id, es.study_name, es.commission_group, es.amount_charged,
                 e.admission_date, $fullName AS patient_name
          FROM episode_studies es
          JOIN episodes e ON e.id = es.episode_id
          JOIN patients p ON p.id = e.patient_id
-         WHERE e.linked_doctor_id = ? AND es.commission_group IS NOT NULL
+         WHERE $doctorFilter
          ORDER BY e.admission_date DESC
          LIMIT 500"
     );
-    $st->execute([$doctorId]);
+    $st->execute($params);
     return $st->fetchAll();
 }
 
@@ -758,10 +822,8 @@ function commissions_aggregate_studies(array $studies, array $rate): array
     $studyNames = [];
     $episodeStudyIds = [];
     foreach ($studies as $s) {
-        $amt = (float)$s['amount_charged'];
-        $pct = (float)($rate[$s['commission_group']] ?? 0);
-        $amount += $amt;
-        $commission += round($amt * $pct / 100, 2);
+        $amount += (float)$s['amount_charged'];
+        $commission += commissions_study_commission($s, $rate)[1];
         $studyNames[] = $s['study_name'];
         $episodeStudyIds[] = (int)$s['id'];
     }
