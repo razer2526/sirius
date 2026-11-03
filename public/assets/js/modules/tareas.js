@@ -7,6 +7,9 @@ import { icon, escapeHtml, toast, modal, confirmDialog, field, formValues, input
 
 const POLL_MS = 20000;
 
+/** Preferencia guardada en este navegador (o la de siempre si no hay almacenamiento). */
+function readPref(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch { return fallback; } }
+
 const PRIORITY = {
   baja:    { label: 'Baja',    cls: 'bg-slate-100 text-slate-600' },
   media:   { label: 'Media',   cls: 'bg-sky-100 text-sky-700' },
@@ -42,6 +45,11 @@ let ctx;
 let data = null;
 let tab = 'mis';
 let projectFilter = null;
+// Dentro de un proyecto: pestaña abierta y cómo se ven sus tareas (esto último se recuerda en este navegador).
+let projectTab = 'tareas';
+let projectView = readPref('tareas.projectView', 'tarjetas');
+// Mientras se arrastra una tarjeta del tablero no se repinta (se perdería lo arrastrado).
+let dragging = false;
 let resultsData = null;
 // '' en 'user' significa "yo mismo"; solo un gestor puede cambiarlo a otra persona.
 let misFilters = { status: '', project: '', user: '' };
@@ -70,10 +78,10 @@ export async function render(root, context) {
     // #tasks-view se recrea en cada paint(); si ya no está en el DOM es que el
     // router navegó a otro módulo (mismo criterio que whatsapp.js).
     if (!document.getElementById('tasks-view')?.isConnected) { clearInterval(pollTimer); return; }
-    if (isUserBusy()) return; // modal abierto o foco en un campo: se reintenta en el siguiente tick
+    if (isUserBusy() || dragging) return; // modal abierto, foco en un campo o arrastre en curso: se reintenta en el siguiente tick
     try {
       const fresh = await apiGet('tasks/list');
-      if (isUserBusy()) return; // pudo empezar a interactuar mientras la petición estaba en vuelo
+      if (isUserBusy() || dragging) return; // pudo empezar a interactuar mientras la petición estaba en vuelo
       data = fresh;
       // paintResultados() reutiliza resultsData si ya tiene valor — sin esto, un
       // refresco de fondo repintaría datos viejos de Resultados sin darse cuenta.
@@ -349,62 +357,97 @@ function canDeleteProject(p) {
   return data.can_manage || p.created_by === data.me;
 }
 
+/* ================= Proyectos ================= */
+
+const PRIORITY_DOT = { baja: 'bg-slate-300', media: 'bg-sky-400', alta: 'bg-amber-400', urgente: 'bg-red-500' };
+const PRIORITY_EDGE = { baja: 'border-l-slate-300', media: 'border-l-sky-400', alta: 'border-l-amber-400', urgente: 'border-l-red-500' };
+const PROJECT_STATUS = {
+  activo:     { label: 'Activo',     cls: 'bg-indigo-50 text-indigo-700' },
+  completado: { label: 'Completado', cls: 'bg-emerald-100 text-emerald-700' },
+  archivado:  { label: 'Archivado',  cls: 'bg-slate-100 text-slate-500' },
+};
+const BOARD_COLS = [
+  { key: 'pendiente',   label: 'Pendiente',   head: 'bg-slate-100 text-slate-700',     dot: 'bg-slate-400' },
+  { key: 'en_progreso', label: 'En progreso', head: 'bg-indigo-100 text-indigo-700',   dot: 'bg-indigo-500' },
+  { key: 'completada',  label: 'Completada',  head: 'bg-emerald-100 text-emerald-700', dot: 'bg-emerald-500' },
+];
+
+// La vista elegida se recuerda solo en este navegador: si no hay almacenamiento, se usa la de siempre.
+const savePref = (key, value) => { try { localStorage.setItem(key, value); } catch { /* sin almacenamiento: no pasa nada */ } };
+
+const moduleRoot = () => document.getElementById('module-root');
+const isTaskDone = (t) => (t.recurrence ? !!t.done_now : t.status === 'completada');
+/** Columna del tablero: una tarea frecuente no tiene "en progreso", solo al día o pendiente. */
+const boardColumn = (t) => (t.recurrence ? (t.done_now ? 'completada' : 'pendiente') : t.status);
+const projectTopTasks = (p) => data.tasks.filter((t) => t.project_id === p.id && !t.parent_id);
+const hasDescription = (p) => !!(p.desc_blocks && p.desc_blocks.length);
+const byPriorityThenDue = (a, b) =>
+  PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]
+  || (a.due_date || '9999').localeCompare(b.due_date || '9999')
+  || a.title.localeCompare(b.title);
+
+function isProjectOverdue(p) {
+  const { total, done } = projectStats(p);
+  return p.status === 'activo' && !!p.due_date && p.due_date < today() && !(total && done === total);
+}
+
+function projectChips(p) {
+  const { total } = projectStats(p);
+  const overdue = isProjectOverdue(p);
+  return `
+    ${p.status !== 'activo' ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PROJECT_STATUS[p.status].cls}">${PROJECT_STATUS[p.status].label}</span>` : ''}
+    ${p.due_date ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${overdue ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}">${overdue ? 'Vencido · ' : 'Límite '}${fmtDate(p.due_date)}</span>` : ''}
+    <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${total} tarea${total === 1 ? '' : 's'}</span>
+    ${p.todo_total ? `<span class="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700" title="Casillas de la descripción">☑ ${p.todo_done}/${p.todo_total}</span>` : ''}`;
+}
+
+/** Tarjeta de un proyecto en la lista: avance, fecha, responsables y lo siguiente por hacer. */
+function projectCard(p) {
+  const open = projectTopTasks(p).filter((t) => !isTaskDone(t)).sort(byPriorityThenDue);
+  const next = open.slice(0, 3);
+  const more = open.length - next.length;
+  return `
+    <div class="flex flex-col rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md ${p.status === 'archivado' ? 'opacity-60' : ''}">
+      <div class="flex items-start justify-between gap-2">
+        <button type="button" data-open-project="${p.id}" class="min-w-0 flex-1 text-left">
+          <p class="line-clamp-2 text-sm font-bold text-slate-900 hover:text-indigo-600">${escapeHtml(p.name)}</p>
+        </button>
+        ${data.can_manage || canDeleteProject(p) ? `
+        <div class="flex shrink-0 gap-1">
+          ${data.can_manage ? `<button type="button" data-edit-project="${p.id}" title="Editar" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-3.5 w-3.5')}</button>` : ''}
+          ${canDeleteProject(p) ? `<button type="button" data-del-project="${p.id}" title="Eliminar" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-3.5 w-3.5')}</button>` : ''}
+        </div>` : ''}
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5">${projectChips(p)}</div>
+      ${assigneeNames(p) ? `<p class="mt-2 truncate text-[11px] text-slate-400" title="${escapeHtml(assigneeNames(p))}">Responsables: ${escapeHtml(assigneeNames(p))}</p>` : ''}
+      ${projectProgress(p)}
+      <div class="mt-3 space-y-1 border-t border-slate-100 pt-2.5">
+        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Lo siguiente</p>
+        ${next.length ? next.map((t) => `
+          <p class="flex items-center gap-1.5 text-xs text-slate-600">
+            <span class="h-1.5 w-1.5 shrink-0 rounded-full ${PRIORITY_DOT[t.priority]}"></span>
+            <span class="min-w-0 flex-1 truncate">${escapeHtml(t.title)}</span>
+            ${t.due_date ? `<span class="shrink-0 text-slate-400">${fmtDate(t.due_date)}</span>` : ''}
+          </p>`).join('') : '<p class="text-xs text-slate-400">Nada pendiente.</p>'}
+        ${more > 0 ? `<p class="text-[11px] font-semibold text-slate-400">+ ${more} más</p>` : ''}
+      </div>
+    </div>`;
+}
+
 function paintProyectos(view) {
   if (projectFilter !== null) {
-    const p = data.projects.find((x) => x.id === projectFilter);
-    const list = data.tasks.filter((t) => t.project_id === projectFilter && !t.parent_id);
-    view.innerHTML = `
-      <button type="button" id="btn-back-projects" class="mb-3 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
-        ${icon('chevron-left', 'h-4 w-4')} Todos los proyectos
-      </button>
-      <div class="mb-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 class="text-base font-bold text-slate-900">${escapeHtml(p.name)}</h3>
-            ${p.description ? `<p class="mt-0.5 text-sm text-slate-500">${escapeHtml(p.description)}</p>` : ''}
-          </div>
-          <div class="flex items-center gap-2">
-            ${p.due_date ? `<span class="text-xs font-medium text-slate-500">Límite: ${fmtDate(p.due_date)}</span>` : ''}
-            ${data.can_manage ? `<button type="button" id="btn-add-to-project" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">+ Tarea</button>` : ''}
-          </div>
-        </div>
-        ${projectProgress(p)}
-      </div>
-      ${renderTaskSections(list) || emptyState('Proyecto sin tareas', 'Agrega la primera tarea.')}`;
-    view.querySelector('#btn-back-projects').addEventListener('click', () => { projectFilter = null; paint(document.getElementById('module-root')); });
-    view.querySelector('#btn-add-to-project')?.addEventListener('click', () => openTaskModal(null, { project_id: projectFilter }));
-    wireTaskEvents(view);
-    return;
+    if (data.projects.some((x) => x.id === projectFilter)) { paintProjectDetail(view); return; }
+    projectFilter = null; // el proyecto ya no existe (lo borraron): vuelve a la lista
   }
 
   const visible = data.projects.filter((p) => p.status !== 'archivado' || data.can_manage);
   view.innerHTML = visible.length ? `
-    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-      ${visible.map((p) => {
-        const stats = projectStats(p);
-        return `
-        <div class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 transition hover:shadow-md ${p.status === 'archivado' ? 'opacity-60' : ''}">
-          <div class="flex items-start justify-between gap-2">
-            <button type="button" data-open-project="${p.id}" class="min-w-0 flex-1 text-left">
-              <p class="truncate text-sm font-bold text-slate-900 hover:text-indigo-600">${escapeHtml(p.name)}</p>
-              <p class="mt-0.5 text-xs text-slate-500">
-                ${stats.total} tarea(s)${p.due_date ? ` · límite ${fmtDate(p.due_date)}` : ''}
-                ${p.status !== 'activo' ? ` · ${p.status}` : ''}
-              </p>
-            </button>
-            ${data.can_manage || canDeleteProject(p) ? `
-            <div class="flex shrink-0 gap-1">
-              ${data.can_manage ? `<button type="button" data-edit-project="${p.id}" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-3.5 w-3.5')}</button>` : ''}
-              ${canDeleteProject(p) ? `<button type="button" data-del-project="${p.id}" class="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-3.5 w-3.5')}</button>` : ''}
-            </div>` : ''}
-          </div>
-          ${projectProgress(p)}
-        </div>`;
-      }).join('')}
+    <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      ${visible.map(projectCard).join('')}
     </div>` : emptyState('Sin proyectos', data.can_manage ? 'Crea el primero con "Nuevo proyecto".' : 'Aún no participas en ningún proyecto.');
 
   view.querySelectorAll('[data-open-project]').forEach((b) =>
-    b.addEventListener('click', () => { projectFilter = +b.dataset.openProject; paint(document.getElementById('module-root')); }));
+    b.addEventListener('click', () => { projectFilter = +b.dataset.openProject; projectTab = 'tareas'; paint(moduleRoot()); }));
   view.querySelectorAll('[data-edit-project]').forEach((b) =>
     b.addEventListener('click', () => openProjectModal(data.projects.find((p) => p.id === +b.dataset.editProject))));
   view.querySelectorAll('[data-del-project]').forEach((b) =>
@@ -415,9 +458,204 @@ function paintProyectos(view) {
       try {
         await apiPost('tasks/project_delete', { id: p.id });
         toast('Proyecto eliminado');
-        load(document.getElementById('module-root'));
+        load(moduleRoot());
       } catch (e) { toast(e.message, 'error'); }
     }));
+}
+
+/** Detalle de un proyecto: encabezado, pestañas (Tareas / Descripción) y, en Tareas, tarjetas o tablero. */
+function paintProjectDetail(view) {
+  const p = data.projects.find((x) => x.id === projectFilter);
+  const list = projectTopTasks(p);
+  const tabBtn = (key, label, badge = '') => `
+    <button type="button" data-ptab="${key}" class="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition ${projectTab === key ? 'bg-indigo-600 text-white' : 'text-slate-600 hover:bg-slate-100'}">${label}${badge}</button>`;
+  view.innerHTML = `
+    <button type="button" id="btn-back-projects" class="mb-3 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-500">
+      ${icon('chevron-left', 'h-4 w-4')} Todos los proyectos
+    </button>
+    <div class="mb-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      <div class="flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <h3 class="text-base font-bold text-slate-900">${escapeHtml(p.name)}</h3>
+          <div class="mt-2 flex flex-wrap items-center gap-1.5">${projectChips(p)}</div>
+          ${assigneeNames(p) ? `<p class="mt-2 text-xs text-slate-400">Responsables: ${escapeHtml(assigneeNames(p))}</p>` : ''}
+        </div>
+        <div class="flex items-center gap-2">
+          ${data.can_manage ? `<button type="button" id="btn-edit-project" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">Editar proyecto</button>
+          <button type="button" id="btn-add-to-project" class="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-500">+ Tarea</button>` : ''}
+        </div>
+      </div>
+      ${projectProgress(p)}
+    </div>
+    <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+      <div class="flex gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
+        ${tabBtn('tareas', 'Tareas', `<span class="text-[11px] opacity-70">${list.length}</span>`)}
+        ${tabBtn('descripcion', 'Descripción', hasDescription(p) ? '<span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>' : '')}
+      </div>
+      ${projectTab === 'tareas' ? `
+      <div class="flex gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200" role="group" aria-label="Vista de las tareas">
+        ${[['tarjetas', 'Tarjetas'], ['tablero', 'Tablero']].map(([key, label]) => `
+          <button type="button" data-pview="${key}" aria-pressed="${projectView === key}" class="rounded-lg px-3 py-1.5 text-sm font-semibold transition ${projectView === key ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'}">${label}</button>`).join('')}
+      </div>` : ''}
+    </div>
+    <div id="project-body"></div>`;
+
+  view.querySelector('#btn-back-projects').addEventListener('click', () => { projectFilter = null; paint(moduleRoot()); });
+  view.querySelector('#btn-add-to-project')?.addEventListener('click', () => openTaskModal(null, { project_id: projectFilter }));
+  view.querySelector('#btn-edit-project')?.addEventListener('click', () => openProjectModal(p));
+  view.querySelectorAll('[data-ptab]').forEach((b) =>
+    b.addEventListener('click', () => { projectTab = b.dataset.ptab; paint(moduleRoot()); }));
+  view.querySelectorAll('[data-pview]').forEach((b) =>
+    b.addEventListener('click', () => { projectView = b.dataset.pview; savePref('tareas.projectView', projectView); paint(moduleRoot()); }));
+
+  const body = view.querySelector('#project-body');
+  if (projectTab === 'descripcion') {
+    paintProjectDescription(body, p);
+  } else if (projectView === 'tablero') {
+    body.innerHTML = list.length ? boardHtml(list) : emptyState('Proyecto sin tareas', 'Agrega la primera tarea.');
+    wireBoard(body);
+    wireTaskEvents(body);
+  } else {
+    body.innerHTML = renderTaskSections(list) || emptyState('Proyecto sin tareas', 'Agrega la primera tarea.');
+    wireTaskEvents(body);
+  }
+}
+
+/** Pestaña «Descripción»: notas del proyecto con formato, casillas, imágenes y notas a mano. */
+function paintProjectDescription(body, p) {
+  const html = hasDescription(p) ? taskDescriptionHtml({ id: p.id, desc_blocks: p.desc_blocks }, { owner: 'project', size: 'full' }) : '';
+  body.innerHTML = `
+    <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+      ${html || `
+        <div class="py-8 text-center">
+          <p class="text-sm font-medium text-slate-600">Este proyecto no tiene descripción</p>
+          <p class="mt-1 text-xs text-slate-400">${data.can_manage ? 'Úsala para el alcance, notas, listas de pendientes, imágenes o dibujos.' : 'Quien gestiona las tareas puede agregarla.'}</p>
+        </div>`}
+      ${data.can_manage ? `<div class="mt-4 text-right"><button type="button" id="btn-edit-desc" class="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 ring-1 ring-slate-300 hover:bg-slate-50">${html ? 'Editar descripción' : 'Agregar descripción'}</button></div>` : ''}
+    </div>`;
+  body.querySelector('#btn-edit-desc')?.addEventListener('click', () => openProjectModal(p));
+  wireDescription(body, () => load(moduleRoot()));
+}
+
+/* ---------- Tablero (Pendiente / En progreso / Completada) ---------- */
+
+function boardCard(t) {
+  const subs = children(t);
+  const subsDone = subs.filter((s) => s.status === 'completada').length;
+  const isRecurring = !!t.recurrence;
+  const done = isTaskDone(t);
+  return `
+    <div data-kcard="${t.id}" class="rounded-xl border-l-4 ${PRIORITY_EDGE[t.priority]} bg-white p-3 shadow-sm ring-1 ring-slate-200">
+      <div class="flex items-start gap-2">
+        ${isRecurring ? '' : `<span data-drag title="Arrastra para cambiar de columna" aria-label="Arrastrar" class="-ml-1 mt-0.5 flex h-6 w-5 shrink-0 cursor-grab touch-none items-center justify-center rounded text-slate-300 hover:bg-slate-100 hover:text-slate-500 active:cursor-grabbing">${icon('move', 'h-3.5 w-3.5')}</span>`}
+        <button type="button" data-view="${t.id}" class="min-w-0 flex-1 text-left text-sm font-semibold text-slate-800 hover:text-indigo-600 ${done ? 'line-through opacity-60' : ''}">${escapeHtml(t.title)}</button>
+      </div>
+      <div class="mt-2 flex flex-wrap items-center gap-1.5">
+        ${isRecurring
+          ? `<button type="button" data-recurring="${t.id}" class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${done ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}" title="Marcar como ${done ? 'pendiente' : 'al día'}">${done ? 'Al día' : 'Pendiente'}</button>`
+          : `<button type="button" data-status="${t.id}" class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS[t.status].cls}" title="Cambiar estado">${STATUS[t.status].label}</button>`}
+        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
+        ${t.due_date ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${!done && t.due_date < today() ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-500'}">${fmtDate(t.due_date)}</span>` : ''}
+        ${t.todo_total ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${t.todo_done === t.todo_total ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-50 text-sky-700'}">☑ ${t.todo_done}/${t.todo_total}</span>` : ''}
+        ${subs.length ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Subtareas ${subsDone}/${subs.length}</span>` : ''}
+      </div>
+      ${assigneeNames(t) ? `<p class="mt-1.5 truncate text-[11px] text-slate-400">${escapeHtml(assigneeNames(t))}</p>` : ''}
+    </div>`;
+}
+
+function boardHtml(list) {
+  const cols = BOARD_COLS.map((c) => {
+    let items = list.filter((t) => boardColumn(t) === c.key);
+    items = c.key === 'completada'
+      ? items.sort((a, b) => (b.completed_at || '').localeCompare(a.completed_at || ''))
+      : items.sort(byPriorityThenDue);
+    return `
+      <div data-col="${c.key}" class="flex min-w-[85%] snap-center flex-col rounded-2xl bg-slate-100/70 p-2.5 md:min-w-0">
+        <div class="mb-2 flex items-center justify-between rounded-lg px-2.5 py-1.5 ${c.head}">
+          <span class="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wide"><span class="h-2 w-2 rounded-full ${c.dot}"></span>${c.label}</span>
+          <span class="text-xs font-semibold opacity-70">${items.length}</span>
+        </div>
+        <div class="min-h-[4rem] flex-1 space-y-2">
+          ${items.length ? items.map(boardCard).join('') : '<p class="py-4 text-center text-xs text-slate-400">Suelta una tarea aquí</p>'}
+        </div>
+      </div>`;
+  }).join('');
+  return `<div class="flex snap-x gap-3 overflow-x-auto pb-2 md:grid md:grid-cols-3 md:overflow-visible">${cols}</div>`;
+}
+
+/** Cambia la tarea de columna (su estado) de inmediato en pantalla y la guarda; si falla, regresa. */
+async function moveTask(t, status) {
+  const prev = t.status;
+  t.status = status;
+  paint(moduleRoot());
+  try {
+    await apiPost('tasks/set_status', { id: t.id, status });
+    if (status === 'completada') toast('Tarea completada');
+    load(moduleRoot());
+  } catch (e) {
+    t.status = prev;
+    paint(moduleRoot());
+    toast(e.message, 'error');
+  }
+}
+
+/**
+ * Arrastrar con Pointer Events (ratón, dedo o lápiz) desde el asa de la tarjeta. Solo el asa captura el
+ * gesto (touch-action: none): el resto de la tarjeta sigue desplazando la página en una pantalla táctil.
+ * Además del arrastre, la etiqueta de estado de cada tarjeta lo cambia con un toque.
+ */
+function wireBoard(scope) {
+  scope.querySelectorAll('[data-drag]').forEach((handle) => handle.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const card = handle.closest('[data-kcard]');
+    const task = data.tasks.find((x) => x.id === +card.dataset.kcard);
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const x0 = e.clientX;
+    const y0 = e.clientY;
+    const rect = card.getBoundingClientRect();
+    let ghost = null;
+    let overCol = null;
+    const HI = ['ring-2', 'ring-indigo-400'];
+
+    const onMove = (ev) => {
+      if (!ghost) {
+        if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
+        dragging = true;
+        ghost = card.cloneNode(true);
+        ghost.style.cssText = `position:fixed;z-index:10000;pointer-events:none;width:${rect.width}px;left:${rect.left}px;top:${rect.top}px;opacity:.92;transform:rotate(1.5deg);box-shadow:0 12px 28px rgba(15,23,42,.25);`;
+        document.body.appendChild(ghost);
+        card.classList.add('opacity-40');
+      }
+      ghost.style.left = `${rect.left + ev.clientX - x0}px`;
+      ghost.style.top = `${rect.top + ev.clientY - y0}px`;
+      const col = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('[data-col]') || null;
+      if (col !== overCol) {
+        overCol?.classList.remove(...HI);
+        overCol = col;
+        overCol?.classList.add(...HI);
+      }
+    };
+    const finish = (ev, cancelled) => {
+      handle.removeEventListener('pointermove', onMove);
+      handle.removeEventListener('pointerup', onUp);
+      handle.removeEventListener('pointercancel', onCancel);
+      const moved = !!ghost;
+      ghost?.remove();
+      card.classList.remove('opacity-40');
+      overCol?.classList.remove(...HI);
+      // El repintado periódico se reanuda hasta después del soltar (que repinta por su cuenta).
+      setTimeout(() => { dragging = false; }, 0);
+      if (!moved || cancelled || !overCol) return;
+      const status = overCol.dataset.col;
+      if (status !== boardColumn(task)) moveTask(task, status);
+    };
+    const onUp = (ev) => finish(ev, false);
+    const onCancel = (ev) => finish(ev, true);
+    handle.addEventListener('pointermove', onMove);
+    handle.addEventListener('pointerup', onUp);
+    handle.addEventListener('pointercancel', onCancel);
+  }));
 }
 
 /* ================= Resultados por entregar ================= */
@@ -957,19 +1195,21 @@ function wireTaskEvents(view) {
  * marcar casillas (al marcar la última, el servidor completa la tarea) y ver una imagen en grande.
  */
 function wireDescription(scope, onChange) {
-  scope.querySelectorAll('[data-check]').forEach((b) =>
-    b.addEventListener('click', async () => {
-      const [id, index, done] = b.dataset.check.split(':').map(Number);
-      b.disabled = true;
-      try {
-        const res = await apiPost('tasks/toggle_check', { id, index, done: !!done });
-        if (res.completed) toast('Tarea completada');
-        onChange();
-      } catch (e) {
-        b.disabled = false;
-        toast(e.message, 'error');
-      }
-    }));
+  // Casillas de una tarea (data-check) o de la descripción de un proyecto (data-pcheck).
+  [['data-check', 'tasks/toggle_check'], ['data-pcheck', 'tasks/project_toggle_check']].forEach(([attr, route]) =>
+    scope.querySelectorAll(`[${attr}]`).forEach((b) =>
+      b.addEventListener('click', async () => {
+        const [id, index, done] = b.getAttribute(attr).split(':').map(Number);
+        b.disabled = true;
+        try {
+          const res = await apiPost(route, { id, index, done: !!done });
+          if (res.completed) toast('Tarea completada');
+          onChange();
+        } catch (e) {
+          b.disabled = false;
+          toast(e.message, 'error');
+        }
+      })));
   scope.querySelectorAll('[data-zoom]').forEach((img) =>
     img.addEventListener('click', () => modal({
       title: 'Imagen',
@@ -1124,7 +1364,9 @@ function openProjectModal(project) {
   form.innerHTML = `
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
       ${field({ key: 'name', label: 'Nombre del proyecto', type: 'text', required: true, span: 'sm:col-span-2' }, project?.name || '')}
-      ${field({ key: 'description', label: 'Descripción', type: 'textarea', rows: 2, span: 'sm:col-span-2' }, project?.description || '')}
+      <div class="sm:col-span-2"><label class="${labelCls}">Descripción</label>
+        <div id="p-desc-editor"></div>
+      </div>
       <div class="sm:col-span-2"><label class="${labelCls}">Asignar a</label>
         ${assigneeCheckboxesHtml(project?.assigned_to || [])}
       </div>
@@ -1132,22 +1374,28 @@ function openProjectModal(project) {
       ${field({ key: 'status', label: 'Estado', type: 'select', options: [['activo', 'Activo'], ['completado', 'Completado'], ['archivado', 'Archivado']] }, project?.status || 'activo')}
     </div>`;
 
+  const descEditor = mountTaskEditor(form.querySelector('#p-desc-editor'), project?.desc_blocks || [], { projectId: project?.id || 0 });
+
   modal({
     title: project ? 'Editar proyecto' : 'Nuevo proyecto',
     content: form,
-    size: 'max-w-xl',
+    size: 'max-w-3xl',
     actions: [
       { label: 'Cancelar' },
       {
         label: project ? 'Guardar cambios' : 'Crear proyecto', primary: true,
         onClick: async (close, btn) => {
           if (!form.reportValidity()) return;
+          if (descEditor.busy()) {
+            toast('Espera a que termine de subirse la imagen', 'error');
+            return;
+          }
           btn.disabled = true;
           const v = formValues(form);
           try {
             await apiPost('tasks/project_save', {
               ...(project ? { id: project.id } : {}),
-              name: v.name, description: v.description, due_date: v.due_date, status: v.status,
+              name: v.name, description: descEditor.content(), due_date: v.due_date, status: v.status,
               assigned_to: checkedAssignees(form),
             });
             toast(project ? 'Proyecto actualizado' : 'Proyecto creado');
