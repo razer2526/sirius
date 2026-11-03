@@ -227,17 +227,39 @@ function handle_commissions(string $action): void
             json_ok(['items' => $items]);
         }
 
-        /** Registros manuales (pendientes y facturados) de un médico, más recientes primero. */
+        /**
+         * Registros manuales (pendientes y facturados) de un médico, más recientes primero. Con from/to solo
+         * trae ese periodo (la pantalla abre en el bimestre en curso); `pending_outside` cuenta los pendientes
+         * que quedaron fuera del periodo para avisarlo.
+         */
         case 'entries_list': {
             $doctorId = (int)($_GET['doctor_id'] ?? 0);
+            $from = commissions_valid_date($_GET['from'] ?? '');
+            $to = commissions_valid_date($_GET['to'] ?? '');
+            $ranged = $from !== null && $to !== null;
+            $where = 'ce.doctor_id = ?';
+            $params = [$doctorId];
+            if ($ranged) {
+                $where .= ' AND ce.entry_date BETWEEN ? AND ?';
+                array_push($params, $from, $to);
+            }
             $st = db()->prepare(
-                'SELECT ce.id, ce.patient_name, ce.entry_date, ce.studies, ce.total_amount, ce.total_commission,
-                        ce.statement_id, cs.folio
+                "SELECT ce.id, ce.patient_name, ce.entry_date, ce.studies, ce.total_amount, ce.total_commission,
+                        ce.statement_id, cs.folio, cs.paid_at, cs.payment_reference
                  FROM commission_entries ce LEFT JOIN commission_statements cs ON cs.id = ce.statement_id
-                 WHERE ce.doctor_id = ? ORDER BY ce.entry_date DESC, ce.id DESC'
+                 WHERE $where ORDER BY ce.entry_date DESC, ce.id DESC"
             );
-            $st->execute([$doctorId]);
+            $st->execute($params);
             $rows = $st->fetchAll();
+            $pendingOutside = 0;
+            if ($ranged) {
+                $st = db()->prepare(
+                    'SELECT COUNT(*) FROM commission_entries
+                     WHERE doctor_id = ? AND statement_id IS NULL AND (entry_date < ? OR entry_date > ?)'
+                );
+                $st->execute([$doctorId, $from, $to]);
+                $pendingOutside = (int)$st->fetchColumn();
+            }
             foreach ($rows as &$r) {
                 $r['id'] = (int)$r['id'];
                 $r['studies'] = json_decode((string)$r['studies'], true) ?: [];
@@ -246,7 +268,7 @@ function handle_commissions(string $action): void
                 $r['statement_id'] = $r['statement_id'] !== null ? (int)$r['statement_id'] : null;
             }
             unset($r);
-            json_ok(['entries' => $rows]);
+            json_ok(['entries' => $rows, 'pending_outside' => $pendingOutside]);
         }
 
         /** Crea o edita (si no está facturado todavía) un registro manual de paciente referido. */
@@ -432,10 +454,41 @@ function handle_commissions(string $action): void
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
             $statement = commissions_find_statement($id);
+            if (!empty($statement['paid_at'])) {
+                json_error('Este estado de cuenta ya está pagado. Si de verdad hay que eliminarlo, primero quita el pago.', 422);
+            }
             db()->prepare('UPDATE commission_entries SET statement_id = NULL WHERE statement_id = ?')->execute([$id]);
             db()->prepare('DELETE FROM commission_statements WHERE id = ?')->execute([$id]);
             log_activity('apps', 'commission_statement_delete', "Eliminó el estado de cuenta \"{$statement['folio']}\"", 'commission_statement', $id);
             json_ok(['deleted' => true]);
+        }
+
+        /** Cierre del estado de cuenta: se marca pagado con la clave de rastreo SPEI de la transferencia (también corrige la clave). */
+        case 'statement_pay': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $statement = commissions_find_statement($id);
+            $reference = commissions_valid_reference($b['payment_reference'] ?? '');
+            if ($reference === null) {
+                json_error('Escribe la clave de rastreo SPEI (de 4 a 60 letras, números o guiones)', 422);
+            }
+            $wasPaid = !empty($statement['paid_at']);
+            $paidAt = $wasPaid ? (string)$statement['paid_at'] : date('Y-m-d H:i:s');
+            db()->prepare('UPDATE commission_statements SET paid_at = ?, payment_reference = ?, paid_by = ? WHERE id = ?')
+                ->execute([$paidAt, $reference, (int)$me['id'], $id]);
+            $verb = $wasPaid ? 'Corrigió la clave de rastreo del pago del' : 'Marcó como pagado el';
+            log_activity('apps', 'commission_statement_pay', "$verb estado de cuenta \"{$statement['folio']}\" (SPEI $reference)", 'commission_statement', $id);
+            json_ok(['paid_at' => $paidAt, 'payment_reference' => $reference]);
+        }
+
+        /** Regresa el estado de cuenta a «pendiente de pago» (por si se marcó por error). */
+        case 'statement_unpay': {
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $statement = commissions_find_statement($id);
+            db()->prepare('UPDATE commission_statements SET paid_at = NULL, payment_reference = NULL, paid_by = NULL WHERE id = ?')->execute([$id]);
+            log_activity('apps', 'commission_statement_unpay', "Quitó el pago del estado de cuenta \"{$statement['folio']}\"", 'commission_statement', $id);
+            json_ok(['paid_at' => null]);
         }
 
         case 'list': {
@@ -463,6 +516,8 @@ function handle_commissions(string $action): void
                 $it['party_name'] = $decoded['party_name'] ?? '';
                 unset($it['lines']);
                 $it['total_commission'] = (float)$it['total_commission'];
+                $it['paid_at'] = $it['paid_at'] ?? null;
+                $it['payment_reference'] = $it['payment_reference'] ?? null;
             }
             unset($it);
             json_ok(['items' => $items, 'total' => $total, 'page' => $page, 'per_page' => $perPage]);
@@ -694,6 +749,13 @@ function commissions_concierge_name(int $id): string
     $st = db()->prepare('SELECT name FROM vinculacion_concierge WHERE id = ?');
     $st->execute([$id]);
     return (string)($st->fetch()['name'] ?? '');
+}
+
+/** Clave de rastreo SPEI: sin espacios (se quitan al pegarla), de 4 a 60 letras, números o guiones; null si no sirve. */
+function commissions_valid_reference($v): ?string
+{
+    $v = preg_replace('/\s+/', '', (string)$v);
+    return preg_match('/^[A-Za-z0-9._\-\/]{4,60}$/', $v) ? $v : null;
 }
 
 function commissions_valid_date($v): ?string

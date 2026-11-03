@@ -168,7 +168,7 @@ El motor —"generar documento con plantilla + membrete + flujo de revisión y l
 | `vinculacion_concierge` | Socios que refieren y agrupan médicos, con su `commission_pct`. | 🟡 → `partners` |
 | `vinculacion_doctors` | Médicos que refieren, opcionalmente bajo un concierge. | 🟡 → `referidores` |
 | `commission_entries` | Eventos individuales que generan comisión. **`studies` JSON**. | 🟡 |
-| `commission_statements` | Estado de cuenta periódico. `party_type` ENUM(`doctor`,`concierge`) + `party_id` — **polimórfico, sin FK**. **`` `lines` `` JSON**. | 🟡 |
+| `commission_statements` | Estado de cuenta periódico. `party_type` ENUM(`doctor`,`concierge`) + `party_id` — **polimórfico, sin FK**. **`` `lines` `` JSON**. `paid_at` / `payment_reference` (clave de rastreo SPEI) / `paid_by`: NULL = pendiente de pago. | 🟡 |
 
 Todo este bloque es maquinaria genérica de comisiones y pagos a socios. Solo el vocabulario es médico.
 

@@ -1941,6 +1941,7 @@ function paintCommissionList(box, load) {
               <th class="px-4 py-3">Médico / Concierge</th>
               <th class="hidden px-4 py-3 sm:table-cell">Periodo</th>
               <th class="px-4 py-3 text-right">Comisión</th>
+              <th class="px-4 py-3">Pago</th>
               <th class="px-4 py-3 text-right">Acciones</th>
             </tr>
           </thead>
@@ -1953,14 +1954,15 @@ function paintCommissionList(box, load) {
                 </td>
                 <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(s.period_start)} — ${escapeHtml(s.period_end)}</td>
                 <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(s.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                <td class="px-4 py-3">${commissionPayChip(s, { id: s.id })}</td>
                 <td class="px-4 py-3">
                   <div class="flex justify-end gap-1">
                     <a href="comision.php?id=${s.id}" target="_blank" title="Ver PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
                     <a href="comision.php?id=${s.id}&download=1" title="Descargar PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('download', 'h-4 w-4')}</a>
-                    <button type="button" data-del-statement="${s.id}" title="Eliminar"
-                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>
+                    ${s.paid_at ? '' : `<button type="button" data-del-statement="${s.id}" title="Eliminar"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>`}
                   </div>
                 </td>
               </tr>`).join('')}
@@ -1976,6 +1978,8 @@ function paintCommissionList(box, load) {
 
   box.querySelector('#pg-prev')?.addEventListener('click', () => { commissionFilters.page--; load(false); });
   box.querySelector('#pg-next')?.addEventListener('click', () => { commissionFilters.page++; load(false); });
+
+  bindCommissionPayChips(box, (id) => items.find((s) => s.id === id), () => load(false));
 
   box.querySelectorAll('[data-del-statement]').forEach((btn) =>
     btn.addEventListener('click', async () => {
@@ -1994,6 +1998,94 @@ function paintCommissionList(box, load) {
         toast(e.message, 'error');
       }
     }));
+}
+
+/** Botón-etiqueta del estado de pago de un estado de cuenta: abre el modal para registrar o corregir el pago. */
+function commissionPayChip(s, { id, withFolio = false }) {
+  const paid = !!s.paid_at;
+  return `<button type="button" data-pay-statement="${id}"
+                  title="${paid ? 'Clave de rastreo SPEI: ' + escapeHtml(s.payment_reference || '') : 'Clic para registrar el pago'}"
+                  class="rounded-full px-2 py-0.5 text-xs font-semibold ${paid ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'bg-sky-100 text-sky-700 hover:bg-sky-200'}">${paid ? 'Pagado' : 'Pendiente de pago'}${withFolio && s.folio ? ' · ' + escapeHtml(s.folio) : ''}</button>`;
+}
+
+/** Conecta los botones de pago de `box`; `find(id)` devuelve el estado de cuenta (id, folio, party_name, paid_at, payment_reference). */
+function bindCommissionPayChips(box, find, onDone) {
+  box.querySelectorAll('[data-pay-statement]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const statement = find(+btn.dataset.payStatement);
+      if (statement) openCommissionPaymentModal(statement, onDone);
+    }));
+}
+
+/**
+ * Cierre del estado de cuenta: "Pagado" pide la clave de rastreo SPEI de la transferencia, que se imprime en el
+ * PDF arriba del pie de la última hoja. Si ya está pagado, el mismo modal corrige la clave o quita el pago.
+ */
+function openCommissionPaymentModal(statement, onDone) {
+  const paid = !!statement.paid_at;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="space-y-4">
+      <p class="text-sm text-slate-600">
+        Estado de cuenta <span class="font-mono font-semibold text-slate-800">${escapeHtml(statement.folio || '')}</span>
+        ${statement.party_name ? ' · ' + escapeHtml(statement.party_name) : ''}
+      </p>
+      ${paid ? `<p class="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-200">Pagado el ${escapeHtml(fmtDateTime(statement.paid_at))}</p>` : ''}
+      <div>
+        <label class="${labelCls}" for="pay-ref">Clave de rastreo SPEI</label>
+        <input type="text" id="pay-ref" maxlength="60" autocomplete="off" autocapitalize="characters" spellcheck="false"
+               value="${escapeHtml(statement.payment_reference || '')}" placeholder="Ej. MBAN01002611030012345678" class="${inputCls} font-mono">
+        <p class="mt-1 text-xs text-slate-400">Aparece en el estado de cuenta, arriba del pie de la última hoja, y el PDF queda como «Pagado».</p>
+      </div>
+    </div>`;
+  const input = wrap.querySelector('#pay-ref');
+
+  const save = async (close, btn) => {
+    const reference = input.value.replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9._\-/]{4,60}$/.test(reference)) {
+      toast('Escribe la clave de rastreo SPEI (de 4 a 60 letras, números o guiones)', 'error');
+      input.focus();
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await apiPost('commissions/statement_pay', { id: statement.id, payment_reference: reference });
+      toast(paid ? 'Clave de rastreo actualizada' : 'Estado de cuenta marcado como pagado');
+      close();
+      if (onDone) onDone();
+    } catch (e) {
+      toast(e.message, 'error');
+      btn.disabled = false;
+    }
+  };
+
+  const actions = [{ label: 'Cancelar' }];
+  if (paid) {
+    actions.unshift({
+      label: 'Quitar pago', danger: true,
+      onClick: async (close, btn) => {
+        const ok = await confirmDialog('Quitar pago', 'El estado de cuenta vuelve a «Pendiente de pago» y se borra la clave de rastreo.', { confirmLabel: 'Quitar pago', danger: true });
+        if (!ok) return;
+        btn.disabled = true;
+        try {
+          await apiPost('commissions/statement_unpay', { id: statement.id });
+          toast('Pago quitado');
+          close();
+          if (onDone) onDone();
+        } catch (e) {
+          toast(e.message, 'error');
+          btn.disabled = false;
+        }
+      },
+    });
+  }
+  actions.push({ label: paid ? 'Guardar clave' : 'Marcar como pagado', primary: true, onClick: save });
+
+  modal({ title: paid ? 'Pago registrado' : 'Marcar como pagado', content: wrap, size: 'max-w-md', actions });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') wrap.closest('.fixed')?.querySelector('.modal-actions button:last-child')?.click();
+  });
+  setTimeout(() => input.focus(), 50);
 }
 
 function defaultPeriodStart() {
@@ -2720,8 +2812,19 @@ async function renderCommissionDoctorDetail(root, doctorId) {
           ${icon('plus', 'h-4 w-4')} Nuevo registro
         </button>
       </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <label for="cd-period" class="text-xs font-semibold uppercase tracking-wide text-slate-500">Periodo</label>
+        <select id="cd-period" class="${inputCls} !w-auto"></select>
+      </div>
       <div id="cd-list">${spinner()}</div>
     </div>`;
+
+  // Se abre en el bimestre en curso para no cargar la lista completa; los anteriores se eligen aquí
+  const periods = bimesterOptions();
+  const periodSel = root.querySelector('#cd-period');
+  periodSel.innerHTML = periods.map((o) => `<option value="${o.key}">${escapeHtml(o.label)}${o.done ? '' : ' · en curso'}</option>`).join('')
+    + '<option value="all">Todos los periodos</option>';
+  periodSel.value = periods[0].key;
 
   const { doctors } = await apiGet('commissions/parties');
   const doctor = doctors.find((d) => d.id === doctorId);
@@ -2732,20 +2835,36 @@ async function renderCommissionDoctorDetail(root, doctorId) {
   }
 
   const load = async () => {
-    const { entries } = await apiGet('commissions/entries_list', { doctor_id: doctorId });
-    paintCommissionEntries(root.querySelector('#cd-list'), entries, load, doctorId);
+    const period = periods.find((o) => o.key === periodSel.value);
+    const { entries, pending_outside: pendingOutside } = await apiGet('commissions/entries_list', {
+      doctor_id: doctorId, from: period?.from, to: period?.to,
+    });
+    paintCommissionEntries(root.querySelector('#cd-list'), entries, load, doctorId, {
+      doctorName: doctor.name,
+      periodLabel: period ? period.label : '',
+      pendingOutside: pendingOutside || 0,
+      showAll: () => { periodSel.value = 'all'; load(); },
+    });
   };
+  periodSel.addEventListener('change', () => { root.querySelector('#cd-list').innerHTML = spinner(); load(); });
   root.querySelector('#cd-new').addEventListener('click', () => openCommissionEntryModal(null, doctorId, load));
   await load();
 }
 
-function paintCommissionEntries(box, entries, load, doctorId) {
+function paintCommissionEntries(box, entries, load, doctorId, { doctorName = '', periodLabel = '', pendingOutside = 0, showAll = null } = {}) {
+  const outsideNote = pendingOutside ? `
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800 ring-1 ring-amber-200">
+      <span>Hay ${pendingOutside} registro(s) pendiente(s) en otros periodos.</span>
+      <button type="button" id="cd-show-all" class="font-semibold underline hover:text-amber-900">Ver todos los periodos</button>
+    </div>` : '';
+
   if (!entries.length) {
     box.innerHTML = `
       <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
-        <p class="text-sm font-medium text-slate-600">Sin registros todavía</p>
+        <p class="text-sm font-medium text-slate-600">${periodLabel ? 'Sin registros en ' + escapeHtml(periodLabel) : 'Sin registros todavía'}</p>
         <p class="mt-1 text-xs text-slate-400">Agrega el primero con el botón de arriba.</p>
-      </div>`;
+      </div>${outsideNote}`;
+    box.querySelector('#cd-show-all')?.addEventListener('click', () => showAll && showAll());
     return;
   }
 
@@ -2777,7 +2896,7 @@ function paintCommissionEntries(box, entries, load, doctorId) {
                 <td class="px-4 py-3 text-right font-semibold text-slate-800">$${Number(e.total_commission).toFixed(2)}</td>
                 <td class="px-4 py-3">
                   ${e.statement_id
-                    ? `<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Facturado · ${escapeHtml(e.folio)}</span>`
+                    ? commissionPayChip(e, { id: e.statement_id, withFolio: true })
                     : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Pendiente</span>'}
                 </td>
                 <td class="px-4 py-3">
@@ -2793,9 +2912,19 @@ function paintCommissionEntries(box, entries, load, doctorId) {
       </div>
     </div>
     <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
-      <span class="text-sm font-semibold text-slate-600">Total pendiente</span>
+      <span class="text-sm font-semibold text-slate-600">Total pendiente${periodLabel ? ' · ' + escapeHtml(periodLabel) : ''}</span>
       <span class="text-base font-bold text-slate-800">$${pendingTotal.toFixed(2)}</span>
-    </div>`;
+    </div>${outsideNote}`;
+
+  box.querySelector('#cd-show-all')?.addEventListener('click', () => showAll && showAll());
+  bindCommissionPayChips(
+    box,
+    (id) => {
+      const e = entries.find((x) => x.statement_id === id);
+      return e && { id, folio: e.folio, party_name: doctorName, paid_at: e.paid_at, payment_reference: e.payment_reference };
+    },
+    load
+  );
 
   box.querySelectorAll('[data-edit-entry]').forEach((btn) =>
     btn.addEventListener('click', () => {
