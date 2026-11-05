@@ -109,7 +109,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
             'episodes' => "CREATE TABLE IF NOT EXISTS episodes (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 patient_id INT UNSIGNED NOT NULL,
-                service ENUM('laboratorio','control_peso','fisioterapia','podologia') NOT NULL,
+                service ENUM('laboratorio','control_peso','fisioterapia','podologia','facial') NOT NULL,
                 service_folio VARCHAR(20) NULL,
                 admission_date DATETIME NOT NULL,
                 reason TEXT NULL,
@@ -416,7 +416,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
             'appointments' => "CREATE TABLE IF NOT EXISTS appointments (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 title VARCHAR(200) NOT NULL,
-                service ENUM('laboratorio','control_peso','fisioterapia','podologia','recoleccion','otro') NOT NULL DEFAULT 'otro',
+                service ENUM('laboratorio','control_peso','fisioterapia','podologia','facial','recoleccion','otro') NOT NULL DEFAULT 'otro',
                 patient_id INT UNSIGNED NULL,
                 location VARCHAR(200) NULL,
                 start_at DATETIME NOT NULL,
@@ -1595,6 +1595,10 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
     // fallaba, así que ese dispositivo nunca llegaba a suscribirse. MODIFY es idempotente.
     if ($isMysql) {
         $migrations[] = 'ALTER TABLE push_subscriptions MODIFY endpoint VARCHAR(1000) NOT NULL';
+        // Servicio «Facial»: las tablas ya creadas conservan el ENUM anterior, así que sin esto el
+        // INSERT de una admisión o cita facial fallaría en producción. MODIFY es idempotente.
+        $migrations[] = "ALTER TABLE episodes MODIFY service ENUM('laboratorio','control_peso','fisioterapia','podologia','facial') NOT NULL";
+        $migrations[] = "ALTER TABLE appointments MODIFY service ENUM('laboratorio','control_peso','fisioterapia','podologia','facial','recoleccion','otro') NOT NULL DEFAULT 'otro'";
     }
     $applied = 0;
     foreach ($migrations as $sql) {

@@ -11,21 +11,44 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo](#3-de-noviembre-de-2026--comisiones-boton-de-corte-solo-para-administradores-estatus-visible-y-pdf-con-el-estatus-abajo)
-2. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
-3. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
-4. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
-5. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
-6. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-7. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-8. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-9. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-10. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-11. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-12. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-13. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-14. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-15. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [5 de noviembre de 2026 · Admisión: nuevo formulario de Facial](#5-de-noviembre-de-2026--admisión-nuevo-formulario-de-facial)
+2. [3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo](#3-de-noviembre-de-2026--comisiones-boton-de-corte-solo-para-administradores-estatus-visible-y-pdf-con-el-estatus-abajo)
+3. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
+4. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
+5. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
+6. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+7. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+8. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+9. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+10. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+11. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+12. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+13. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+14. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+15. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+16. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 5 de noviembre de 2026 · Admisión: nuevo formulario de Facial
+
+Mejora (PR 89). **Sí hay cambio de esquema: hay que correr `install/setup.php` después de desplegar.** Mientras no se corra, guardar una admisión o una cita de **Facial** marca error (los demás servicios no se ven afectados). Si no ves los cambios, entra a **Configuración → Buscar actualizaciones**.
+
+### Admisión · Facial
+
+- **Qué cambió:** en **Admisión** hay una tarjeta nueva, **Facial**. Su formulario trae, además de los **datos del paciente** de siempre:
+  - **Padecimientos y antecedentes patológicos personales** (diabetes, tiroides, acné, rosácea, dermatitis, melasma, procedimientos estéticos previos, embarazo o lactancia, tabaquismo…).
+  - **Patologías heredofamiliares**, con parentesco y si vive o finado.
+  - **Medicamentos** (isotretinoína, retinoides, corticoides, anticoagulantes, hormonales…) y suplementos.
+  - **Alergias** (medicamentos, anestésicos, látex, níquel, fragancias, cosméticos…).
+  - **Exposición a animales y químicos**, y exposición solar y protector solar.
+  - **Rutina de maquillaje:** frecuencia de uso, si se desmaquilla, y por cada producto (prebase, base, corrector, polvo, rubor, contorno, iluminador, sombras, delineador, máscara, cejas, labial, fijador, desmaquillante) se marca y se anota la **marca y el tipo**.
+  - **Métricas faciales:** de **piel** (tipo de piel, fototipo de Fitzpatrick, envejecimiento de Glogau, hidratación, sebo, elasticidad, pH, melanina, eritema, poros, arrugas, manchas) y **medidas en mm** (forma del rostro, simetría, altura facial, tercios, anchos bicigomático, bigonial y frontal, distancias interpupilar e intercantal, nariz, boca y labios). El **índice facial** y el **índice mandibular** se calculan solos.
+  - **Firma del paciente.**
+- **También:** Facial aparece en **Expedientes** (filtro de servicio, visita, impresión y consultas subsecuentes con su propia ficha de sesión) y se puede agendar en el **Calendario**.
+- **Afecta a:** quien hace admisiones y quien agenda citas.
+- **Acción:** después del despliegue, correr `install/setup.php` (agrega «Facial» a la lista de servicios de la base de datos).
+- **Manual:** usuario estándar, apartado 6 («Admisión: registrar a un paciente»), que aún no menciona Facial.
 
 ---
 

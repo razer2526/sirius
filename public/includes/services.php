@@ -10,6 +10,7 @@ const SERVICE_LABELS = [
     'control_peso' => 'Control de peso',
     'fisioterapia' => 'Fisioterapia',
     'podologia'    => 'Podología',
+    'facial'       => 'Facial',
 ];
 
 function services_catalog(): array

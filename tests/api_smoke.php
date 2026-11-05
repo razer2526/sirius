@@ -511,6 +511,64 @@ test('el listado de estados de cuenta se filtra por periodo de generación y por
     eq(0, $other['total']);
 });
 
+echo "\nAdmisión Facial\n";
+test('el servicio Facial pide padecimientos, heredofamiliares, medicamentos, alergias, exposición, maquillaje y métricas', function () {
+    require_once SIRIUS_PUBLIC . '/includes/services.php';
+    $ids = array_column(service_sections('facial', 'admission'), 'id');
+    foreach (['fa_app', 'fa_ahf', 'fa_med', 'fa_alergias', 'fa_exp', 'fa_maq', 'fa_piel', 'fa_medidas', 'firma'] as $sec) {
+        ok(in_array($sec, $ids, true), "falta la sección $sec");
+    }
+    eq('Facial', SERVICE_LABELS['facial']);
+});
+test('una admisión Facial guarda sus datos, descarta llaves ajenas y sale en el expediente impreso', function () use ($admin, &$csrf, $pdo) {
+    $r = $admin->json('POST', '/api/index.php?r=episodes/create', [
+        'service' => 'facial',
+        'patient' => ['first_name' => 'Paciente', 'paternal_surname' => 'Facial' . random_int(100, 999), 'sex' => 'F'],
+        'service_data' => [
+            'app_acne' => true, 'app_acne_det' => 'Desde 2020',
+            'ahf_diabetes' => true, 'ahf_diabetes_det' => 'Madre, viva',
+            'alg_fragancias' => true,
+            'exp_quimicos' => true, 'exp_quimicos_det' => 'Cloro de alberca',
+            'maq_base' => true, 'maq_base_det' => 'Marca Aurora, líquida',
+            'met_tipo_piel' => 'Mixta', 'met_alt_facial' => '180', 'met_ancho_bicigomatico' => '130', 'met_ind_facial' => '138.5',
+            'llave_inventada' => 'no debe guardarse',
+        ],
+        'ignore_duplicate' => true,
+    ], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $episodeId = (int)$r['json']['data']['episode_id'];
+    $patientId = (int)$r['json']['data']['patient_id'];
+
+    $row = $pdo->prepare('SELECT service, service_data FROM episodes WHERE id = ?');
+    $row->execute([$episodeId]);
+    $ep = $row->fetch();
+    eq('facial', $ep['service']);
+    $data = json_decode($ep['service_data'], true);
+    eq('Cloro de alberca', $data['exp_quimicos_det']);
+    eq('Marca Aurora, líquida', $data['maq_base_det']);
+    eq('138.5', (string)$data['met_ind_facial']);
+    ok(!isset($data['llave_inventada']), 'una llave que no está en el catálogo no debía guardarse');
+
+    $pdf = $admin->req('GET', '/print.php?patient_id=' . $patientId);
+    ok(str_starts_with($pdf['body'], '%PDF'), 'print.php no devolvió un PDF (HTTP ' . $pdf['status'] . ')');
+    $tmp = tests_tmp_dir() . '/facial_' . $episodeId . '.pdf';
+    file_put_contents($tmp, $pdf['body']);
+    $txt = (string)pdf_extract_text($tmp);
+    ok(stripos($txt, 'Facial') !== false, 'el expediente debía mencionar el servicio Facial');
+    ok(str_contains($txt, 'Marca Aurora'), 'el expediente debía incluir la marca de maquillaje capturada');
+    ok(str_contains($txt, 'Mixta'), 'el expediente debía incluir el tipo de piel');
+});
+test('el calendario acepta citas del servicio Facial', function () use ($admin, &$csrf, $pdo) {
+    $r = $admin->json('POST', '/api/index.php?r=appointments/save', [
+        'title' => 'Limpieza facial', 'service' => 'facial',
+        'start_at' => '2027-01-12 10:00:00', 'end_at' => '2027-01-12 11:00:00',
+    ], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $svc = $pdo->prepare('SELECT service FROM appointments WHERE id = ?');
+    $svc->execute([(int)($r['json']['data']['id'] ?? 0)]);
+    eq('facial', $svc->fetchColumn());
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

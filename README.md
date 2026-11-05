@@ -4,7 +4,7 @@ Sistema de gestión modular para el **Laboratorio y Clínica Bosques Polanco**.
 
 Incluye: login con roles y permisos por módulo, Dashboard, **Admisión** con las
 fichas oficiales de cada servicio (Laboratorio, Control de peso, Fisioterapia,
-Podología) con firma digital y cálculos automáticos, **Expedientes** (detalle,
+Podología, Facial) con firma digital y cálculos automáticos, **Expedientes** (detalle,
 consultas subsecuentes por ficha de sesión, exportar PDF), **Tareas** (proyectos,
 subtareas, asignación, prioridades y tareas frecuentes diarias/semanales),
 **Membretador** (estudios membretados en PDF: FilmArray GI), **Membretes**
