@@ -766,13 +766,15 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_boardasset_item (item_id),
                 CONSTRAINT fk_boardasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
-            // Imágenes y notas manuscritas de la descripción de una tarea. task_id es NULL mientras la tarea
+            // Imágenes y notas manuscritas de la descripción de una tarea o de un proyecto (task_id o project_id;
+            // ambos NULL mientras aún no se guarda). task_id es NULL mientras la tarea
             // aún no se guarda (la imagen se sube antes que la tarea nueva) y NO lleva FOREIGN KEY ni
             // CASCADE a propósito, por la misma razón que board_assets: borrar y luego archivar en la
             // papelera no debe llevarse las imágenes.
             'task_assets' => "CREATE TABLE IF NOT EXISTS task_assets (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
                 task_id INT UNSIGNED NULL,
+                project_id INT UNSIGNED NULL,
                 stored_name VARCHAR(80) NOT NULL,
                 mime VARCHAR(60) NOT NULL,
                 size INT UNSIGNED NOT NULL DEFAULT 0,
@@ -1428,6 +1430,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
             'task_assets' => "CREATE TABLE IF NOT EXISTS task_assets (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 task_id INTEGER NULL,
+                project_id INTEGER NULL,
                 stored_name TEXT NOT NULL,
                 mime TEXT NOT NULL,
                 size INTEGER NOT NULL DEFAULT 0,
@@ -1534,6 +1537,8 @@ function sirius_schema_migrations(PDO $pdo, bool $isMysql): array
 {
     $varchar = static fn(int $n) => $isMysql ? "VARCHAR($n) NULL" : 'TEXT NULL';
     $migrations = [
+        // Las imágenes de la descripción de un proyecto comparten tabla con las de las tareas.
+        'ALTER TABLE task_assets ADD COLUMN project_id ' . ($isMysql ? 'INT UNSIGNED NULL' : 'INTEGER NULL'),
         "ALTER TABLE patients ADD COLUMN marital_status {$varchar(30)}",
         "ALTER TABLE patients ADD COLUMN occupation {$varchar(100)}",
         "ALTER TABLE patients ADD COLUMN nationality {$varchar(60)}",

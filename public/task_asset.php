@@ -24,14 +24,20 @@ if (!user_can('tareas')) {
     exit('No tienes permiso para ver esta imagen.');
 }
 
-$st = db()->prepare('SELECT stored_name, task_id, created_by FROM task_assets WHERE id = ?');
+$st = db()->prepare('SELECT stored_name, task_id, project_id, created_by FROM task_assets WHERE id = ?');
 $st->execute([(int)($_GET['id'] ?? 0)]);
 $row = $st->fetch();
 
 $allowed = false;
 if ($row) {
-    if ($row['task_id'] === null) {
+    if ($row['task_id'] === null && $row['project_id'] === null) {
         $allowed = (int)$row['created_by'] === (int)$me['id'];
+    } elseif ($row['project_id'] !== null) {
+        $st = db()->prepare('SELECT id, created_by FROM projects WHERE id = ?');
+        $st->execute([(int)$row['project_id']]);
+        $project = $st->fetch();
+        $canManage = is_admin_role($me) || user_flag('tareas', 'manage');
+        $allowed = $project && project_user_can_view($project, $me, $canManage);
     } else {
         $st = db()->prepare('SELECT id, parent_id, created_by FROM tasks WHERE id = ?');
         $st->execute([(int)$row['task_id']]);
