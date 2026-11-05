@@ -11,7 +11,7 @@
 
 require_once __DIR__ . '/../../includes/google_calendar.php';
 
-const APPT_SERVICES = ['laboratorio', 'control_peso', 'fisioterapia', 'podologia', 'recoleccion', 'otro'];
+const APPT_SERVICES = ['laboratorio', 'control_peso', 'fisioterapia', 'podologia', 'facial', 'recoleccion', 'otro'];
 const APPT_STATUSES = ['programada', 'confirmada', 'cancelada', 'completada'];
 const APPT_TIMEZONE = 'America/Mexico_City';
 
