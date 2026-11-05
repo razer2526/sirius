@@ -29,6 +29,12 @@ export const SERVICES = {
     color: 'bg-violet-100 text-violet-700',
     accent: 'bg-violet-600',
   },
+  facial: {
+    label: 'Facial',
+    icon: 'sparkles',
+    color: 'bg-pink-100 text-pink-700',
+    accent: 'bg-pink-600',
+  },
 };
 
 let catalogPromise = null;

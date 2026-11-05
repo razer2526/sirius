@@ -34,6 +34,9 @@ const CALCS = {
   imc: (v) => (v.peso_kg > 0 && v.talla_cm > 0) ? r1(v.peso_kg / ((v.talla_cm / 100) ** 2)) : '',
   icc: (v) => (v.per_cintura > 0 && v.per_cadera > 0) ? r2(v.per_cintura / v.per_cadera) : '',
   ice: (v) => (v.per_cintura > 0 && v.talla_cm > 0) ? r2(v.per_cintura / v.talla_cm) : '',
+  // Índices faciales (morfológico y mandibular): proporción entre medidas, en %
+  ind_facial: (v) => (v.met_alt_facial > 0 && v.met_ancho_bicigomatico > 0) ? r1(v.met_alt_facial / v.met_ancho_bicigomatico * 100) : '',
+  ind_mandibular: (v) => (v.met_ancho_bigonial > 0 && v.met_ancho_bicigomatico > 0) ? r1(v.met_ancho_bigonial / v.met_ancho_bicigomatico * 100) : '',
   pli_sum: (v) => {
     const vals = PLIEGUES.map((k) => v[k]).filter((x) => x > 0);
     return vals.length ? r1(vals.reduce((a, b) => a + b, 0)) : '';

@@ -2500,5 +2500,887 @@
                 ]
             }
         ]
+    },
+    "facial": {
+        "admission": [
+            {
+                "id": "fa_app",
+                "title": "Padecimientos y antecedentes patológicos personales",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "app_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hta",
+                        "l": "Hipertensión arterial",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_tiroides",
+                        "l": "Enfermedad de tiroides",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hormonal",
+                        "l": "Alteración hormonal (SOP, menopausia, etc.)",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_autoinmune",
+                        "l": "Enf. autoinmune (lupus, artritis, etc.)",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cardiovascular",
+                        "l": "Enfermedad cardiovascular",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_renal",
+                        "l": "Enfermedad renal",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_hepatica",
+                        "l": "Enfermedad hepática",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_coagulacion",
+                        "l": "Problemas de coagulación",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cancer",
+                        "l": "Cáncer (incluye cáncer de piel)",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_acne",
+                        "l": "Acné",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_rosacea",
+                        "l": "Rosácea",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_dermatitis",
+                        "l": "Dermatitis (atópica, seborreica, de contacto)",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_psoriasis",
+                        "l": "Psoriasis",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_melasma",
+                        "l": "Melasma o manchas",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_vitiligo",
+                        "l": "Vitíligo",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_herpes",
+                        "l": "Herpes labial recurrente",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_queloides",
+                        "l": "Cicatrización anormal (queloides)",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_cirugias",
+                        "l": "Cirugías",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    },
+                    {
+                        "k": "app_est_previos",
+                        "l": "Procedimientos estéticos previos (rellenos, toxina, láser, peelings)",
+                        "t": "checkdetail",
+                        "d": "Cuál y cuándo"
+                    },
+                    {
+                        "k": "app_embarazo",
+                        "l": "Embarazo o lactancia",
+                        "t": "checkdetail",
+                        "d": "Semanas / meses"
+                    },
+                    {
+                        "k": "app_tabaco",
+                        "l": "Tabaquismo",
+                        "t": "checkdetail",
+                        "d": "Cantidad / frecuencia"
+                    },
+                    {
+                        "k": "app_alcohol",
+                        "l": "Consumo de alcohol",
+                        "t": "checkdetail",
+                        "d": "Cantidad / frecuencia"
+                    },
+                    {
+                        "k": "app_its",
+                        "l": "Infección de transmisión sexual",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
+                    },
+                    {
+                        "k": "app_otro",
+                        "l": "Otro padecimiento",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    }
+                ]
+            },
+            {
+                "id": "fa_ahf",
+                "title": "Patologías heredofamiliares",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "ahf_diabetes",
+                        "l": "Diabetes",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_hta",
+                        "l": "Hipertensión arterial",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_tiroides",
+                        "l": "Enfermedad de tiroides",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_autoinmune",
+                        "l": "Enf. autoinmune",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_cardiovascular",
+                        "l": "Enfermedad cardiovascular",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_renal",
+                        "l": "Enfermedad renal",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_cancer",
+                        "l": "Cáncer (incluye cáncer de piel)",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_dermato",
+                        "l": "Enf. de la piel (psoriasis, vitíligo, rosácea, acné severo)",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_alergias",
+                        "l": "Alergias o atopia (asma, rinitis, dermatitis atópica)",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_queloides",
+                        "l": "Cicatrización anormal (queloides)",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    },
+                    {
+                        "k": "ahf_otro",
+                        "l": "Otra",
+                        "t": "checkdetail",
+                        "d": "Parentesco (padre/madre/otro) y si vive o finado"
+                    }
+                ]
+            },
+            {
+                "id": "fa_med",
+                "title": "Medicamentos",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "med_isotretinoina",
+                        "l": "Isotretinoína (últimos 6 meses)",
+                        "t": "checkdetail",
+                        "d": "Dosis y fecha de suspensión"
+                    },
+                    {
+                        "k": "med_retinoides",
+                        "l": "Retinoides o ácidos de uso tópico",
+                        "t": "checkdetail",
+                        "d": "Cuál"
+                    },
+                    {
+                        "k": "med_antibioticos",
+                        "l": "Antibióticos (acné, rosácea)",
+                        "t": "checkdetail",
+                        "d": "Cuál"
+                    },
+                    {
+                        "k": "med_corticoides",
+                        "l": "Corticoides (tópicos u orales)",
+                        "t": "checkdetail",
+                        "d": "Cuál y desde cuándo"
+                    },
+                    {
+                        "k": "med_anticoagulantes",
+                        "l": "Anticoagulantes o antiagregantes (aspirina)",
+                        "t": "checkdetail",
+                        "d": "Cuál"
+                    },
+                    {
+                        "k": "med_hormonales",
+                        "l": "Anticonceptivos o terapia hormonal",
+                        "t": "checkdetail",
+                        "d": "Cuál"
+                    },
+                    {
+                        "k": "med_fotosensibilizantes",
+                        "l": "Fotosensibilizantes (doxiciclina, hierba de San Juan, etc.)",
+                        "t": "checkdetail",
+                        "d": "Cuál"
+                    },
+                    {
+                        "k": "med_regular",
+                        "l": "Otros medicamentos de uso regular (nombre y dosis)",
+                        "t": "textarea",
+                        "span": 2
+                    },
+                    {
+                        "k": "med_suplementos",
+                        "l": "Suplementos y vitaminas (colágeno, biotina, etc.)",
+                        "t": "textarea",
+                        "span": 2
+                    }
+                ]
+            },
+            {
+                "id": "fa_alergias",
+                "title": "Alergias",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "alg_medicamentos",
+                        "l": "Medicamentos",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
+                    },
+                    {
+                        "k": "alg_anestesicos",
+                        "l": "Anestésicos",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
+                    },
+                    {
+                        "k": "alg_latex",
+                        "l": "Látex",
+                        "t": "checkdetail",
+                        "d": "Reacción"
+                    },
+                    {
+                        "k": "alg_niquel",
+                        "l": "Níquel o metales",
+                        "t": "checkdetail",
+                        "d": "Reacción"
+                    },
+                    {
+                        "k": "alg_fragancias",
+                        "l": "Fragancias o perfumes",
+                        "t": "checkdetail",
+                        "d": "Reacción"
+                    },
+                    {
+                        "k": "alg_cosmeticos",
+                        "l": "Cosméticos o ingredientes de skincare",
+                        "t": "checkdetail",
+                        "d": "¿Cuál y qué reacción?"
+                    },
+                    {
+                        "k": "alg_alimentos",
+                        "l": "Alimentos",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
+                    },
+                    {
+                        "k": "alg_picaduras",
+                        "l": "Picaduras de insectos",
+                        "t": "checkdetail",
+                        "d": "Reacción"
+                    },
+                    {
+                        "k": "alg_otra",
+                        "l": "Otra alergia",
+                        "t": "checkdetail",
+                        "d": "Especificar"
+                    }
+                ]
+            },
+            {
+                "id": "fa_exp",
+                "title": "Exposición a animales y químicos",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "exp_animales",
+                        "l": "Animales (mascotas, granja, etc.)",
+                        "t": "checkdetail",
+                        "d": "¿Qué animal y con qué frecuencia?"
+                    },
+                    {
+                        "k": "exp_quimicos",
+                        "l": "Químicos (limpieza, solventes, pesticidas, cloro)",
+                        "t": "checkdetail",
+                        "d": "¿Qué químico y con qué frecuencia?"
+                    },
+                    {
+                        "k": "exp_ocupacional",
+                        "l": "Exposición por su trabajo (polvo, humo, tintes, etc.)",
+                        "t": "checkdetail",
+                        "d": "¿Cuál?"
+                    },
+                    {
+                        "k": "exp_sol",
+                        "l": "Exposición solar",
+                        "t": "select",
+                        "o": [
+                            "Baja",
+                            "Media",
+                            "Alta"
+                        ]
+                    },
+                    {
+                        "k": "exp_fotoproteccion",
+                        "l": "Usa protector solar",
+                        "t": "checkdetail",
+                        "d": "Marca y FPS"
+                    },
+                    {
+                        "k": "exp_camas_bronceado",
+                        "l": "Camas de bronceado o bronceado artificial",
+                        "t": "checkdetail",
+                        "d": "Frecuencia"
+                    }
+                ]
+            },
+            {
+                "id": "fa_maq",
+                "title": "Rutina de maquillaje",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "maq_frecuencia",
+                        "l": "Frecuencia de uso",
+                        "t": "select",
+                        "o": [
+                            "No usa maquillaje",
+                            "Ocasional (eventos)",
+                            "1 a 2 días por semana",
+                            "3 a 5 días por semana",
+                            "Diario"
+                        ]
+                    },
+                    {
+                        "k": "maq_horas",
+                        "l": "Horas al día con maquillaje",
+                        "t": "number",
+                        "step": "0.5"
+                    },
+                    {
+                        "k": "maq_desmaquillado",
+                        "l": "Se desmaquilla antes de dormir",
+                        "t": "select",
+                        "o": [
+                            "Siempre",
+                            "La mayoría de las veces",
+                            "A veces",
+                            "Casi nunca"
+                        ]
+                    },
+                    {
+                        "k": "maq_prebase",
+                        "l": "Prebase / primer",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_base",
+                        "l": "Base de maquillaje",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo (líquida, polvo, cushion, stick, BB/CC cream)"
+                    },
+                    {
+                        "k": "maq_corrector",
+                        "l": "Corrector",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_polvo",
+                        "l": "Polvo (compacto o suelto)",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_rubor",
+                        "l": "Rubor",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo (polvo, crema, líquido)"
+                    },
+                    {
+                        "k": "maq_contorno",
+                        "l": "Bronceador / contorno",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_iluminador",
+                        "l": "Iluminador",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_sombras",
+                        "l": "Sombras",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_delineador",
+                        "l": "Delineador de ojos",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_mascara",
+                        "l": "Máscara de pestañas",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo (normal o a prueba de agua)"
+                    },
+                    {
+                        "k": "maq_cejas",
+                        "l": "Productos para cejas",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_labial",
+                        "l": "Labial / gloss",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_fijador",
+                        "l": "Fijador o spray",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo"
+                    },
+                    {
+                        "k": "maq_desmaquillante",
+                        "l": "Desmaquillante o limpiador",
+                        "t": "checkdetail",
+                        "d": "Marca y tipo (agua micelar, aceite, toallitas)"
+                    },
+                    {
+                        "k": "maq_permanente",
+                        "l": "Maquillaje permanente, microblading o pestañas postizas",
+                        "t": "checkdetail",
+                        "d": "Cuál y cuándo"
+                    },
+                    {
+                        "k": "maq_otros",
+                        "l": "Otros productos o comentarios sobre su rutina",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ]
+            },
+            {
+                "id": "fa_piel",
+                "title": "Métricas faciales · Piel",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "met_tipo_piel",
+                        "l": "Tipo de piel",
+                        "t": "select",
+                        "o": [
+                            "Normal",
+                            "Seca",
+                            "Grasa",
+                            "Mixta",
+                            "Sensible",
+                            "Deshidratada"
+                        ]
+                    },
+                    {
+                        "k": "met_fitzpatrick",
+                        "l": "Fototipo (Fitzpatrick)",
+                        "t": "select",
+                        "o": [
+                            "I · Muy clara, siempre se quema",
+                            "II · Clara, se quema con facilidad",
+                            "III · Intermedia, se quema moderadamente",
+                            "IV · Morena clara, se quema poco",
+                            "V · Morena, rara vez se quema",
+                            "VI · Morena oscura, nunca se quema"
+                        ]
+                    },
+                    {
+                        "k": "met_glogau",
+                        "l": "Envejecimiento (escala de Glogau)",
+                        "t": "select",
+                        "o": [
+                            "I · Sin arrugas (fotoenvejecimiento leve)",
+                            "II · Arrugas en movimiento (moderado)",
+                            "III · Arrugas en reposo (avanzado)",
+                            "IV · Arrugas en toda la cara (severo)"
+                        ]
+                    },
+                    {
+                        "k": "met_hidratacion",
+                        "l": "Hidratación (%)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_sebo",
+                        "l": "Sebo / grasa (%)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_elasticidad",
+                        "l": "Elasticidad (%)",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ph",
+                        "l": "pH de la piel",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_melanina",
+                        "l": "Índice de melanina",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_eritema",
+                        "l": "Índice de eritema",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_poros",
+                        "l": "Poros",
+                        "t": "select",
+                        "o": [
+                            "Cerrados",
+                            "Poco visibles",
+                            "Dilatados",
+                            "Muy dilatados"
+                        ]
+                    },
+                    {
+                        "k": "met_arrugas",
+                        "l": "Arrugas",
+                        "t": "select",
+                        "o": [
+                            "Sin arrugas",
+                            "Líneas finas",
+                            "Moderadas",
+                            "Profundas"
+                        ]
+                    },
+                    {
+                        "k": "met_manchas",
+                        "l": "Manchas / pigmentación",
+                        "t": "select",
+                        "o": [
+                            "Sin manchas",
+                            "Leves",
+                            "Moderadas",
+                            "Marcadas"
+                        ]
+                    },
+                    {
+                        "k": "met_zonas",
+                        "l": "Zonas de interés o preocupación (frente, mejillas, contorno de ojos, mentón, etc.)",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ]
+            },
+            {
+                "id": "fa_medidas",
+                "title": "Métricas faciales · Medidas (mm)",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "met_forma",
+                        "l": "Forma del rostro",
+                        "t": "select",
+                        "o": [
+                            "Ovalado",
+                            "Redondo",
+                            "Cuadrado",
+                            "Rectangular",
+                            "Corazón",
+                            "Diamante",
+                            "Triangular"
+                        ]
+                    },
+                    {
+                        "k": "met_simetria",
+                        "l": "Simetría facial",
+                        "t": "select",
+                        "o": [
+                            "Simétrico",
+                            "Asimetría leve",
+                            "Asimetría moderada",
+                            "Asimetría marcada"
+                        ]
+                    },
+                    {
+                        "k": "met_simetria_det",
+                        "l": "Detalle de la asimetría (lado y zona)",
+                        "t": "text"
+                    },
+                    {
+                        "k": "met_alt_facial",
+                        "l": "Altura facial · nasion a mentón",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_tercio_sup",
+                        "l": "Tercio superior · línea del cabello a glabela",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_tercio_med",
+                        "l": "Tercio medio · glabela a base de la nariz",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_tercio_inf",
+                        "l": "Tercio inferior · base de la nariz a mentón",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ancho_bicigomatico",
+                        "l": "Ancho bicigomático · de pómulo a pómulo",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ancho_bigonial",
+                        "l": "Ancho bigonial · de ángulo a ángulo de la mandíbula",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ancho_frontal",
+                        "l": "Ancho frontal · de sien a sien",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_dist_interpupilar",
+                        "l": "Distancia interpupilar",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_dist_intercantal",
+                        "l": "Distancia intercantal interna",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ancho_nasal",
+                        "l": "Ancho nasal · de ala a ala",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_long_nasal",
+                        "l": "Longitud nasal · nasion a punta",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ancho_boca",
+                        "l": "Ancho de la boca · de comisura a comisura",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_altura_labios",
+                        "l": "Altura de los labios · de la base de la nariz al borde inferior",
+                        "t": "number",
+                        "step": "0.1"
+                    },
+                    {
+                        "k": "met_ind_facial",
+                        "l": "Índice facial (automático) · altura / ancho bicigomático × 100",
+                        "t": "calc",
+                        "calc": "ind_facial"
+                    },
+                    {
+                        "k": "met_ind_mandibular",
+                        "l": "Índice mandibular (automático) · bigonial / bicigomático × 100",
+                        "t": "calc",
+                        "calc": "ind_mandibular"
+                    },
+                    {
+                        "k": "met_observaciones",
+                        "l": "Observaciones del examen facial",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ]
+            },
+            {
+                "id": "firma",
+                "title": "Firma del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma del paciente",
+                        "t": "signature",
+                        "span": 2
+                    }
+                ]
+            }
+        ],
+        "session": [
+            {
+                "id": "fa_sesion",
+                "title": "Sesión",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "numero_sesion",
+                        "l": "Número de sesión",
+                        "t": "number"
+                    },
+                    {
+                        "k": "motivo_consulta",
+                        "l": "Motivo de la consulta",
+                        "t": "text",
+                        "span": 2
+                    },
+                    {
+                        "k": "tratamiento_realizado",
+                        "l": "Tratamiento realizado",
+                        "t": "textarea",
+                        "span": 3
+                    },
+                    {
+                        "k": "productos_equipos",
+                        "l": "Productos y equipos utilizados",
+                        "t": "textarea",
+                        "span": 3
+                    },
+                    {
+                        "k": "observaciones_exploracion",
+                        "l": "Observaciones de la exploración",
+                        "t": "textarea",
+                        "span": 3
+                    },
+                    {
+                        "k": "indicaciones",
+                        "l": "Indicaciones y cuidados posteriores",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ]
+            },
+            {
+                "id": "fa_estado",
+                "title": "Estado del paciente",
+                "grid": 3,
+                "fields": [
+                    {
+                        "k": "estado_admision",
+                        "l": "Estado al ingresar a la sesión",
+                        "t": "textarea",
+                        "span": 1
+                    },
+                    {
+                        "k": "estado_egreso",
+                        "l": "Estado al terminar la sesión",
+                        "t": "textarea",
+                        "span": 1
+                    },
+                    {
+                        "k": "estado_observaciones",
+                        "l": "Observaciones de la consulta",
+                        "t": "textarea",
+                        "span": 3
+                    }
+                ]
+            },
+            {
+                "id": "firma",
+                "title": "Firma de conformidad del paciente",
+                "fields": [
+                    {
+                        "k": "firma",
+                        "l": "Firma de conformidad",
+                        "t": "signature",
+                        "large": true,
+                        "legend": "Firmo de conformidad, manifestando que recibí el servicio antes descrito a mi entera satisfacción.",
+                        "span": 2
+                    }
+                ]
+            }
+        ]
     }
 }

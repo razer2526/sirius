@@ -8,6 +8,7 @@ const SERVICE_LABELS = {
   control_peso: 'Control de peso',
   fisioterapia: 'Fisioterapia',
   podologia: 'Podología',
+  facial: 'Facial',
   recoleccion: 'Recolección a domicilio',
   otro: 'Otro',
 };
@@ -16,6 +17,7 @@ const SERVICE_DOT = {
   control_peso: 'bg-emerald-500',
   fisioterapia: 'bg-sky-500',
   podologia: 'bg-amber-500',
+  facial: 'bg-pink-500',
   recoleccion: 'bg-rose-500',
   otro: 'bg-slate-400',
 };
