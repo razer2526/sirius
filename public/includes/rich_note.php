@@ -1,15 +1,18 @@
 <?php
 /**
- * Descripción de una tarea con formato: texto con negritas, cursivas, subrayado y renglones de
- * pendiente (casilla). Mismo formato de bloques que las notas del Pizarrón (ver
- * assets/js/board_note_editor.js), pero reducido a lo que una tarea necesita:
+ * Descripción de una tarea con formato: texto con negritas, cursivas, subrayado, alineación, viñetas,
+ * renglones de pendiente (casilla) e imágenes (incluidas las notas manuscritas, que son imágenes).
+ * Mismo formato de bloques que las notas del Pizarrón (ver assets/js/board_note_editor.js):
  *
- *   { "v": 2, "blocks": [ { "t": "p",    "runs": [ { "s": "texto", "b": true } ] },
- *                         { "t": "todo", "done": false, "runs": [ ... ] } ],
+ *   { "v": 2, "blocks": [ { "t": "p",    "align": "center", "runs": [ { "s": "texto", "b": true } ] },
+ *                         { "t": "li",   "runs": [ ... ] },                      ← viñeta
+ *                         { "t": "todo", "done": false, "runs": [ ... ] },       ← casilla
+ *                         { "t": "img",  "asset": 12 } ],                        ← task_assets.id
  *     "period": "2026-10-13" }          ← solo en tareas frecuentes: periodo al que corresponden las casillas
  *
  * Se guarda como JSON de datos, nunca como HTML: el cliente dibuja nodos con textContent / escapa, y aquí
- * se descarta todo lo que no sea esta forma (colores, tipografías, tamaños, imágenes…).
+ * se descarta todo lo que no sea esta forma (colores, tipografías, tamaños, scripts…). Una imagen solo se
+ * acepta si su id está en la lista de las que el llamador sabe que son de esta tarea.
  *
  * Compatibilidad: las descripciones anteriores son texto plano. rich_note_decode() las reconoce
  * (legacy = true) y las convierte en párrafos; al guardarlas de nuevo ya quedan en el formato nuevo.
@@ -18,15 +21,19 @@
 const RICH_NOTE_MAX_BLOCKS = 200;
 const RICH_NOTE_MAX_RUNS = 400;
 const RICH_NOTE_MAX_CHARS = 5000;
+const RICH_NOTE_MAX_IMAGES = 20;
+const RICH_NOTE_ALIGNS = ['left', 'center', 'right', 'justify'];
+const RICH_NOTE_TEXT_TYPES = ['p', 'li', 'todo'];
 
 /**
  * Valida lo que manda el cliente y devuelve lo que se guarda en tasks.description (o null si queda vacío).
  * Acepta un arreglo {blocks:[…]} (editor) o un texto plano (clientes anteriores).
  *
  * @param string|array|null $input
- * @param string|null       $period  periodo actual de una tarea frecuente (las casillas valen para ese periodo)
+ * @param string|null       $period    periodo actual de una tarea frecuente (las casillas valen para ese periodo)
+ * @param int[]             $assetIds  imágenes que el llamador sabe que se pueden usar en esta tarea
  */
-function rich_note_normalize($input, ?string $period = null): ?string
+function rich_note_normalize($input, ?string $period = null, array $assetIds = []): ?string
 {
     if (!is_array($input)) {
         $text = trim((string)$input);
@@ -35,13 +42,23 @@ function rich_note_normalize($input, ?string $period = null): ?string
 
     $blocks = [];
     $chars = 0;
+    $images = 0;
+    $allowed = array_map('intval', $assetIds);
     foreach (array_slice((array)($input['blocks'] ?? []), 0, RICH_NOTE_MAX_BLOCKS) as $b) {
         if (!is_array($b)) {
             continue;
         }
         $type = $b['t'] ?? 'p';
-        if ($type !== 'p' && $type !== 'todo') {
-            continue;   // imágenes, scripts, lo que sea: aquí solo caben párrafos y casillas
+        if ($type === 'img') {
+            $assetId = (int)($b['asset'] ?? 0);
+            if ($assetId > 0 && $images < RICH_NOTE_MAX_IMAGES && in_array($assetId, $allowed, true)) {
+                $blocks[] = ['t' => 'img', 'asset' => $assetId];
+                $images++;
+            }
+            continue;
+        }
+        if (!in_array($type, RICH_NOTE_TEXT_TYPES, true)) {
+            continue;   // scripts, lo que sea: aquí solo caben texto, viñetas, casillas e imágenes
         }
         $runs = [];
         foreach (array_slice((array)($b['runs'] ?? []), 0, RICH_NOTE_MAX_RUNS) as $r) {
@@ -63,6 +80,9 @@ function rich_note_normalize($input, ?string $period = null): ?string
             $runs[] = $run;
         }
         $block = ['t' => $type, 'runs' => $runs];
+        if (in_array($b['align'] ?? '', RICH_NOTE_ALIGNS, true) && $b['align'] !== 'left') {
+            $block['align'] = $b['align'];
+        }
         if ($type === 'todo') {
             $block['done'] = !empty($b['done']);
         }
@@ -144,10 +164,28 @@ function rich_note_plain(array $blocks): string
 {
     $lines = [];
     foreach ($blocks as $b) {
+        $kind = $b['t'] ?? 'p';
+        if ($kind === 'img') {
+            $lines[] = '[imagen]';
+            continue;
+        }
         $text = implode('', array_map(static fn($r) => (string)($r['s'] ?? ''), (array)($b['runs'] ?? [])));
-        $lines[] = (($b['t'] ?? '') === 'todo' ? (!empty($b['done']) ? '☑ ' : '☐ ') : '') . $text;
+        $prefix = $kind === 'todo' ? (!empty($b['done']) ? '☑ ' : '☐ ') : ($kind === 'li' ? '• ' : '');
+        $lines[] = $prefix . $text;
     }
     return implode("\n", $lines);
+}
+
+/** Ids de las imágenes que usa una lista de bloques. @return int[] */
+function rich_note_asset_ids(array $blocks): array
+{
+    $ids = [];
+    foreach ($blocks as $b) {
+        if (is_array($b) && ($b['t'] ?? '') === 'img' && (int)($b['asset'] ?? 0) > 0) {
+            $ids[(int)$b['asset']] = true;
+        }
+    }
+    return array_keys($ids);
 }
 
 /** Guarda el estado de las casillas (JSON) de una tarea. */

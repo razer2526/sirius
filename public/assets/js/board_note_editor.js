@@ -121,16 +121,19 @@ export function paintTodoState(block) {
 
 const imageUrl = (asset) => `board_asset.php?id=${encodeURIComponent(asset)}`;
 
-/** Imagen dentro de la nota: bloque no editable (se borra entero, no letra por letra). */
-function buildImageBlock(asset, editable) {
+/**
+ * Imagen dentro de la nota: bloque no editable (se borra entero, no letra por letra).
+ * `url` es opcional: las tareas sirven sus imágenes por otro script (task_asset.php).
+ */
+export function buildImageBlock(asset, editable, url) {
   const el = document.createElement('div');
   el.dataset.b = 'img';
   el.dataset.asset = String(asset);
   el.contentEditable = 'false';
   el.className = 'relative my-1 w-fit max-w-full';
   const img = document.createElement('img');
-  img.src = imageUrl(asset);
-  img.alt = 'Imagen de la nota';
+  img.src = url || imageUrl(asset);
+  img.alt = 'Imagen';
   img.draggable = false;
   img.className = 'block max-h-72 max-w-full rounded-md';
   el.appendChild(img);
@@ -148,9 +151,26 @@ function buildImageBlock(asset, editable) {
   return el;
 }
 
-function buildBlockEl(block, editable = false) {
-  if (block.t === 'img') return buildImageBlock(block.asset, editable);
+export function buildBlockEl(block, editable = false) {
+  if (block.t === 'img') return buildImageBlock(block.asset, editable, block.url);
   const align = ['center', 'right', 'justify'].includes(block.align) ? block.align : 'left';
+  if (block.t === 'li') {
+    // Viñeta (solo en las descripciones de tareas). El texto vive en un `.todo-text` para compartir con
+    // los pendientes el cursor, Enter y Retroceso; el punto no es editable.
+    const el = document.createElement('div');
+    el.dataset.b = 'li';
+    el.className = 'flex items-start gap-2 py-0.5';
+    const dot = document.createElement('span');
+    dot.className = 'li-dot w-3 shrink-0 select-none text-center';
+    dot.contentEditable = 'false';
+    dot.textContent = '•';
+    const txt = document.createElement('div');
+    txt.className = 'todo-text min-w-0 flex-1';
+    txt.style.textAlign = align;
+    el.append(dot, txt);
+    fillRuns(txt, block.runs);
+    return el;
+  }
   if (block.t === 'todo') {
     const el = document.createElement('div');
     el.dataset.b = 'todo';
@@ -184,8 +204,10 @@ export function fillDoc(root, blocks, editable) {
   if (editable && root.lastElementChild.dataset.b === 'img') root.appendChild(buildBlockEl({ t: 'p', runs: [] }));
 }
 
-/** El elemento que contiene el texto de un bloque (en un pendiente, el de la derecha de la casilla). */
-export const contentOf = (block) => (block.dataset.b === 'todo' ? block.querySelector('.todo-text') : block);
+/** El elemento que contiene el texto de un bloque (en un pendiente o una viñeta, el de la derecha de la casilla o el punto). */
+export const contentOf = (block) => (block.dataset.b === 'todo' || block.dataset.b === 'li' ? block.querySelector('.todo-text') : block);
+
+const listKindOf = (block) => (block.dataset.b === 'todo' || block.dataset.b === 'li' ? block.dataset.b : 'p');
 
 function rgbToHex(str) {
   const m = /rgba?\(\s*(\d+)[ ,]+(\d+)[ ,]+(\d+)/.exec(str || '');
@@ -287,7 +309,7 @@ export function serializeDoc(root) {
       return;
     }
     flushStray();
-    const kind = node.dataset.b === 'todo' ? 'todo' : 'p';
+    const kind = listKindOf(node);
     const contentEl = contentOf(node) || node;
     const block = { t: kind, align: alignOf(contentEl), runs: collectRuns(contentEl, root) };
     if (kind === 'todo') block.done = node.dataset.done === '1';
@@ -493,7 +515,7 @@ const IMAGE_KEEP_BELOW = 1.5 * 1024 * 1024;
  * tiene por qué ocupar eso en el servidor. Un GIF se sube tal cual (recomprimirlo mataría
  * la animación) y una imagen que ya es chica no se toca.
  */
-async function prepareImage(file) {
+export async function prepareImage(file) {
   if (file.type === 'image/gif') return file;
   let bmp;
   try { bmp = await createImageBitmap(file); } catch { return file; }
@@ -565,7 +587,7 @@ const UNDO_MS = 8000;
  * tiene id de imagen y por eso no se serializa; el archivo sigue en el servidor (solo
  * se limpia pasado un día y sin referencias), así que deshacer también sirve ya guardado.
  */
-function removeImageWithUndo(ed, block) {
+export function removeImageWithUndo(ed, block) {
   const { root } = ed;
   const notice = document.createElement('div');
   notice.dataset.b = 'img';
@@ -601,7 +623,7 @@ export function handleKeydown(e, ed) {
     const sel = getSelection();
     if (!sel.rangeCount) return;
     const block = blockOf(root, sel.getRangeAt(0).startContainer);
-    if (block && block.dataset.b === 'todo') {
+    if (block && (block.dataset.b === 'todo' || block.dataset.b === 'li')) {
       e.preventDefault();
       splitTodo(ed, block);
     }
@@ -611,7 +633,7 @@ export function handleKeydown(e, ed) {
     const sel = getSelection();
     if (!sel.rangeCount || !sel.isCollapsed) return;
     const block = blockOf(root, sel.getRangeAt(0).startContainer);
-    if (!block || block.dataset.b !== 'todo') return;
+    if (!block || (block.dataset.b !== 'todo' && block.dataset.b !== 'li')) return;
     const txt = contentOf(block);
     const r = document.createRange();
     r.selectNodeContents(txt);
@@ -648,7 +670,7 @@ function splitTodo(ed, block) {
   tail.setEnd(txt, txt.childNodes.length);
   const frag = tail.extractContents();
 
-  const next = buildBlockEl({ t: 'todo', done: false, align: alignOf(txt), runs: [] });
+  const next = buildBlockEl({ t: listKindOf(block), done: false, align: alignOf(txt), runs: [] });
   const nextTxt = contentOf(next);
   nextTxt.innerHTML = '';
   nextTxt.appendChild(frag);
@@ -659,13 +681,15 @@ function splitTodo(ed, block) {
   ed.touch();
 }
 
-/** Convierte bloques a 'p' o a 'todo' conservando su contenido y alineación. */
+/** Convierte bloques a 'p', 'todo' o 'li' conservando su contenido y alineación. */
 function convertBlocks(ed, blocks, to) {
   const { root } = ed;
   const saved = saveSel(root);
+  const caretBlock = blockAtSelection(root);
+  let caretFresh = null;
   blocks.forEach((b) => {
     if (b.dataset.b === 'img') return;
-    const from = b.dataset.b === 'todo' ? 'todo' : 'p';
+    const from = listKindOf(b);
     if (from === to) return;
     const src = contentOf(b);
     const fresh = buildBlockEl({ t: to, done: false, align: alignOf(src), runs: [] });
@@ -674,8 +698,12 @@ function convertBlocks(ed, blocks, to) {
     while (src.firstChild) dst.appendChild(src.firstChild);
     if (!dst.firstChild) dst.appendChild(document.createElement('br'));
     b.replaceWith(fresh);
+    if (b === caretBlock) caretFresh = fresh;
   });
   restoreSel(root, saved);
+  // Un renglón vacío no tiene texto al que anclar el cursor (restoreSel lo dejaría al final del último
+  // texto del documento, en el renglón de arriba): se coloca a mano al inicio del renglón convertido.
+  if (caretFresh && contentOf(caretFresh).textContent === '') caretAtStart(contentOf(caretFresh));
   ed.touch();
 }
 
@@ -746,7 +774,8 @@ function stepSize(dir) {
   applySize(next);
 }
 
-export function toggleTodo(ed) {
+/** Convierte los renglones seleccionados a `kind` ('todo' o 'li'); si ya lo son todos, los regresa a párrafo. */
+export function toggleList(ed, kind) {
   let blocks = blocksInSelection(ed.root);
   if (!blocks.length) {
     const b = blockAtSelection(ed.root);
@@ -754,9 +783,11 @@ export function toggleTodo(ed) {
   }
   blocks = blocks.filter((b) => b.dataset.b !== 'img');
   if (!blocks.length) return;
-  const allTodo = blocks.every((b) => b.dataset.b === 'todo');
-  convertBlocks(ed, blocks, allTodo ? 'p' : 'todo');
+  const allKind = blocks.every((b) => b.dataset.b === kind);
+  convertBlocks(ed, blocks, allKind ? 'p' : kind);
 }
+
+export const toggleTodo = (ed) => toggleList(ed, 'todo');
 
 /* ================= Menú flotante ================= */
 

@@ -11,6 +11,8 @@
 # Contenido subido por los usuarios (imágenes de membrete, PDFs archivados, archivos compartidos)
 /public/uploads/board/*
 !/public/uploads/board/.htaccess
+/public/uploads/tasks/*
+!/public/uploads/tasks/.htaccess
 /public/uploads/archivos/*
 !/public/uploads/archivos/.htaccess
 /public/uploads/documentos/*

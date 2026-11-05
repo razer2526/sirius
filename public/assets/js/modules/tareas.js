@@ -97,7 +97,7 @@ function paint(root) {
     ['resultados', 'Resultados', 'flask'],
   ];
   root.innerHTML = `
-    <div class="mx-auto max-w-5xl space-y-4">
+    <div class="mx-auto max-w-7xl space-y-4">
       <div class="flex flex-wrap items-center justify-between gap-3">
         <div class="flex flex-wrap gap-1 rounded-xl bg-white p-1 shadow-sm ring-1 ring-slate-200">
           ${tabs.map(([key, label, ic]) => `
@@ -207,18 +207,16 @@ function renderTaskSections(list) {
       </div>
       ${render(items)}
     </div>`;
-  const stack = (sectionKey) => (items) => `<div class="space-y-2.5">${items.map((t) => misTaskCard(t, { sectionKey })).join('')}</div>`;
-  // En móvil (< sm) va a una sola columna, como el resto de las secciones: dos
-  // tarjetas cuadradas lado a lado ahí no dejan espacio ni para el título.
-  const squareGrid = (sectionKey) => (items) => `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">${items.map((t) => misTaskCard(t, { square: true, sectionKey })).join('')}</div>`;
+  // Cuadrícula de tarjetas verticales: 1 columna en móvil, 2 en tablet, 3 en pantallas medianas y 4 en grandes.
+  const cards = (sectionKey) => (items) => `<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">${items.map((t) => misTaskCard(t, { sectionKey })).join('')}</div>`;
 
   const sections = [
-    group('Prioridad alta', prioridad, squareGrid('prioridad')),
-    group('Con deadline para hoy', sortByDueDate(b.hoy), stack('hoy')),
-    group('Con deadline para mañana', sortByDueDate(b.manana), stack('manana')),
-    group('Con deadline para esta semana', sortByDueDate(b.semana), stack('semana')),
-    group('Con deadline posterior', sortByDueDate(b.posterior), stack('posterior')),
-    group('Completadas', completadas, stack('completadas')),
+    group('Prioridad alta', prioridad, cards('prioridad')),
+    group('Con deadline para hoy', sortByDueDate(b.hoy), cards('hoy')),
+    group('Con deadline para mañana', sortByDueDate(b.manana), cards('manana')),
+    group('Con deadline para esta semana', sortByDueDate(b.semana), cards('semana')),
+    group('Con deadline posterior', sortByDueDate(b.posterior), cards('posterior')),
+    group('Completadas', completadas, cards('completadas')),
   ].filter(Boolean);
 
   return sections.length ? `<div class="space-y-5">${sections.join('')}</div>` : null;
@@ -274,15 +272,17 @@ function wireFilterBar(view) {
 }
 
 /**
- * Tarjeta compartida por "Mis tareas" y el detalle de un proyecto: título con cenefa
- * de color según la sección donde cayó (hoy/mañana/semana/posterior/completadas —
- * ver SECTION_COLORS), o según su propia prioridad en la sección "Prioridad alta"
- * (ver PRIORITY_CARD_COLORS, esa sección se saca justo por no depender de la fecha).
- * El creador y el asignado se muestran siempre, no solo a gestores. Las tareas
- * recurrentes (diaria/semanal) usan el check binario data-recurring en vez del ciclo
- * de estado pendiente→en progreso→completada.
+ * Tarjeta vertical compartida por "Mis tareas" y el detalle de un proyecto: título con cenefa de color
+ * según la sección donde cayó (hoy/mañana/semana/posterior/completadas — ver SECTION_COLORS), o según su
+ * propia prioridad en la sección "Prioridad alta" (ver PRIORITY_CARD_COLORS, esa sección se saca justo
+ * por no depender de la fecha). El creador y el asignado se muestran siempre, no solo a gestores.
+ * Las tareas recurrentes (diaria/semanal) usan el check binario data-recurring en vez del ciclo de
+ * estado pendiente→en progreso→completada.
+ *
+ * Alto fijo en pantallas medianas y grandes (la cuadrícula queda pareja); lo largo — descripción con
+ * imágenes, subtareas — se desplaza dentro de la tarjeta, y al tocar el título se abre completa.
  */
-function misTaskCard(t, { square = false, sectionKey } = {}) {
+function misTaskCard(t, { sectionKey } = {}) {
   const isRecurring = !!t.recurrence;
   const isDone = isRecurring ? t.done_now : t.status === 'completada';
   const colors = sectionKey === 'prioridad' ? PRIORITY_CARD_COLORS[t.priority] : SECTION_COLORS[sectionKey];
@@ -292,53 +292,56 @@ function misTaskCard(t, { square = false, sectionKey } = {}) {
   const subsDone = subs.filter((s) => s.status === 'completada').length;
 
   return `
-    <div class="rounded-2xl ${cardTint} p-4 shadow-sm ring-1 ring-slate-200 ${square ? 'flex flex-col sm:aspect-square sm:overflow-hidden' : ''}">
-      <div class="flex items-start gap-2.5">
+    <div class="flex flex-col rounded-2xl ${cardTint} p-4 shadow-sm ring-1 ring-slate-200 sm:h-[27rem]">
+      <div class="flex shrink-0 items-start gap-2.5">
         <button type="button" ${isRecurring ? `data-recurring="${t.id}"` : `data-toggle="${t.id}"`} title="Completar"
                 class="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition ${isDone ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
           <svg viewBox="0 0 24 24" class="h-3.5 w-3.5" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
-        <div class="min-w-0 flex-1">
-          <p class="truncate rounded-md px-2 py-1 text-sm font-bold ${colors?.band || 'text-slate-900'} ${isDone ? 'line-through opacity-70' : ''}">${escapeHtml(t.title)}</p>
-          <div class="mt-2 flex flex-wrap items-center gap-1.5">
-            ${isRecurring
-              ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${isDone ? 'Al día' : 'Pendiente'}</span>`
-              : `<button type="button" data-status="${t.id}" class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS[t.status].cls}" title="Cambiar estado">${STATUS[t.status].label}</button>`}
-            <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
-            ${proj
-              ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>`
-              : `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">Tarea suelta</span>`}
-            ${t.recurrence === 'semanal' && t.weekday !== null && t.weekday !== undefined
-              ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Cada ${WEEKDAY_NAMES[t.weekday].toLowerCase()}</span>` : ''}
-            ${t.due_date ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${fmtDate(t.due_date)}</span>` : ''}
-            ${t.todo_total ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${t.todo_done === t.todo_total ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-50 text-sky-700'}" title="Casillas marcadas">☑ ${t.todo_done}/${t.todo_total}</span>` : ''}
-          </div>
-          ${taskDescriptionHtml(t)}
-          <div class="mt-1.5 space-y-0.5 text-[11px] text-slate-400">
-            ${t.creator_name ? `<p class="truncate">Creó: ${escapeHtml(t.creator_name)}</p>` : ''}
-            ${assigneeNames(t) ? `<p class="truncate">Asignado: ${escapeHtml(assigneeNames(t))}</p>` : ''}
-          </div>
+        <button type="button" data-view="${t.id}" title="Abrir la tarea completa"
+                class="line-clamp-2 min-w-0 flex-1 rounded-md px-2 py-1 text-left text-sm font-bold ${colors?.band || 'text-slate-900'} ${isDone ? 'line-through opacity-70' : ''}">${escapeHtml(t.title)}</button>
+      </div>
+      <div class="mt-2 flex shrink-0 flex-wrap items-center gap-1.5">
+        ${isRecurring
+          ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${isDone ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}">${isDone ? 'Al día' : 'Pendiente'}</span>`
+          : `<button type="button" data-status="${t.id}" class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS[t.status].cls}" title="Cambiar estado">${STATUS[t.status].label}</button>`}
+        <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
+        ${proj
+          ? `<span class="max-w-full truncate rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>`
+          : `<span class="rounded-full bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">Tarea suelta</span>`}
+        ${t.recurrence === 'semanal' && t.weekday !== null && t.weekday !== undefined
+          ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">Cada ${WEEKDAY_NAMES[t.weekday].toLowerCase()}</span>` : ''}
+        ${t.due_date ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${fmtDate(t.due_date)}</span>` : ''}
+        ${t.todo_total ? `<span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${t.todo_done === t.todo_total ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-50 text-sky-700'}" title="Casillas marcadas">☑ ${t.todo_done}/${t.todo_total}</span>` : ''}
+      </div>
+      <div class="mt-1 max-h-80 min-h-0 overflow-y-auto sm:max-h-none sm:flex-1" data-card-body>
+        ${taskDescriptionHtml(t, { size: 'full' })}
+        ${subs.length ? `
+        <div class="mt-3 space-y-1.5 border-l-2 border-slate-100 pl-3">
+          <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Subtareas ${subsDone}/${subs.length}</p>
+          ${subs.map((s) => `
+            <div class="flex items-center gap-2">
+              <button type="button" data-toggle="${s.id}"
+                      class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${s.status === 'completada' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
+                <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+              </button>
+              <span class="min-w-0 flex-1 truncate text-sm ${s.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(s.title)}</span>
+              ${canEdit(s) ? `<button type="button" data-del="${s.id}" class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-300 hover:text-red-500">${icon('x', 'h-3.5 w-3.5')}</button>` : ''}
+            </div>`).join('')}
+        </div>` : ''}
+      </div>
+      <div class="mt-2 flex shrink-0 items-end justify-between gap-2">
+        <div class="min-w-0 space-y-0.5 text-[11px] text-slate-400">
+          ${t.creator_name ? `<p class="truncate">Creó: ${escapeHtml(t.creator_name)}</p>` : ''}
+          ${assigneeNames(t) ? `<p class="truncate">Asignado: ${escapeHtml(assigneeNames(t))}</p>` : ''}
         </div>
-        <div class="flex shrink-0 gap-1">
-          ${!square && !t.parent_id && !isRecurring ? `<button type="button" data-subtask="${t.id}" title="Agregar subtarea" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('plus', 'h-4 w-4')}</button>` : ''}
+        <div class="flex shrink-0 gap-0.5">
+          ${!t.parent_id && !isRecurring ? `<button type="button" data-subtask="${t.id}" title="Agregar subtarea" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('plus', 'h-4 w-4')}</button>` : ''}
           ${canEdit(t) ? `
           <button type="button" data-edit="${t.id}" title="Editar" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-indigo-600">${icon('edit', 'h-4 w-4')}</button>
           <button type="button" data-del="${t.id}" title="Eliminar" class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>` : ''}
         </div>
       </div>
-      ${!square && subs.length ? `
-      <div class="ml-9 mt-3 space-y-1.5 border-l-2 border-slate-100 pl-3">
-        <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Subtareas ${subsDone}/${subs.length}</p>
-        ${subs.map((s) => `
-          <div class="flex items-center gap-2">
-            <button type="button" data-toggle="${s.id}"
-                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition ${s.status === 'completada' ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-slate-300 text-transparent hover:border-emerald-400'}">
-              <svg viewBox="0 0 24 24" class="h-3 w-3" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-            </button>
-            <span class="min-w-0 flex-1 truncate text-sm ${s.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-700'}">${escapeHtml(s.title)}</span>
-            ${canEdit(s) ? `<button type="button" data-del="${s.id}" class="flex h-6 w-6 shrink-0 items-center justify-center rounded text-slate-300 hover:text-red-500">${icon('x', 'h-3.5 w-3.5')}</button>` : ''}
-          </div>`).join('')}
-      </div>` : ''}
     </div>`;
 }
 
@@ -929,20 +932,9 @@ function wireTaskEvents(view) {
         load(root());
       } catch (e) { toast(e.message, 'error'); }
     }));
-  // Casillas de la descripción: al marcar la última, el servidor completa la tarea.
-  view.querySelectorAll('[data-check]').forEach((b) =>
-    b.addEventListener('click', async () => {
-      const [id, index, done] = b.dataset.check.split(':').map(Number);
-      b.disabled = true;
-      try {
-        const res = await apiPost('tasks/toggle_check', { id, index, done: !!done });
-        if (res.completed) toast('Tarea completada');
-        load(root());
-      } catch (e) {
-        b.disabled = false;
-        toast(e.message, 'error');
-      }
-    }));
+  wireDescription(view, () => load(root()));
+  view.querySelectorAll('[data-view]').forEach((b) =>
+    b.addEventListener('click', () => openTaskView(data.tasks.find((x) => x.id === +b.dataset.view))));
   view.querySelectorAll('[data-subtask]').forEach((b) =>
     b.addEventListener('click', () => openTaskModal(null, { parent_id: +b.dataset.subtask })));
   view.querySelectorAll('[data-edit]').forEach((b) =>
@@ -958,6 +950,73 @@ function wireTaskEvents(view) {
         load(root());
       } catch (e) { toast(e.message, 'error'); }
     }));
+}
+
+/**
+ * Lo que se puede hacer sobre la descripción de una tarea, en la tarjeta o en su vista completa:
+ * marcar casillas (al marcar la última, el servidor completa la tarea) y ver una imagen en grande.
+ */
+function wireDescription(scope, onChange) {
+  scope.querySelectorAll('[data-check]').forEach((b) =>
+    b.addEventListener('click', async () => {
+      const [id, index, done] = b.dataset.check.split(':').map(Number);
+      b.disabled = true;
+      try {
+        const res = await apiPost('tasks/toggle_check', { id, index, done: !!done });
+        if (res.completed) toast('Tarea completada');
+        onChange();
+      } catch (e) {
+        b.disabled = false;
+        toast(e.message, 'error');
+      }
+    }));
+  scope.querySelectorAll('[data-zoom]').forEach((img) =>
+    img.addEventListener('click', () => modal({
+      title: 'Imagen',
+      content: `<img src="${escapeHtml(img.dataset.zoom)}" alt="Imagen de la tarea" class="mx-auto max-h-[75vh] max-w-full rounded-md">`,
+      size: 'max-w-4xl',
+    })));
+}
+
+/** La tarea completa, sin recortes: descripción con todas sus imágenes y subtareas. */
+function openTaskView(t) {
+  if (!t) return;
+  const isRecurring = !!t.recurrence;
+  const proj = t.project_id ? data.projects.find((p) => p.id === t.project_id) : null;
+  const subs = !isRecurring ? children(t) : [];
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="flex flex-wrap items-center gap-1.5">
+      <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${isRecurring ? 'bg-slate-100 text-slate-600' : STATUS[t.status].cls}">${isRecurring ? (t.done_now ? 'Al día' : 'Pendiente') : STATUS[t.status].label}</span>
+      <span class="rounded-full px-2 py-0.5 text-[11px] font-semibold ${PRIORITY[t.priority].cls}">${PRIORITY[t.priority].label}</span>
+      ${proj ? `<span class="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-600">${escapeHtml(proj.name)}</span>` : ''}
+      ${t.due_date ? `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">${fmtDate(t.due_date)}</span>` : ''}
+    </div>
+    ${taskDescriptionHtml(t, { size: 'full' }) || '<p class="mt-3 text-sm text-slate-400">Esta tarea no tiene descripción.</p>'}
+    ${subs.length ? `
+    <div class="mt-4 space-y-1">
+      <p class="text-[11px] font-bold uppercase tracking-wide text-slate-400">Subtareas</p>
+      ${subs.map((s) => `<p class="text-sm ${s.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-700'}">${s.status === 'completada' ? '☑' : '☐'} ${escapeHtml(s.title)}</p>`).join('')}
+    </div>` : ''}
+    <div class="mt-4 space-y-0.5 text-xs text-slate-400">
+      ${t.creator_name ? `<p>Creó: ${escapeHtml(t.creator_name)}</p>` : ''}
+      ${assigneeNames(t) ? `<p>Asignado: ${escapeHtml(assigneeNames(t))}</p>` : ''}
+    </div>`;
+  const m = modal({
+    title: t.title,
+    content: wrap,
+    size: 'max-w-2xl',
+    actions: [
+      { label: 'Cerrar' },
+      ...(canEdit(t) ? [{ label: 'Editar', primary: true, onClick: (close) => { close(); openTaskModal(t, {}); } }] : []),
+    ],
+  });
+  // Marcar una casilla desde aquí recarga la lista y vuelve a abrir la tarea con lo nuevo.
+  wireDescription(wrap, async () => {
+    m.close();
+    await load(document.getElementById('module-root'));
+    openTaskView(data.tasks.find((x) => x.id === t.id));
+  });
 }
 
 /* ---------- modales ---------- */
@@ -1009,7 +1068,7 @@ function openTaskModal(task, presets) {
         </select></div>` : ''}
     </div>`;
 
-  const descEditor = mountTaskEditor(form.querySelector('#f-desc-editor'), task?.desc_blocks || []);
+  const descEditor = mountTaskEditor(form.querySelector('#f-desc-editor'), task?.desc_blocks || [], { taskId: task?.id || 0 });
 
   form.querySelector('[name="recurrence"]')?.addEventListener('change', (e) => {
     form.querySelector('#f-weekday-wrap')?.classList.toggle('hidden', e.target.value !== 'semanal');
@@ -1025,6 +1084,10 @@ function openTaskModal(task, presets) {
         label: task ? 'Guardar cambios' : 'Crear tarea', primary: true,
         onClick: async (close, btn) => {
           if (!form.reportValidity()) return;
+          if (descEditor.busy()) {
+            toast('Espera a que termine de subirse la imagen', 'error');
+            return;
+          }
           const v = formValues(form);
           // El campo puede estar oculto (frecuencia distinta a "Semanal"), así que no
           // se usa `required` nativo aquí — se valida a mano, igual criterio pero sin

@@ -766,6 +766,21 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 INDEX idx_boardasset_item (item_id),
                 CONSTRAINT fk_boardasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
             )$suffix",
+            // Imágenes y notas manuscritas de la descripción de una tarea. task_id es NULL mientras la tarea
+            // aún no se guarda (la imagen se sube antes que la tarea nueva) y NO lleva FOREIGN KEY ni
+            // CASCADE a propósito, por la misma razón que board_assets: borrar y luego archivar en la
+            // papelera no debe llevarse las imágenes.
+            'task_assets' => "CREATE TABLE IF NOT EXISTS task_assets (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                task_id INT UNSIGNED NULL,
+                stored_name VARCHAR(80) NOT NULL,
+                mime VARCHAR(60) NOT NULL,
+                size INT UNSIGNED NOT NULL DEFAULT 0,
+                created_by INT UNSIGNED NULL,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                INDEX idx_taskasset_task (task_id),
+                CONSTRAINT fk_taskasset_user FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+            )$suffix",
             // Ficha de empleado (Admin Tools > Empleados; la ve el propio empleado en Perfil).
             // work_schedule y visible_fields son JSON guardado como texto. El nombre completo no
             // se duplica: sigue en users.full_name.
@@ -1410,6 +1425,15 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
                 created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
             )",
+            'task_assets' => "CREATE TABLE IF NOT EXISTS task_assets (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id INTEGER NULL,
+                stored_name TEXT NOT NULL,
+                mime TEXT NOT NULL,
+                size INTEGER NOT NULL DEFAULT 0,
+                created_by INTEGER NULL REFERENCES users(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+            )",
             'employee_profiles' => "CREATE TABLE IF NOT EXISTS employee_profiles (
                 user_id INTEGER NOT NULL PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
                 contact_phone TEXT NULL,
@@ -1489,6 +1513,7 @@ function sirius_schema_tables(PDO $pdo, bool $isMysql): array
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_commemdate_month_day ON commemorative_dates (month, day)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_mktasset_created ON marketing_assets (created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_boardasset_item ON board_assets (item_id)');
+        $pdo->exec('CREATE INDEX IF NOT EXISTS idx_taskasset_task ON task_assets (task_id)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_empvac_user ON employee_vacations (user_id, date_from)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_login_attempt_ip ON login_attempts (ip, created_at)');
         $pdo->exec('CREATE INDEX IF NOT EXISTS idx_centry_doctor ON commission_entries (doctor_id, statement_id)');

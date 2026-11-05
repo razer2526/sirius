@@ -18,16 +18,17 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 5. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
 6. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
 7. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
-8. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-9. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-10. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-11. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-12. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-13. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-14. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-15. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-16. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-17. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+8. [3 de noviembre de 2026 · Tareas: tarjetas verticales, imágenes y notas a mano](#3-de-noviembre-de-2026--tareas-tarjetas-verticales-imágenes-y-notas-a-mano)
+9. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+10. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+11. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+12. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+13. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+14. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+15. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+16. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+17. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+18. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
 
 ---
 
@@ -158,6 +159,35 @@ Corrección y mejora (PR 83). No hay cambios de esquema: **no hace falta correr 
 - **Afecta a:** quien genera estados de cuenta de comisiones.
 - **Acción:** ninguna. Se siguen pudiendo **excluir líneas** antes de **Generar estado de cuenta**.
 - **Manual:** estándar, apartado 14.3.
+
+---
+
+## 3 de noviembre de 2026 · Tareas: tarjetas verticales, imágenes y notas a mano
+
+Mejora (PR 81). **Sí hay cambio de esquema** (tabla nueva `task_assets`): después del despliegue, el administrador debe abrir `install/setup.php` y aplicar la actualización. Sin eso, subir imágenes a una tarea falla con «Error de base de datos»; el resto de Tareas sigue funcionando.
+
+### Las tareas se ven en tarjetas verticales, en cuadrícula
+
+- **Qué cambió:** las tareas ya no van en una sola fila ancha. Ahora son **tarjetas verticales en cuadrícula**: **4 por fila** en pantalla grande (3 en mediana, 2 en tablet) y **una sola tarjeta por fila en el celular**. Esto aplica a **Mis tareas** y al detalle de un proyecto, y en todas las secciones (prioridad alta, hoy, mañana, esta semana, posterior y completadas); la sección «Prioridad alta» ya no usa tarjetas cuadradas aparte.
+- **Descripción completa en la tarjeta:** la tarjeta muestra la descripción con su formato, las casillas y las imágenes. Si algo no cabe, **se desplaza dentro de la tarjeta**. Al tocar el **título** se abre la **tarea completa** (sin recortes, con todas sus imágenes y subtareas); desde ahí también se pueden marcar casillas y hay un botón **Editar**.
+- **Afecta a:** todos los que usan Tareas.
+- **Acción:** ninguna.
+- **Manual:** estándar, apartado 8.1 (Mis tareas).
+
+### Descripción con alineación, viñetas, imágenes y notas a mano
+
+- **Qué cambió:** la barra del campo **Descripción** suma:
+  - **Alineación:** izquierda, centro, derecha y justificado.
+  - **Viñetas:** una lista con puntos. **Enter** crea otra viñeta; **Enter en una vacía** (o Retroceso al inicio) la regresa a texto normal.
+  - **Imagen:** con el botón **Imagen** (elige una foto), **pegando** una captura o imagen copiada con **Ctrl+V**, o **arrastrándola** al campo. Se reduce sola si es muy grande.
+  - **A mano:** abre una hoja para **escribir o dibujar con el dedo, el lápiz de la tablet o el mouse** (4 colores, fino o grueso, deshacer y borrar todo). Al pulsar **Insertar en la tarea** queda como una imagen recortada al trazo.
+- **Límites:** imágenes PNG, JPG, GIF o WEBP de **hasta 8 MB** y **hasta 20 por tarea**. Una imagen quitada de la descripción se borra del servidor pasado un día.
+- **Quién las ve:** solo quien ve la tarea (asignados, quien la creó y quien gestiona Tareas). Al tocar una imagen en la tarjeta se abre en grande.
+- **Papelera:** si un usuario estándar elimina una tarea, va a la **papelera con sus imágenes** y las conserva al restaurarla. Si un administrador la elimina de forma definitiva, se borran también sus imágenes.
+- **Lo que sigue sin admitir:** colores, tamaños y tipografías (como antes). Las imágenes viven en el servidor, igual que las del Pizarrón: **no entran al respaldo de la base de datos**.
+- **Afecta a:** todos los que crean o trabajan tareas.
+- **Acción:** el administrador corre **`install/setup.php`** una vez tras el despliegue (crea la tabla `task_assets`). Nada más.
+- **Manual:** estándar, apartado 8.2 (Crear una tarea).
 
 ---
 
