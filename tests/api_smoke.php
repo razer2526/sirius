@@ -511,6 +511,19 @@ test('el listado de estados de cuenta se filtra por periodo de generación y por
     eq(0, $other['total']);
 });
 
+test('el listado de estados de cuenta se filtra por estatus de pago', function () use ($admin, &$csrf, $pdo) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    $ids = fn(string $status) => array_map('intval', array_column($admin->json('GET', '/api/index.php?r=commissions/list&status=' . $status, null)['json']['data']['items'], 'id'));
+    ok(in_array($id, $ids('pending'), true), 'sin pagar debía salir en Pendiente de pago');
+    ok(!in_array($id, $ids('paid'), true), 'sin pagar no debía salir en Pagado');
+    eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_pay', ['id' => $id, 'payment_reference' => 'SPEI-FILTRO-001'], $csrf)['status']);
+    ok(in_array($id, $ids('paid'), true), 'pagado debía salir en Pagado');
+    ok(!in_array($id, $ids('pending'), true), 'pagado no debía salir en Pendiente de pago');
+    $total = $admin->json('GET', '/api/index.php?r=commissions/list', null)['json']['data']['total'];
+    eq($total, count($ids('paid')) + count($ids('pending')), 'sin filtro trae todos');
+    eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_unpay', ['id' => $id], $csrf)['status']);
+});
+
 echo "\nAdmisión Facial\n";
 test('el servicio Facial pide padecimientos, heredofamiliares, medicamentos, alergias, exposición, maquillaje y métricas', function () {
     require_once SIRIUS_PUBLIC . '/includes/services.php';
