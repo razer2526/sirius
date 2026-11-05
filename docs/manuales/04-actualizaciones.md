@@ -165,7 +165,7 @@ Corrección y mejora (PR 83). No hay cambios de esquema: **no hace falta correr 
 
 ## 3 de noviembre de 2026 · Proyectos: tarjetas, descripción con formato y tablero
 
-Mejora (PR 82, se apoya en el PR 81). **Hay un cambio de esquema** (una columna nueva en `task_assets`): después del despliegue, el administrador debe abrir `install/setup.php` y aplicar la actualización (si ya la había corrido por el PR 81, hay que correrla otra vez; es seguro repetirla). Sin eso, subir imágenes a la descripción de un proyecto falla con «Error de base de datos».
+Mejora (PR 90; parte del PR 81, ya fusionado). **Hay un cambio de esquema** (una columna nueva en `task_assets`): después del despliegue, el administrador debe abrir `install/setup.php` y aplicar la actualización (si ya la había corrido por el PR 81, hay que correrla otra vez; es seguro repetirla). Sin eso, subir imágenes a la descripción de un proyecto falla con «Error de base de datos».
 
 ### Tarjetas de proyecto con más información
 
