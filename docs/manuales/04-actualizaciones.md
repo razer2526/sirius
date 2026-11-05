@@ -11,17 +11,154 @@ Manuales de referencia: versión 1.0 · octubre de 2026
 
 ## Índice
 
-1. [3 de noviembre de 2026 · Tareas: tarjetas verticales, imágenes y notas a mano](#3-de-noviembre-de-2026--tareas-tarjetas-verticales-imágenes-y-notas-a-mano)
-2. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
-3. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
-4. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
-5. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
-6. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
-7. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
-8. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
-9. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
-10. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
-11. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+1. [5 de noviembre de 2026 · Admisión: nuevo formulario de Facial](#5-de-noviembre-de-2026--admisión-nuevo-formulario-de-facial)
+2. [3 de noviembre de 2026 · Comisiones: filtro por estatus y botones Pagado / Pendiente en las acciones](#3-de-noviembre-de-2026--comisiones-filtro-por-estatus-y-botones-pagado--pendiente-en-las-acciones)
+3. [3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo](#3-de-noviembre-de-2026--comisiones-boton-de-corte-solo-para-administradores-estatus-visible-y-pdf-con-el-estatus-abajo)
+4. [3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI](#3-de-noviembre-de-2026--comisiones-bimestre-en-curso-y-cierre-pagado-con-clave-spei)
+5. [3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana](#3-de-noviembre-de-2026--comisiones-la-fecha-del-pdf-se-ve-igual-que-en-la-ventana)
+6. [3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta](#3-de-noviembre-de-2026--comisiones-nuevo-formato-del-pdf-del-estado-de-cuenta)
+7. [3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo](#3-de-noviembre-de-2026--comisiones-el-estado-de-cuenta-por-periodo-se-arma-solo)
+8. [3 de noviembre de 2026 · Tareas: tarjetas verticales, imágenes y notas a mano](#3-de-noviembre-de-2026--tareas-tarjetas-verticales-imágenes-y-notas-a-mano)
+9. [13 de octubre de 2026 · Tareas: descripción visible, con formato y casillas](#13-de-octubre-de-2026--tareas-descripción-visible-con-formato-y-casillas)
+10. [9 de octubre de 2026 · Ficha de identificación: sin «No referido» de más y correo personalizable](#9-de-octubre-de-2026--ficha-de-identificación-sin-no-referido-de-más-y-correo-personalizable)
+11. [9 de octubre de 2026 · Calendario: semana por defecto y citas de solo lectura](#9-de-octubre-de-2026--calendario-semana-por-defecto-y-citas-de-solo-lectura)
+12. [9 de octubre de 2026 · Membretador: datos del paciente desde su ficha](#9-de-octubre-de-2026--membretador-datos-del-paciente-desde-su-ficha)
+13. [9 de octubre de 2026 · Membretador: crear plantillas de estudio](#9-de-octubre-de-2026--membretador-crear-plantillas-de-estudio)
+14. [8 de octubre de 2026 · Calendario: sincronización con Google](#8-de-octubre-de-2026--calendario-sincronización-con-google)
+15. [8 de octubre de 2026 · Tablet: la app ya se puede girar](#8-de-octubre-de-2026--tablet-la-app-ya-se-puede-girar)
+16. [8 de octubre de 2026 · Seguridad y pruebas automáticas](#8-de-octubre-de-2026--seguridad-y-pruebas-automáticas)
+17. [8 de octubre de 2026 · Correcciones de la revisión](#8-de-octubre-de-2026--correcciones-de-la-revisión)
+18. [Cómo se agrega una entrada nueva](#cómo-se-agrega-una-entrada-nueva)
+
+---
+
+## 5 de noviembre de 2026 · Admisión: nuevo formulario de Facial
+
+Mejora (PR 89). **Sí hay cambio de esquema: hay que correr `install/setup.php` después de desplegar.** Mientras no se corra, guardar una admisión o una cita de **Facial** marca error (los demás servicios no se ven afectados). Si no ves los cambios, entra a **Configuración → Buscar actualizaciones**.
+
+### Admisión · Facial
+
+- **Qué cambió:** en **Admisión** hay una tarjeta nueva, **Facial**. Su formulario trae, además de los **datos del paciente** de siempre:
+  - **Padecimientos y antecedentes patológicos personales** (diabetes, tiroides, acné, rosácea, dermatitis, melasma, procedimientos estéticos previos, embarazo o lactancia, tabaquismo…).
+  - **Patologías heredofamiliares**, con parentesco y si vive o finado.
+  - **Medicamentos** (isotretinoína, retinoides, corticoides, anticoagulantes, hormonales…) y suplementos.
+  - **Alergias** (medicamentos, anestésicos, látex, níquel, fragancias, cosméticos…).
+  - **Exposición a animales y químicos**, y exposición solar y protector solar.
+  - **Rutina de maquillaje:** frecuencia de uso, si se desmaquilla, y por cada producto (prebase, base, corrector, polvo, rubor, contorno, iluminador, sombras, delineador, máscara, cejas, labial, fijador, desmaquillante) se marca y se anota la **marca y el tipo**.
+  - **Métricas faciales:** de **piel** (tipo de piel, fototipo de Fitzpatrick, envejecimiento de Glogau, hidratación, sebo, elasticidad, pH, melanina, eritema, poros, arrugas, manchas) y **medidas en mm** (forma del rostro, simetría, altura facial, tercios, anchos bicigomático, bigonial y frontal, distancias interpupilar e intercantal, nariz, boca y labios). El **índice facial** y el **índice mandibular** se calculan solos.
+  - **Firma del paciente.**
+- **También:** Facial aparece en **Expedientes** (filtro de servicio, visita, impresión y consultas subsecuentes con su propia ficha de sesión) y se puede agendar en el **Calendario**.
+- **Afecta a:** quien hace admisiones y quien agenda citas.
+- **Acción:** después del despliegue, correr `install/setup.php` (agrega «Facial» a la lista de servicios de la base de datos).
+- **Manual:** usuario estándar, apartado 6 («Admisión: registrar a un paciente»), que aún no menciona Facial.
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: filtro por estatus y botones Pagado / Pendiente en las acciones
+
+Mejora (PR 88). No hay cambios de esquema: **no hace falta correr `setup.php`**. Si no ves los cambios, entra a **Configuración → Buscar actualizaciones**.
+
+### Listado de estados de cuenta
+
+- **Filtro de estatus:** junto al selector de periodo hay ahora un selector **Estatus** con **Todos**, **Pendiente de pago** y **Pagado**.
+- **Acciones:** cada estado de cuenta tiene un par de botones, **Pagado** y **Pendiente**, y el administrador decide cuál es. El que está activo se ve resaltado (verde si está pagado, amarillo si está pendiente).
+  - **Pagado:** pide la clave de rastreo SPEI. Si ya estaba pagado, abre el pago para corregir la clave.
+  - **Pendiente:** regresa el estado de cuenta a pendiente de pago (pide confirmación) y borra la clave de rastreo.
+- **Quién puede:** solo los administradores ven estos botones. Los demás ven el estatus pero no lo pueden cambiar.
+- **Afecta a:** quien administra Comisiones. Los mismos botones aparecen en la sección de estados de cuenta dentro de la cuenta de cada médico.
+- **Acción:** ninguna.
+- **Manual:** administrador, apartado 9 («Vinculación y comisiones»).
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: botón de corte solo para administradores, estatus visible y PDF con el estatus abajo
+
+Mejora (PR 87). No hay cambios de esquema: **no hace falta correr `setup.php`**. Si no ves los cambios, entra a **Configuración → Buscar actualizaciones** para cargar la versión nueva.
+
+### Pantalla de Comisiones
+
+- **Qué cambió:** el listado de **Estados de cuenta** tiene ahora un selector **Generados en** (abre en el bimestre en curso; también «Todos los periodos»). Cada estado de cuenta muestra su **estatus**: verde **Pagado** (con su clave de rastreo SPEI) o amarillo **Pendiente de pago**.
+- **Botón del corte:** **Marcar como pagado** (o **Editar pago** si ya lo está) aparece en cada estado de cuenta, en el listado y en la cuenta de cada médico, y **solo lo ven y lo pueden usar los administradores**. Pide la clave de rastreo SPEI. En la cuenta del médico se muestran sus estados de cuenta del periodo elegido y, siempre, los que siguen pendientes de pago.
+- **Registros sin estado de cuenta:** en la cuenta del médico, los registros que aún no están en un estado de cuenta dicen **Sin estado de cuenta** (antes decían «Pendiente», que se confundía con el pago).
+
+### PDF del estado de cuenta
+
+- **Qué cambió:** el estatus ya no va en el encabezado. Ahora está **abajo, justo arriba del pie de la última hoja**: un recuadro **verde «PAGADO»** o **amarillo «PENDIENTE DE PAGO»**. Si está pagado, **un renglón más abajo** viene la **clave de rastreo SPEI**.
+- **Afecta a:** quien administra Comisiones. Los PDF ya generados se ven con el formato nuevo al volver a descargarlos.
+- **Acción:** ninguna.
+- **Manual:** administrador, apartado 9 («Vinculación y comisiones»).
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: bimestre en curso y cierre «Pagado» con clave SPEI
+
+Mejora (PR 86). **Sí hay cambio de esquema: hay que correr `install/setup.php` después de desplegar.** Mientras no se corra, la cuenta de cada médico en Comisiones marca error.
+
+### La cuenta del médico abre en el bimestre en curso
+
+- **Qué cambió:** al abrir Apps → Comisiones → un médico, ya no se carga la lista completa de registros: solo los del **bimestre en curso**. Arriba hay un selector de **Periodo** para ver bimestres anteriores o **Todos los periodos**. Si quedan registros pendientes en otros periodos, un aviso lo indica con un enlace para verlos.
+
+### Cierre del estado de cuenta: «Pagado» con clave de rastreo SPEI
+
+- **Qué cambió:** cada estado de cuenta ahora está **Pendiente de pago** o **Pagado**. Se cambia haciendo clic en la etiqueta de pago, en el listado de Comisiones o en la cuenta del médico. Al marcar **Pagado** el sistema pide la **clave de rastreo SPEI** de la transferencia (obligatoria; los espacios se quitan solos). El PDF del estado de cuenta muestra el **Estatus de pago** arriba y, si está pagado, la **clave de rastreo SPEI en un recuadro justo arriba del pie de la última hoja**.
+- **Corregir o deshacer:** haciendo clic en la etiqueta de un estado pagado se puede corregir la clave o **quitar el pago**. Un estado pagado no se puede eliminar hasta quitarle el pago.
+- **Afecta a:** quien administra Comisiones. Los estados de cuenta anteriores quedan como **Pendiente de pago** hasta que se marquen.
+- **Acción:** correr `install/setup.php` una vez tras el despliegue.
+- **Manual:** administrador, apartado 9 («Vinculación y comisiones»).
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: la fecha del PDF se ve igual que en la ventana
+
+Corrección (PR 85). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Fecha en el PDF del estado de cuenta
+
+- **Qué cambió:** en el PDF del estado de cuenta la columna **Fecha** salía con guiones («--») en los estados hechos con **Registro manual** antes del cambio anterior. Ahora la fecha se toma del registro original y se imprime **como la muestra la ventana de Comisiones** (año-mes-día, por ejemplo 2026-10-28). Las filas van ordenadas de la fecha más reciente a la más antigua, igual que en la ventana.
+- **Afecta a:** quien descarga estados de cuenta de comisiones. Los estados ya generados se corrigen solos al volver a descargarlos.
+- **Acción:** ninguna. Descarga de nuevo el PDF.
+- **Manual:** administrador, apartado 9 («Estado de cuenta en PDF»).
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: nuevo formato del PDF del estado de cuenta
+
+Mejora (PR 84). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Columnas, pie y numeración del PDF
+
+- **Qué cambió:** el PDF del estado de cuenta de comisiones cambia en tres cosas.
+  - **Columnas:** ahora son **Fecha**, **Nombre del paciente**, **Estudios** y **Monto**. Hay **un renglón por visita del paciente**: si en la misma admisión se hicieron varios estudios, van juntos en la columna Estudios y el Monto es la **comisión** de esa visita (ya no se imprime lo cobrado al paciente ni el porcentaje). La barra de **Total comisión** sigue al final y suma los montos.
+  - **Pie de página:** el pie corporativo (razón social, dirección, teléfonos) aparece **solo en la última hoja**. Antes se repetía en todas.
+  - **Numeración:** todas las hojas llevan **«Página X de Y»**, incluida la primera.
+  El mismo pie y la misma numeración aplican al estado de cuenta hecho desde **Pegar lista (imagen)**, que conserva sus columnas.
+- **Afecta a:** quien genera o descarga estados de cuenta de comisiones. Los **estados ya generados** también se ven con el formato nuevo al volver a abrirlos. Los hechos con **Registro manual** antes de este cambio no guardaron la fecha de la visita, y en ellos la columna Fecha muestra «—».
+- **Acción:** ninguna.
+- **Manual:** administrador, apartado 9 («Estado de cuenta en PDF»).
+
+---
+
+## 3 de noviembre de 2026 · Comisiones: el estado de cuenta por periodo se arma solo
+
+Corrección y mejora (PR 83). No hay cambios de esquema: **no hace falta correr `setup.php`**.
+
+### Ya encuentra las admisiones del médico
+
+- **Qué cambió:** en **Apps → Comisiones → Nuevo estado de cuenta → Por periodo** la vista previa salía vacía («No hay estudios comisionables») aunque el médico sí tuviera pacientes. Había dos causas: (1) la admisión del **asistido** solo deja **escribir** el nombre del médico, no elegirlo de la lista de convenio, y Comisiones solo veía las admisiones ligadas a un médico de la lista; (2) solo contaba los estudios que tuvieran **grupo de comisión** en el catálogo, y casi ninguno lo tiene (ni los estudios capturados a mano). Ahora:
+  - Al guardar una admisión, si el nombre escrito (por ejemplo «Dr. Rodolfo Ramírez») corresponde a **un solo** médico de Vinculación, la admisión queda ligada a él. Si coincide con dos o con ninguno, no se liga.
+  - Las admisiones **anteriores** también se encuentran por el nombre escrito; en la vista previa aparecen con la nota «Médico escrito en Admisión: …» para que las revises.
+  - Los estudios **sin grupo** se calculan como en el **Registro manual**: **FilmArray, monto fijo de $750**; cualquier otro estudio, la tasa de **Análisis clínicos** de Vinculación (10 % de fábrica). Los estudios que sí traen grupo siguen usando su tasa de Vinculación.
+  - **Pegar lista (imagen)** usa las mismas reglas.
+- **Afecta a:** quien genera estados de cuenta de comisiones.
+- **Acción:** revisa los montos de la vista previa antes de generar. Si un nombre no se encontró, escríbelo en Admisión igual que en **Vinculación** (nombre y primer apellido, como mínimo).
+- **Manual:** estándar, apartado 14.3 (Comisiones).
+
+### La vista previa aparece sola y el periodo es por bimestre
+
+- **Qué cambió:** ya no hay botón **Vista previa**: al elegir **médico (o concierge)** y **periodo**, los estudios aparecen solos. El selector **Periodo** ofrece los bimestres (por ejemplo «Septiembre – Octubre 2026») y arranca en el **último bimestre terminado**, que es el que toca facturar; **Otro rango de fechas…** y los campos **Desde / Hasta** siguen disponibles. Cada línea muestra ahora también la **fecha de admisión**.
+- **Afecta a:** quien genera estados de cuenta de comisiones.
+- **Acción:** ninguna. Se siguen pudiendo **excluir líneas** antes de **Generar estado de cuenta**.
+- **Manual:** estándar, apartado 14.3.
 
 ---
 

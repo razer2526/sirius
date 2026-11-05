@@ -256,6 +256,7 @@ test('todos los PHP de public/ pasan php -l', function () {
 require __DIR__ . '/calendar.php';
 require __DIR__ . '/mail.php';
 require __DIR__ . '/rich_note.php';
+require __DIR__ . '/commissions.php';
 
 
 tests_finish();

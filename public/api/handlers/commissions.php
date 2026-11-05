@@ -11,6 +11,10 @@
 require_once __DIR__ . '/vinculacion.php';
 require_once __DIR__ . '/../../includes/ai.php';
 require_once __DIR__ . '/../../includes/assistant_tools.php';
+require_once __DIR__ . '/../../includes/doctor_match.php';
+
+/** Comisión fija por estudio FilmArray (biología molecular), sea cual sea su precio. */
+const COMMISSIONS_FILMARRAY_FIXED = 750.00;
 
 function handle_commissions(string $action): void
 {
@@ -138,6 +142,7 @@ function handle_commissions(string $action): void
 
             $rate = vinculacion_commission_rates();
             $fullName = sql_full_name('p');
+            [$doctorFilter, $doctorParams] = commissions_doctor_filter([$partyId]);
             $items = [];
             $dates = [];
             foreach ($included as $r) {
@@ -152,9 +157,9 @@ function handle_commissions(string $action): void
                      FROM episode_studies es
                      JOIN episodes e ON e.id = es.episode_id
                      JOIN patients p ON p.id = e.patient_id
-                     WHERE e.linked_doctor_id = ? AND es.commission_group IS NOT NULL AND es.id IN ($placeholders)"
+                     WHERE $doctorFilter AND es.id IN ($placeholders)"
                 );
-                $st2->execute(array_merge([$partyId], $ids));
+                $st2->execute(array_merge($doctorParams, $ids));
                 $studyRows = $st2->fetchAll();
                 if (!$studyRows) {
                     continue;
@@ -163,10 +168,8 @@ function handle_commissions(string $action): void
                 $commission = 0.0;
                 $studyNames = [];
                 foreach ($studyRows as $sr) {
-                    $amt = (float)$sr['amount_charged'];
-                    $pct = (float)($rate[$sr['commission_group']] ?? 0);
-                    $amount += $amt;
-                    $commission += round($amt * $pct / 100, 2);
+                    $amount += (float)$sr['amount_charged'];
+                    $commission += commissions_study_commission($sr, $rate)[1];
                     $studyNames[] = $sr['study_name'];
                     $dates[] = (string)$sr['admission_date'];
                 }
@@ -224,17 +227,39 @@ function handle_commissions(string $action): void
             json_ok(['items' => $items]);
         }
 
-        /** Registros manuales (pendientes y facturados) de un médico, más recientes primero. */
+        /**
+         * Registros manuales (pendientes y facturados) de un médico, más recientes primero. Con from/to solo
+         * trae ese periodo (la pantalla abre en el bimestre en curso); `pending_outside` cuenta los pendientes
+         * que quedaron fuera del periodo para avisarlo.
+         */
         case 'entries_list': {
             $doctorId = (int)($_GET['doctor_id'] ?? 0);
+            $from = commissions_valid_date($_GET['from'] ?? '');
+            $to = commissions_valid_date($_GET['to'] ?? '');
+            $ranged = $from !== null && $to !== null;
+            $where = 'ce.doctor_id = ?';
+            $params = [$doctorId];
+            if ($ranged) {
+                $where .= ' AND ce.entry_date BETWEEN ? AND ?';
+                array_push($params, $from, $to);
+            }
             $st = db()->prepare(
-                'SELECT ce.id, ce.patient_name, ce.entry_date, ce.studies, ce.total_amount, ce.total_commission,
-                        ce.statement_id, cs.folio
+                "SELECT ce.id, ce.patient_name, ce.entry_date, ce.studies, ce.total_amount, ce.total_commission,
+                        ce.statement_id, cs.folio, cs.paid_at, cs.payment_reference
                  FROM commission_entries ce LEFT JOIN commission_statements cs ON cs.id = ce.statement_id
-                 WHERE ce.doctor_id = ? ORDER BY ce.entry_date DESC, ce.id DESC'
+                 WHERE $where ORDER BY ce.entry_date DESC, ce.id DESC"
             );
-            $st->execute([$doctorId]);
+            $st->execute($params);
             $rows = $st->fetchAll();
+            $pendingOutside = 0;
+            if ($ranged) {
+                $st = db()->prepare(
+                    'SELECT COUNT(*) FROM commission_entries
+                     WHERE doctor_id = ? AND statement_id IS NULL AND (entry_date < ? OR entry_date > ?)'
+                );
+                $st->execute([$doctorId, $from, $to]);
+                $pendingOutside = (int)$st->fetchColumn();
+            }
             foreach ($rows as &$r) {
                 $r['id'] = (int)$r['id'];
                 $r['studies'] = json_decode((string)$r['studies'], true) ?: [];
@@ -243,7 +268,7 @@ function handle_commissions(string $action): void
                 $r['statement_id'] = $r['statement_id'] !== null ? (int)$r['statement_id'] : null;
             }
             unset($r);
-            json_ok(['entries' => $rows]);
+            json_ok(['entries' => $rows, 'pending_outside' => $pendingOutside]);
         }
 
         /** Crea o edita (si no está facturado todavía) un registro manual de paciente referido. */
@@ -384,6 +409,7 @@ function handle_commissions(string $action): void
                     $commission = (float)($s['commission_amount'] ?? 0);
                     $items[] = [
                         'patient_name'      => $e['patient_name'],
+                        'entry_date'        => $e['entry_date'],
                         'study_name'        => (string)($s['name'] ?? ''),
                         'amount_charged'    => $amount,
                         'commission_pct'    => $amount > 0 ? round($commission / $amount * 100, 1) : 0,
@@ -428,10 +454,43 @@ function handle_commissions(string $action): void
             $b = request_body();
             $id = (int)($b['id'] ?? 0);
             $statement = commissions_find_statement($id);
+            if (!empty($statement['paid_at'])) {
+                json_error('Este estado de cuenta ya está pagado. Si de verdad hay que eliminarlo, primero quita el pago.', 422);
+            }
             db()->prepare('UPDATE commission_entries SET statement_id = NULL WHERE statement_id = ?')->execute([$id]);
             db()->prepare('DELETE FROM commission_statements WHERE id = ?')->execute([$id]);
             log_activity('apps', 'commission_statement_delete', "Eliminó el estado de cuenta \"{$statement['folio']}\"", 'commission_statement', $id);
             json_ok(['deleted' => true]);
+        }
+
+        /** Cierre del estado de cuenta: se marca pagado con la clave de rastreo SPEI de la transferencia (también corrige la clave). */
+        case 'statement_pay': {
+            commissions_require_admin($me);
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $statement = commissions_find_statement($id);
+            $reference = commissions_valid_reference($b['payment_reference'] ?? '');
+            if ($reference === null) {
+                json_error('Escribe la clave de rastreo SPEI (de 4 a 60 letras, números o guiones)', 422);
+            }
+            $wasPaid = !empty($statement['paid_at']);
+            $paidAt = $wasPaid ? (string)$statement['paid_at'] : date('Y-m-d H:i:s');
+            db()->prepare('UPDATE commission_statements SET paid_at = ?, payment_reference = ?, paid_by = ? WHERE id = ?')
+                ->execute([$paidAt, $reference, (int)$me['id'], $id]);
+            $verb = $wasPaid ? 'Corrigió la clave de rastreo del pago del' : 'Marcó como pagado el';
+            log_activity('apps', 'commission_statement_pay', "$verb estado de cuenta \"{$statement['folio']}\" (SPEI $reference)", 'commission_statement', $id);
+            json_ok(['paid_at' => $paidAt, 'payment_reference' => $reference]);
+        }
+
+        /** Regresa el estado de cuenta a «pendiente de pago» (por si se marcó por error). */
+        case 'statement_unpay': {
+            commissions_require_admin($me);
+            $b = request_body();
+            $id = (int)($b['id'] ?? 0);
+            $statement = commissions_find_statement($id);
+            db()->prepare('UPDATE commission_statements SET paid_at = NULL, payment_reference = NULL, paid_by = NULL WHERE id = ?')->execute([$id]);
+            log_activity('apps', 'commission_statement_unpay', "Quitó el pago del estado de cuenta \"{$statement['folio']}\"", 'commission_statement', $id);
+            json_ok(['paid_at' => null]);
         }
 
         case 'list': {
@@ -443,6 +502,25 @@ function handle_commissions(string $action): void
             if ($q !== '') {
                 $where .= ' AND folio LIKE ?';
                 $params[] = '%' . $q . '%';
+            }
+            // De quién es el estado de cuenta (cuenta de un médico) y en qué periodo se generó (por defecto, el bimestre en curso)
+            $partyType = in_array($_GET['party_type'] ?? '', ['doctor', 'concierge'], true) ? $_GET['party_type'] : null;
+            $partyId = (int)($_GET['party_id'] ?? 0);
+            if ($partyType !== null && $partyId > 0) {
+                $where .= ' AND party_type = ? AND party_id = ?';
+                array_push($params, $partyType, $partyId);
+            }
+            $status = (string)($_GET['status'] ?? '');
+            if ($status === 'paid') {
+                $where .= ' AND paid_at IS NOT NULL';
+            } elseif ($status === 'pending') {
+                $where .= ' AND paid_at IS NULL';
+            }
+            $from = commissions_valid_date($_GET['from'] ?? '');
+            $to = commissions_valid_date($_GET['to'] ?? '');
+            if ($from !== null && $to !== null) {
+                $where .= ' AND DATE(created_at) BETWEEN ? AND ?';
+                array_push($params, $from, $to);
             }
             $pdo = db();
             $st = $pdo->prepare("SELECT COUNT(*) c FROM commission_statements WHERE $where");
@@ -459,6 +537,8 @@ function handle_commissions(string $action): void
                 $it['party_name'] = $decoded['party_name'] ?? '';
                 unset($it['lines']);
                 $it['total_commission'] = (float)$it['total_commission'];
+                $it['paid_at'] = $it['paid_at'] ?? null;
+                $it['payment_reference'] = $it['payment_reference'] ?? null;
             }
             unset($it);
             json_ok(['items' => $items, 'total' => $total, 'page' => $page, 'per_page' => $perPage]);
@@ -495,9 +575,72 @@ function commissions_find_statement(int $id): array
  */
 function commissions_calc_study(string $studyName, float $amountCharged): array
 {
-    $isFilmArray = stripos($studyName, 'filmarray') !== false || stripos($studyName, 'film array') !== false;
-    $commission = $isFilmArray ? 750.00 : round($amountCharged * 0.10, 2);
+    $isFilmArray = commissions_is_filmarray($studyName);
+    $commission = $isFilmArray ? COMMISSIONS_FILMARRAY_FIXED : round($amountCharged * 0.10, 2);
     return ['is_filmarray' => $isFilmArray, 'commission_amount' => $commission];
+}
+
+function commissions_is_filmarray(string $studyName): bool
+{
+    return stripos($studyName, 'filmarray') !== false || stripos($studyName, 'film array') !== false;
+}
+
+/**
+ * Comisión de UN estudio capturado en Admisión, para un médico. Devuelve [pct, monto].
+ * Si el estudio trae grupo de comisión (Biología molecular / Análisis clínicos) manda la
+ * tasa de Vinculación de ese grupo. Casi ningún estudio del catálogo lo trae, y los
+ * capturados a mano nunca, así que sin grupo se clasifica por nombre como en el registro
+ * manual: FilmArray es un monto fijo y todo lo demás lleva la tasa de Análisis clínicos.
+ */
+function commissions_study_commission(array $study, array $rate): array
+{
+    $amount = (float)$study['amount_charged'];
+    $group = (string)($study['commission_group'] ?? '');
+    if ($group !== '' && isset($rate[$group])) {
+        $pct = (float)$rate[$group];
+        return [$pct, round($amount * $pct / 100, 2)];
+    }
+    if (commissions_is_filmarray((string)$study['study_name'])) {
+        return [$amount > 0 ? round(COMMISSIONS_FILMARRAY_FIXED / $amount * 100, 1) : 0.0, COMMISSIONS_FILMARRAY_FIXED];
+    }
+    $pct = (float)($rate['clinico'] ?? 0);
+    return [$pct, round($amount * $pct / 100, 2)];
+}
+
+/**
+ * Médicos a los que se les cuenta la comisión: el propio médico, o todos los de un concierge.
+ * @return int[]
+ */
+function commissions_party_doctor_ids(string $partyType, int $partyId): array
+{
+    if ($partyType === 'doctor') {
+        return [$partyId];
+    }
+    $st = db()->prepare('SELECT id FROM vinculacion_doctors WHERE concierge_id = ?');
+    $st->execute([$partyId]);
+    return array_map('intval', $st->fetchAll(PDO::FETCH_COLUMN));
+}
+
+/**
+ * Condición SQL (sobre `episodes e`) de las admisiones de esos médicos: las ligadas por el
+ * catálogo, más las que el asistido capturó escribiendo el nombre a mano si ese nombre
+ * identifica a uno solo de ellos (ver includes/doctor_match.php).
+ * @return array{0:string, 1:array}
+ */
+function commissions_doctor_filter(array $doctorIds): array
+{
+    if (!$doctorIds) {
+        return ['1 = 0', []];
+    }
+    $ph = implode(',', array_fill(0, count($doctorIds), '?'));
+    $sql = "(e.linked_doctor_id IN ($ph)";
+    $params = $doctorIds;
+    $names = doctor_typed_names_for($doctorIds);
+    if ($names) {
+        $sql .= ' OR (e.linked_doctor_id IS NULL AND e.referring_doctor IN (' . implode(',', array_fill(0, count($names), '?')) . '))';
+        $params = array_merge($params, $names);
+    }
+    return [$sql . ')', $params];
 }
 
 /** Registros manuales pendientes (sin facturar) de un médico en un rango de fechas, uno por línea (no por estudio). */
@@ -563,43 +706,40 @@ function commissions_resolve_params(array $b): array
     return [$partyType, $partyId, $from, $to, $rate];
 }
 
-/** Estudios comisionables (con grupo asignado) de un médico o de los médicos de un concierge, en el rango dado. */
+/**
+ * Estudios de laboratorio de un médico o de los médicos de un concierge, en el rango dado.
+ * No exige que el estudio tenga grupo de comisión ni que el médico se haya elegido de la
+ * lista: ver commissions_study_commission() y commissions_doctor_filter().
+ */
 function commissions_query_lines(string $partyType, int $partyId, string $from, string $to, array $rate): array
 {
     $fullName = sql_full_name('p');
-    if ($partyType === 'doctor') {
-        $doctorFilter = 'e.linked_doctor_id = ?';
-        $params = [$partyId];
-    } else {
-        $doctorFilter = 'e.linked_doctor_id IN (SELECT id FROM vinculacion_doctors WHERE concierge_id = ?)';
-        $params = [$partyId];
-    }
+    [$doctorFilter, $params] = commissions_doctor_filter(commissions_party_doctor_ids($partyType, $partyId));
 
     $st = db()->prepare(
         "SELECT es.id, es.study_name, es.commission_group, es.amount_charged, es.commission_included,
-                e.id AS episode_id, e.service_folio, e.admission_date, e.linked_doctor_id,
+                e.id AS episode_id, e.service_folio, e.admission_date, e.linked_doctor_id, e.referring_doctor,
                 $fullName AS patient_name, p.file_number
          FROM episode_studies es
          JOIN episodes e ON e.id = es.episode_id
          JOIN patients p ON p.id = e.patient_id
          WHERE $doctorFilter
-           AND es.commission_group IS NOT NULL
            AND DATE(e.admission_date) BETWEEN ? AND ?
-         ORDER BY e.admission_date"
+         ORDER BY e.admission_date, es.id"
     );
     $st->execute(array_merge($params, [$from, $to]));
     $rows = $st->fetchAll();
 
-    $pct = $partyType === 'doctor'
-        ? null // se resuelve por línea según su commission_group
-        : (float)$rate['concierge'];
-
     foreach ($rows as &$r) {
-        $amount = (float)$r['amount_charged'];
-        $linePct = $partyType === 'doctor' ? (float)($rate[$r['commission_group']] ?? 0) : $pct;
-        $r['amount_charged'] = $amount;
-        $r['commission_pct'] = $linePct;
-        $r['commission_amount'] = round($amount * $linePct / 100, 2);
+        $r['amount_charged'] = (float)$r['amount_charged'];
+        if ($partyType === 'doctor') {
+            [$r['commission_pct'], $r['commission_amount']] = commissions_study_commission($r, $rate);
+        } else {
+            $r['commission_pct'] = (float)$rate['concierge'];
+            $r['commission_amount'] = round($r['amount_charged'] * $r['commission_pct'] / 100, 2);
+        }
+        // Capturado a mano en Admisión (no elegido de la lista): se avisa en pantalla para que se revise
+        $r['typed_doctor'] = $r['linked_doctor_id'] === null ? (string)$r['referring_doctor'] : null;
         $r['commission_included'] = (bool)$r['commission_included'];
     }
     unset($r);
@@ -630,6 +770,21 @@ function commissions_concierge_name(int $id): string
     $st = db()->prepare('SELECT name FROM vinculacion_concierge WHERE id = ?');
     $st->execute([$id]);
     return (string)($st->fetch()['name'] ?? '');
+}
+
+/** El corte (marcar pagado, corregir la clave o quitar el pago) es solo del administrador. */
+function commissions_require_admin(array $me): void
+{
+    if (!is_admin_role($me)) {
+        json_error('Solo un administrador puede registrar el pago de un estado de cuenta', 403);
+    }
+}
+
+/** Clave de rastreo SPEI: sin espacios (se quitan al pegarla), de 4 a 60 letras, números o guiones; null si no sirve. */
+function commissions_valid_reference($v): ?string
+{
+    $v = preg_replace('/\s+/', '', (string)$v);
+    return preg_match('/^[A-Za-z0-9._\-\/]{4,60}$/', $v) ? $v : null;
 }
 
 function commissions_valid_date($v): ?string
@@ -728,17 +883,18 @@ TXT;
 function commissions_doctor_studies_for_matching(int $doctorId): array
 {
     $fullName = sql_full_name('p');
+    [$doctorFilter, $params] = commissions_doctor_filter([$doctorId]);
     $st = db()->prepare(
         "SELECT es.id, es.study_name, es.commission_group, es.amount_charged,
                 e.admission_date, $fullName AS patient_name
          FROM episode_studies es
          JOIN episodes e ON e.id = es.episode_id
          JOIN patients p ON p.id = e.patient_id
-         WHERE e.linked_doctor_id = ? AND es.commission_group IS NOT NULL
+         WHERE $doctorFilter
          ORDER BY e.admission_date DESC
          LIMIT 500"
     );
-    $st->execute([$doctorId]);
+    $st->execute($params);
     return $st->fetchAll();
 }
 
@@ -758,10 +914,8 @@ function commissions_aggregate_studies(array $studies, array $rate): array
     $studyNames = [];
     $episodeStudyIds = [];
     foreach ($studies as $s) {
-        $amt = (float)$s['amount_charged'];
-        $pct = (float)($rate[$s['commission_group']] ?? 0);
-        $amount += $amt;
-        $commission += round($amt * $pct / 100, 2);
+        $amount += (float)$s['amount_charged'];
+        $commission += commissions_study_commission($s, $rate)[1];
         $studyNames[] = $s['study_name'];
         $episodeStudyIds[] = (int)$s['id'];
     }

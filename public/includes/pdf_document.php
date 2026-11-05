@@ -32,6 +32,12 @@ class SiriusDocPDF extends FPDF
     private array $lh;
     private array $info = [];      // pares etiqueta/valor del encabezado del paciente
     private bool $lastPage = false;
+    private bool $footerAtEnd = false;    // el pie se decide al cerrar el documento (ver footerOnLastPageOnly)
+    /** Estado de pago de un estado de cuenta de comisiones (null en los demás documentos). */
+    private ?array $payment = null;
+    /** Alto que se deja libre arriba del pie para la clave SPEI. */
+    private float $paymentReserve = 0.0;
+    private bool $numberAlways = false;   // "Página X de Y" también en la primera hoja y en documentos de una sola
     private ?string $headerImg;
     private ?string $footerImg;
     private ?string $watermarkImg;
@@ -58,10 +64,103 @@ class SiriusDocPDF extends FPDF
         $this->info = $rows;
     }
 
+    /**
+     * Estado de cuenta de comisiones: el estatus de pago (verde «Pagado» / amarillo «Pendiente de pago») y,
+     * si está pagado, la clave de rastreo SPEI en el recuadro que se dibuja justo arriba del pie de la última hoja.
+     */
+    public function setPaymentStatus(bool $paid, string $reference = ''): void
+    {
+        $this->payment = ['paid' => $paid, 'reference' => $paid ? $reference : ''];
+        // lo que cierra el documento (barra de total) deja libre el alto del recuadro más un respiro
+        $this->paymentReserve = $this->paymentBlockHeight() + 6.0;
+    }
+
+    private function paymentBlockHeight(): float
+    {
+        return ($this->payment['reference'] ?? '') !== '' ? 20.0 : 9.0;
+    }
+
+    /** Recuadro del estatus de pago, pegado arriba del pie corporativo (o a continuación si no hay pie). */
+    private function paymentBlock(): void
+    {
+        $paid = (bool)$this->payment['paid'];
+        $reference = (string)$this->payment['reference'];
+        $h = $this->paymentBlockHeight();
+        $x = $this->left();
+        $w = $this->usableWidth();
+        if ($this->footerAtEnd && $this->footerImg) {
+            $y = $this->GetPageHeight() - (float)$this->lh['footer_bottom'] - (float)$this->lh['footer_height'] - 8 - $h;
+        } else {
+            $this->ensureSpace($h + 4);
+            $y = $this->GetY() + 2;
+        }
+        [$fill, $border, $ink] = $paid
+            ? [[236, 253, 245], [134, 239, 172], [21, 128, 61]]     // verde: pagado
+            : [[254, 249, 195], [250, 204, 21], [133, 77, 14]];     // amarillo: pendiente de pago
+        $this->SetAutoPageBreak(false);
+        $this->SetFillColor(...$fill);
+        $this->SetDrawColor(...$border);
+        $this->SetLineWidth(0.3);
+        $this->roundedRect($x, $y, $w, $h, 2, 'FD');
+        $this->SetXY($x + 4, $y + 2.2);
+        $this->SetFont('Helvetica', 'B', 10);
+        $this->SetTextColor(...$ink);
+        $this->Cell($w - 8, 4.6, pdf_t($paid ? 'PAGADO' : 'PENDIENTE DE PAGO'), 0, 0, 'L');
+        if ($reference !== '') {
+            // un renglón en blanco y, abajo, la clave de rastreo de la transferencia
+            $this->SetXY($x + 4, $y + 11.8);
+            $this->SetFont('Helvetica', '', 9);
+            $this->SetTextColor(...PDF_INK);
+            $label = pdf_t('Clave de rastreo SPEI:  ');
+            $this->Cell($this->GetStringWidth($label) + 1, 5.2, $label, 0, 0, 'L');
+            $this->SetFont('Helvetica', 'B', 10.5);
+            $this->Cell($w - 8 - $this->GetStringWidth($label) - 1, 5.2, pdf_t($reference), 0, 0, 'L');
+        }
+        $this->SetTextColor(...PDF_INK);
+        $this->SetAutoPageBreak(true, 20);
+    }
+
     public function markLastPage(): void
     {
         $this->lastPage = true;
         $this->SetAutoPageBreak(true, (float)$this->lh['footer_height'] + (float)$this->lh['footer_bottom'] + 6);
+    }
+
+    /**
+     * Estados de cuenta: el cuerpo se acomoda sin reservar el pie en cada hoja; el pie corporativo
+     * se dibuja solo en la última (closeDocument) y todas las hojas llevan "Página X de Y".
+     */
+    public function footerOnLastPageOnly(): void
+    {
+        $this->footerAtEnd = true;
+        $this->numberAlways = true;
+    }
+
+    /** Llamar justo antes de Output: la hoja en curso es la última, así que es la que lleva el pie corporativo. */
+    public function closeDocument(): void
+    {
+        if ($this->footerAtEnd) {
+            $this->lastPage = true;
+            if ($this->payment !== null) {
+                $this->paymentBlock();
+            }
+        }
+    }
+
+    /**
+     * Como ensureSpace, pero deja libre el pie corporativo y su "Página X de Y": lo que cierra el
+     * documento (la barra de total) no puede quedar encima del pie de la última hoja.
+     */
+    public function ensureSpaceAboveFooter(float $needed): void
+    {
+        if (!$this->footerAtEnd || !$this->footerImg) {
+            $this->ensureSpace($needed);
+            return;
+        }
+        $footerY = $this->GetPageHeight() - (float)$this->lh['footer_bottom'] - (float)$this->lh['footer_height'];
+        if ($this->GetY() + $needed > $footerY - 8 - $this->paymentReserve) {
+            $this->AddPage();
+        }
     }
 
     /** Última coordenada Y utilizable de la página actual. */
@@ -222,7 +321,7 @@ class SiriusDocPDF extends FPDF
             // El folio de página también va en la última hoja (documentos de más de una
             // página, como la ficha con su consentimiento): sin esto, esa hoja final era
             // la única sin "Página X de Y", justo la más fácil de perder al imprimirla suelta.
-            if (!empty($this->lh['show_page_numbers']) && $this->PageNo() > 1) {
+            if (!empty($this->lh['show_page_numbers']) && $this->PageNo() > 1 || $this->numberAlways) {
                 $this->SetY($footerY - 6);
                 $this->SetFont('Helvetica', '', 8);
                 $this->SetTextColor(...PDF_MUTED);
@@ -236,7 +335,7 @@ class SiriusDocPDF extends FPDF
         $this->SetDrawColor(...PDF_LINE);
         $this->SetLineWidth(0.2);
         $this->Line($this->left(), $y, $this->right(), $y);
-        if (!empty($this->lh['show_page_numbers'])) {
+        if (!empty($this->lh['show_page_numbers']) || $this->numberAlways) {
             $this->SetY($y + 1);
             $this->SetFont('Helvetica', '', 8);
             $this->SetTextColor(...PDF_MUTED);
@@ -1152,43 +1251,41 @@ class SiriusDocPDF extends FPDF
 
     /* ---------- Comisiones ---------- */
 
-    /** Ancho de columnas de la tabla de comisiones: N° | Paciente/Estudio | Monto | % | Comisión. */
+    /** Ancho de columnas de la tabla de comisiones: Fecha | Nombre del paciente | Estudios | Monto. */
     private function commissionColWidths(): array
     {
         $w = $this->usableWidth();
-        $num = 8.0;
-        $amount = 28.0;
-        $pct = 16.0;
-        $commission = 32.0;
-        return [$num, $w - $num - $amount - $pct - $commission, $amount, $pct, $commission];
+        $date = 23.0;
+        $amount = 30.0;
+        $rest = $w - $date - $amount;
+        return [$date, $rest * 0.42, $rest * 0.58, $amount];
     }
 
     public function commissionItemsHead(): void
     {
-        [$num, $desc, $amount, $pct, $commission] = $this->commissionColWidths();
+        [$date, $patient, $studies, $amount] = $this->commissionColWidths();
         $this->SetFillColor(...PDF_HEAD_BG);
         $this->SetFont('Helvetica', 'B', 7.5);
         $this->SetTextColor(75, 85, 99);
-        $this->Cell($num, 6.4, pdf_t('N°'), 0, 0, 'C', true);
-        $this->Cell($desc, 6.4, pdf_t('  PACIENTE / ESTUDIO'), 0, 0, 'L', true);
-        $this->Cell($amount, 6.4, pdf_t('MONTO'), 0, 0, 'R', true);
-        $this->Cell($pct, 6.4, pdf_t('%'), 0, 0, 'C', true);
-        $this->Cell($commission, 6.4, pdf_t('COMISIÓN  '), 0, 1, 'R', true);
+        $this->Cell($date, 6.4, pdf_t('FECHA'), 0, 0, 'C', true);
+        $this->Cell($patient, 6.4, pdf_t('  NOMBRE DEL PACIENTE'), 0, 0, 'L', true);
+        $this->Cell($studies, 6.4, pdf_t('  ESTUDIOS'), 0, 0, 'L', true);
+        $this->Cell($amount, 6.4, pdf_t('MONTO  '), 0, 1, 'R', true);
         $this->SetTextColor(...PDF_INK);
     }
 
-    public function commissionItemRowHeight(string $label): float
+    public function commissionItemRowHeight(string $patientName, string $studies): float
     {
-        [, $desc] = $this->commissionColWidths();
-        $lines = $this->wrapLines($label, $desc - 4, 'Helvetica', '', 8.6) ?: [''];
-        return max(7.0, count($lines) * 4.0 + 2.8);
+        [, $patientW, $studiesW] = $this->commissionColWidths();
+        $pLines = $this->wrapLines($patientName, $patientW - 4, 'Helvetica', '', 8.6) ?: [''];
+        $sLines = $this->wrapLines($studies, $studiesW - 4, 'Helvetica', '', 8.6) ?: [''];
+        return max(7.0, max(count($pLines), count($sLines)) * 4.0 + 2.8);
     }
 
-    public function commissionItemRow(int $n, string $patientName, string $studyName, float $amount, float $pct, float $commission, bool $zebra): void
+    public function commissionItemRow(string $dateLabel, string $patientName, string $studies, float $amount, bool $zebra): void
     {
-        [$numW, $desc, $amountW, $pctW, $commissionW] = $this->commissionColWidths();
-        $label = $patientName . ' — ' . $studyName;
-        $h = $this->commissionItemRowHeight($label);
+        [$dateW, $patientW, $studiesW, $amountW] = $this->commissionColWidths();
+        $h = $this->commissionItemRowHeight($patientName, $studies);
         $y = $this->GetY();
 
         if ($zebra) {
@@ -1199,23 +1296,22 @@ class SiriusDocPDF extends FPDF
         $this->SetFont('Helvetica', '', 9);
         $this->SetTextColor(...PDF_INK);
         $this->SetXY($this->left(), $y + 1.4);
-        $this->Cell($numW, 4.0, pdf_t((string)$n), 0, 0, 'C');
+        $this->Cell($dateW, 4.0, pdf_t($dateLabel), 0, 0, 'C');
 
-        $lines = $this->wrapLines($label, $desc - 4, 'Helvetica', '', 8.6) ?: [''];
-        $ny = $y + 1.4;
-        foreach ($lines as $line) {
-            $this->SetXY($this->left() + $numW + 2, $ny);
-            $this->Cell($desc - 2, 4.0, pdf_t($line), 0, 0, 'L');
-            $ny += 4.0;
+        $x = $this->left() + $dateW;
+        foreach ([[$patientW, $patientName], [$studiesW, $studies]] as [$colW, $text]) {
+            $ny = $y + 1.4;
+            foreach ($this->wrapLines($text, $colW - 4, 'Helvetica', '', 8.6) ?: [''] as $line) {
+                $this->SetXY($x + 2, $ny);
+                $this->Cell($colW - 2, 4.0, pdf_t($line), 0, 0, 'L');
+                $ny += 4.0;
+            }
+            $x += $colW;
         }
 
-        $this->SetXY($this->left() + $numW + $desc, $y + 1.4);
-        $this->Cell($amountW - 2, 4.0, pdf_t('$' . number_format($amount, 2)), 0, 0, 'R');
-        $this->SetXY($this->left() + $numW + $desc + $amountW, $y + 1.4);
-        $this->Cell($pctW, 4.0, pdf_t(rtrim(rtrim(number_format($pct, 2), '0'), '.') . '%'), 0, 0, 'C');
         $this->SetFont('Helvetica', 'B', 9);
-        $this->SetXY($this->left() + $numW + $desc + $amountW + $pctW, $y + 1.4);
-        $this->Cell($commissionW - 2, 4.0, pdf_t('$' . number_format($commission, 2)), 0, 0, 'R');
+        $this->SetXY($x, $y + 1.4);
+        $this->Cell($amountW - 2, 4.0, pdf_t('$' . number_format($amount, 2)), 0, 0, 'R');
 
         $this->SetXY($this->left(), $y + $h);
     }
@@ -1226,7 +1322,7 @@ class SiriusDocPDF extends FPDF
         $w = 80.0;
         $rowH = 8.0;
         $x = $this->right() - $w;
-        $this->ensureSpace($rowH + 4);
+        $this->ensureSpaceAboveFooter($rowH + 4);
         $y = $this->GetY();
 
         $this->SetFillColor(...PDF_BLUE);
@@ -2676,6 +2772,35 @@ function render_quote_logistics_page(SiriusDocPDF $pdf, array $items): void
 }
 
 /**
+ * Los estados de «Registro manual» hechos antes de guardar la fecha en cada línea no la traen en su copia:
+ * se toma de los registros que quedaron ligados al estado (si el paciente solo tiene una fecha ahí).
+ */
+function commission_fill_manual_dates(array $items, int $statementId): array
+{
+    if (!array_filter($items, static fn($i) => empty($i['entry_date']))) {
+        return $items;
+    }
+    $byPatient = [];
+    try {
+        $st = db()->prepare('SELECT patient_name, entry_date FROM commission_entries WHERE statement_id = ?');
+        $st->execute([$statementId]);
+        foreach ($st->fetchAll() as $r) {
+            $byPatient[(string)$r['patient_name']][(string)$r['entry_date']] = true;
+        }
+    } catch (Throwable $e) {
+        return $items;
+    }
+    foreach ($items as &$item) {
+        $dates = array_keys($byPatient[(string)($item['patient_name'] ?? '')] ?? []);
+        if (empty($item['entry_date']) && count($dates) === 1) {
+            $item['entry_date'] = $dates[0];
+        }
+    }
+    unset($item);
+    return $items;
+}
+
+/**
  * Dibuja el estado de cuenta de comisiones: barra de folio/periodo/médico o
  * concierge, tabla de partidas (paciente/estudio/monto/%/comisión) y la barra
  * de Total comisión. Sin firma, es un reporte interno, no un documento clínico.
@@ -2699,8 +2824,13 @@ function render_commission_pdf(array $statement, ?string $path = null): string
     } catch (Throwable $e) {
     }
 
+    if ($source === 'manual' && !empty($statement['id'])) {
+        $items = commission_fill_manual_dates($items, (int)$statement['id']);
+    }
+
     $lh = letterhead_config();
     $pdf = new SiriusDocPDF($lh, $clinicName);
+    $pdf->setPaymentStatus(!empty($statement['paid_at']), trim((string)($statement['payment_reference'] ?? '')));
 
     if ($source === 'image') {
         render_commission_referral_body($pdf, $statement, $partyName, $items);
@@ -2708,6 +2838,7 @@ function render_commission_pdf(array $statement, ?string $path = null): string
         render_commission_auto_body($pdf, $statement, $partyName, $partyLabel, $items);
     }
 
+    $pdf->closeDocument();
     if ($path) {
         $pdf->Output('F', $path);
         return $path;
@@ -2715,7 +2846,11 @@ function render_commission_pdf(array $statement, ?string $path = null): string
     return $pdf->Output('S');
 }
 
-/** Cuerpo del estado de cuenta "automático" (jalado de episodios ya capturados en Sirius): tabla N°/Paciente-Estudio/Monto/%/Comisión. */
+/**
+ * Cuerpo del estado de cuenta "automático" (jalado de admisiones ya capturadas en Sirius, o de
+ * registros manuales): una fila por visita del paciente con Fecha | Nombre del paciente | Estudios | Monto.
+ * El Monto es la comisión de esa visita (suma de la de sus estudios); no se imprime lo cobrado al paciente.
+ */
 function render_commission_auto_body(SiriusDocPDF $pdf, array $statement, string $partyName, string $partyLabel, array $items): void
 {
     $period = date('d/m/Y', strtotime((string)$statement['period_start'])) . ' – ' . date('d/m/Y', strtotime((string)$statement['period_end']));
@@ -2724,28 +2859,40 @@ function render_commission_auto_body(SiriusDocPDF $pdf, array $statement, string
         [$partyLabel, $partyName, null, null],
     ]);
 
-    $pdf->AddPage();
-    $pdf->markLastPage();
+    // Una fila por visita: los estudios de la misma admisión (o del mismo paciente y día, en lo manual) se juntan
+    $visits = [];
+    foreach ($items as $item) {
+        $rawDate = (string)($item['admission_date'] ?? $item['entry_date'] ?? '');
+        $patient = (string)($item['patient_name'] ?? '');
+        $key = !empty($item['episode_id']) ? 'e' . $item['episode_id'] : 'p' . $patient . '|' . substr($rawDate, 0, 10);
+        $visits[$key] ??= ['date' => $rawDate !== '' ? substr($rawDate, 0, 10) : '—', 'patient' => $patient, 'studies' => [], 'commission' => 0.0];
+        $study = (string)($item['study_name'] ?? '');
+        if ($study !== '') {
+            $visits[$key]['studies'][] = $study;
+        }
+        $visits[$key]['commission'] += (float)($item['commission_amount'] ?? 0);
+    }
 
-    $pdf->panelBar('Detalle de comisión', count($items) . ' partida(s)');
+    // Del más reciente al más antiguo, igual que en la ventana de Comisiones (el orden previo se conserva dentro de cada fecha)
+    $visits = array_values($visits);
+    usort($visits, static fn($a, $b) => strcmp($b['date'] === '—' ? '' : $b['date'], $a['date'] === '—' ? '' : $a['date']));
+
+    $pdf->footerOnLastPageOnly();
+    $pdf->AddPage();
+
+    $pdf->panelBar('Detalle de comisión', count($visits) . ' registro(s)');
     $pdf->commissionItemsHead();
     $i = 0;
-    $total = 0.0;
-    foreach ($items as $item) {
-        $patientName = (string)($item['patient_name'] ?? '');
-        $studyName = (string)($item['study_name'] ?? '');
-        $amount = (float)($item['amount_charged'] ?? 0);
-        $pct = (float)($item['commission_pct'] ?? 0);
-        $commission = (float)($item['commission_amount'] ?? 0);
-        $total += $commission;
-        $h = $pdf->commissionItemRowHeight($patientName . ' — ' . $studyName);
+    foreach ($visits as $v) {
+        $studies = implode(', ', $v['studies']);
+        $h = $pdf->commissionItemRowHeight($v['patient'], $studies);
         $pdf->ensureSpace($h, static fn($p) => $p->commissionItemsHead());
-        $pdf->commissionItemRow($i + 1, $patientName, $studyName, $amount, $pct, $commission, $i % 2 === 1);
+        $pdf->commissionItemRow($v['date'], $v['patient'], $studies, round($v['commission'], 2), $i % 2 === 1);
         $i++;
     }
     $pdf->Ln(6);
 
-    $pdf->commissionTotalsBox((float)($statement['total_commission'] ?? $total));
+    $pdf->commissionTotalsBox((float)($statement['total_commission'] ?? array_sum(array_column($visits, 'commission'))));
 }
 
 /**
@@ -2773,8 +2920,8 @@ function render_commission_referral_body(SiriusDocPDF $pdf, array $statement, st
         : ['Médico', $partyName, null, null];
     $pdf->setPatientInfo($infoRows);
 
+    $pdf->footerOnLastPageOnly();
     $pdf->AddPage();
-    $pdf->markLastPage();
 
     $pdf->panelBar('RELACIÓN DE PACIENTES REFERIDOS', 'Desglose de referencia — ' . count($items) . ' paciente(s)');
     $pdf->referralItemsHead();

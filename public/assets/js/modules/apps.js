@@ -1878,19 +1878,48 @@ async function renderCommissionList(root) {
       </section>
 
       <section>
-        <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+        <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <p class="text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Estatus
+              <select id="c-status" class="${inputCls} !w-auto normal-case">
+                <option value="">Todos</option>
+                <option value="pending">Pendiente de pago</option>
+                <option value="paid">Pagado</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Generados en
+              <select id="c-period" class="${inputCls} !w-auto normal-case"></select>
+            </label>
+          </div>
+        </div>
         <div id="c-list">${spinner()}</div>
       </section>
     </div>`;
 
   const input = root.querySelector('#c-search');
+  // Abre en el bimestre en curso (estados generados en él) para no listar todo el historial
+  const periods = bimesterOptions();
+  const periodSel = root.querySelector('#c-period');
+  periodSel.innerHTML = periods.map((o) => `<option value="${o.key}">${escapeHtml(o.label)}${o.done ? '' : ' · en curso'}</option>`).join('')
+    + '<option value="all">Todos los periodos</option>';
+  periodSel.value = periods[0].key;
+  const statusSel = root.querySelector('#c-status');
   const load = async (resetPage = true) => {
     if (resetPage) commissionFilters.page = 1;
     commissionFilters.q = input.value.trim();
+    const period = periods.find((o) => o.key === periodSel.value);
+    commissionFilters.from = period?.from;
+    commissionFilters.to = period?.to;
+    commissionFilters.status = statusSel.value;
     commissionListState = await apiGet('commissions/list', commissionFilters);
     paintCommissionList(root.querySelector('#c-list'), load);
   };
   input.addEventListener('input', debounce(() => load(), 300));
+  periodSel.addEventListener('change', () => load());
+  statusSel.addEventListener('change', () => load());
 
   root.querySelector('#btn-new-entry').addEventListener('click', () => openCommissionEntryModal(null, null));
 
@@ -1925,8 +1954,8 @@ function paintCommissionList(box, load) {
   if (!items.length) {
     box.innerHTML = `
       <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
-        <p class="text-sm font-medium text-slate-600">Sin estados de cuenta generados</p>
-        <p class="mt-1 text-xs text-slate-400">Crea el primero con el botón de arriba.</p>
+        <p class="text-sm font-medium text-slate-600">${commissionFilters.from || commissionFilters.status ? 'Sin estados de cuenta con ese periodo y estatus' : 'Sin estados de cuenta generados'}</p>
+        <p class="mt-1 text-xs text-slate-400">${commissionFilters.from || commissionFilters.status ? 'Cambia el periodo o el estatus arriba, o crea uno nuevo con el botón de arriba.' : 'Crea el primero con el botón de arriba.'}</p>
       </div>`;
     return;
   }
@@ -1941,6 +1970,7 @@ function paintCommissionList(box, load) {
               <th class="px-4 py-3">Médico / Concierge</th>
               <th class="hidden px-4 py-3 sm:table-cell">Periodo</th>
               <th class="px-4 py-3 text-right">Comisión</th>
+              <th class="px-4 py-3">Pago</th>
               <th class="px-4 py-3 text-right">Acciones</th>
             </tr>
           </thead>
@@ -1953,14 +1983,16 @@ function paintCommissionList(box, load) {
                 </td>
                 <td class="hidden px-4 py-3 text-slate-500 sm:table-cell">${escapeHtml(s.period_start)} — ${escapeHtml(s.period_end)}</td>
                 <td class="px-4 py-3 text-right font-semibold text-slate-700">$${Number(s.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                <td class="px-4 py-3">${commissionPayCell(s)}</td>
                 <td class="px-4 py-3">
-                  <div class="flex justify-end gap-1">
+                  <div class="flex items-center justify-end gap-1">
+                    ${commissionPayToggle(s, s.id)}
                     <a href="comision.php?id=${s.id}" target="_blank" title="Ver PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('eye', 'h-4 w-4')}</a>
                     <a href="comision.php?id=${s.id}&download=1" title="Descargar PDF"
                        class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-indigo-600">${icon('download', 'h-4 w-4')}</a>
-                    <button type="button" data-del-statement="${s.id}" title="Eliminar"
-                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>
+                    ${s.paid_at ? '' : `<button type="button" data-del-statement="${s.id}" title="Eliminar"
+                            class="flex h-8 w-8 items-center justify-center rounded-lg text-slate-500 hover:bg-red-50 hover:text-red-600">${icon('trash', 'h-4 w-4')}</button>`}
                   </div>
                 </td>
               </tr>`).join('')}
@@ -1976,6 +2008,8 @@ function paintCommissionList(box, load) {
 
   box.querySelector('#pg-prev')?.addEventListener('click', () => { commissionFilters.page--; load(false); });
   box.querySelector('#pg-next')?.addEventListener('click', () => { commissionFilters.page++; load(false); });
+
+  bindCommissionPayChips(box, (id) => items.find((s) => s.id === id), () => load(false));
 
   box.querySelectorAll('[data-del-statement]').forEach((btn) =>
     btn.addEventListener('click', async () => {
@@ -1996,6 +2030,131 @@ function paintCommissionList(box, load) {
     }));
 }
 
+const isCommissionAdmin = () => ['administrador', 'developper'].includes(ctx.user.role);
+
+/** Estatus de pago de un estado de cuenta: verde «Pagado» o amarillo «Pendiente de pago» (solo lectura). */
+function commissionStatusBadge(s, { withFolio = false } = {}) {
+  const paid = !!s.paid_at;
+  return `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${paid ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">${paid ? 'Pagado' : 'Pendiente de pago'}${withFolio && s.folio ? ' · ' + escapeHtml(s.folio) : ''}</span>`;
+}
+
+/**
+ * Decide el estatus de pago de un estado de cuenta (solo administradores): «Pagado» pide la clave de rastreo
+ * SPEI (si ya está pagado, abre el pago para corregir la clave) y «Pendiente» lo regresa a pendiente de pago.
+ */
+function commissionPayToggle(s, id) {
+  if (!isCommissionAdmin()) return '';
+  const paid = !!s.paid_at;
+  return `<div class="mr-1 inline-flex overflow-hidden rounded-lg text-xs font-semibold ring-1 ring-slate-300" role="group" aria-label="Estatus de pago">
+    <button type="button" data-pay-statement="${id}" title="${paid ? 'Pagado: clic para corregir la clave de rastreo SPEI' : 'Marcar como pagado (pide la clave de rastreo SPEI)'}"
+            class="px-2.5 py-1.5 ${paid ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600 hover:bg-emerald-50 hover:text-emerald-700'}">Pagado</button>
+    <button type="button" data-unpay-statement="${id}" ${paid ? '' : 'disabled'} title="${paid ? 'Regresar a pendiente de pago' : 'Pendiente de pago'}"
+            class="border-l border-slate-300 px-2.5 py-1.5 ${paid ? 'bg-white text-slate-600 hover:bg-amber-50 hover:text-amber-700' : 'bg-amber-500 text-white'}">Pendiente</button>
+  </div>`;
+}
+
+/** Estatus + clave SPEI, apilados (celda "Pago" del listado). */
+function commissionPayCell(s) {
+  return `<div class="flex flex-col items-start gap-1">
+    ${commissionStatusBadge(s)}
+    ${s.paid_at && s.payment_reference ? `<span class="font-mono text-[11px] text-slate-500">SPEI ${escapeHtml(s.payment_reference)}</span>` : ''}
+  </div>`;
+}
+
+/** Conecta los botones de pago de `box`; `find(id)` devuelve el estado de cuenta (id, folio, party_name, paid_at, payment_reference). */
+function bindCommissionPayChips(box, find, onDone) {
+  box.querySelectorAll('[data-pay-statement]').forEach((btn) =>
+    btn.addEventListener('click', () => {
+      const statement = find(+btn.dataset.payStatement);
+      if (statement) openCommissionPaymentModal(statement, onDone);
+    }));
+  box.querySelectorAll('[data-unpay-statement]').forEach((btn) =>
+    btn.addEventListener('click', async () => {
+      const statement = find(+btn.dataset.unpayStatement);
+      if (!statement) return;
+      const ok = await confirmDialog('Marcar como pendiente de pago', `El estado de cuenta ${statement.folio || ''} vuelve a «Pendiente de pago» y se borra la clave de rastreo SPEI.`, { confirmLabel: 'Marcar pendiente' });
+      if (!ok) return;
+      try {
+        await apiPost('commissions/statement_unpay', { id: statement.id });
+        toast('Marcado como pendiente de pago');
+        if (onDone) onDone();
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }));
+}
+
+/**
+ * Cierre del estado de cuenta: "Pagado" pide la clave de rastreo SPEI de la transferencia, que se imprime en el
+ * PDF arriba del pie de la última hoja. Si ya está pagado, el mismo modal corrige la clave o quita el pago.
+ */
+function openCommissionPaymentModal(statement, onDone) {
+  const paid = !!statement.paid_at;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = `
+    <div class="space-y-4">
+      <p class="text-sm text-slate-600">
+        Estado de cuenta <span class="font-mono font-semibold text-slate-800">${escapeHtml(statement.folio || '')}</span>
+        ${statement.party_name ? ' · ' + escapeHtml(statement.party_name) : ''}
+      </p>
+      ${paid ? `<p class="rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 ring-1 ring-emerald-200">Pagado el ${escapeHtml(fmtDateTime(statement.paid_at))}</p>` : ''}
+      <div>
+        <label class="${labelCls}" for="pay-ref">Clave de rastreo SPEI</label>
+        <input type="text" id="pay-ref" maxlength="60" autocomplete="off" autocapitalize="characters" spellcheck="false"
+               value="${escapeHtml(statement.payment_reference || '')}" placeholder="Ej. MBAN01002611030012345678" class="${inputCls} font-mono">
+        <p class="mt-1 text-xs text-slate-400">Aparece en el estado de cuenta, arriba del pie de la última hoja, y el PDF queda como «Pagado».</p>
+      </div>
+    </div>`;
+  const input = wrap.querySelector('#pay-ref');
+
+  const save = async (close, btn) => {
+    const reference = input.value.replace(/\s+/g, '');
+    if (!/^[A-Za-z0-9._\-/]{4,60}$/.test(reference)) {
+      toast('Escribe la clave de rastreo SPEI (de 4 a 60 letras, números o guiones)', 'error');
+      input.focus();
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await apiPost('commissions/statement_pay', { id: statement.id, payment_reference: reference });
+      toast(paid ? 'Clave de rastreo actualizada' : 'Estado de cuenta marcado como pagado');
+      close();
+      if (onDone) onDone();
+    } catch (e) {
+      toast(e.message, 'error');
+      btn.disabled = false;
+    }
+  };
+
+  const actions = [{ label: 'Cancelar' }];
+  if (paid) {
+    actions.unshift({
+      label: 'Quitar pago', danger: true,
+      onClick: async (close, btn) => {
+        const ok = await confirmDialog('Quitar pago', 'El estado de cuenta vuelve a «Pendiente de pago» y se borra la clave de rastreo.', { confirmLabel: 'Quitar pago', danger: true });
+        if (!ok) return;
+        btn.disabled = true;
+        try {
+          await apiPost('commissions/statement_unpay', { id: statement.id });
+          toast('Pago quitado');
+          close();
+          if (onDone) onDone();
+        } catch (e) {
+          toast(e.message, 'error');
+          btn.disabled = false;
+        }
+      },
+    });
+  }
+  actions.push({ label: paid ? 'Guardar clave' : 'Marcar como pagado', primary: true, onClick: save });
+
+  modal({ title: paid ? 'Pago registrado' : 'Marcar como pagado', content: wrap, size: 'max-w-md', actions });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') wrap.closest('.fixed')?.querySelector('.modal-actions button:last-child')?.click();
+  });
+  setTimeout(() => input.focus(), 50);
+}
+
 function defaultPeriodStart() {
   const d = new Date();
   d.setDate(1);
@@ -2003,6 +2162,23 @@ function defaultPeriodStart() {
 }
 function defaultPeriodEnd() {
   return new Date().toISOString().slice(0, 10);
+}
+
+const MONTH_NAMES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const localYmd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+/** Bimestres (los estados de cuenta se hacen cada dos meses) de este año y el anterior, del más reciente al más antiguo. `done`: ya terminó. */
+function bimesterOptions(today = new Date()) {
+  const opts = [];
+  for (let y = today.getFullYear(); y >= today.getFullYear() - 1; y--) {
+    for (let b = 5; b >= 0; b--) {
+      const start = new Date(y, b * 2, 1);
+      if (start > today) continue;
+      const end = new Date(y, b * 2 + 2, 0); // día 0 del mes siguiente = último día del segundo mes
+      opts.push({ key: `${y}-${b}`, label: `${MONTH_NAMES[b * 2]} – ${MONTH_NAMES[b * 2 + 1]} ${y}`, from: localYmd(start), to: localYmd(end), done: end < today });
+    }
+  }
+  return opts;
 }
 
 let commissionFormMode = 'auto';
@@ -2048,13 +2224,16 @@ async function renderCommissionForm(root) {
 
 /** Selector de médico/concierge + rango de fechas → vista previa con incluir/excluir → generar PDF. */
 function renderCommissionFormAuto(root, doctors, concierge) {
+  const periods = bimesterOptions();
   let lines = [];
   let saving = false;
+  let loaded = false;
+  let seq = 0; // descarta respuestas viejas si el usuario cambia de médico o periodo mientras carga
 
   root.innerHTML = `
     <div class="space-y-5">
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div>
             <label class="${labelCls}">Tipo</label>
             <select id="c-party-type" class="${inputCls}">
@@ -2062,22 +2241,29 @@ function renderCommissionFormAuto(root, doctors, concierge) {
               <option value="concierge">Concierge</option>
             </select>
           </div>
-          <div class="sm:col-span-2 lg:col-span-1">
+          <div>
             <label class="${labelCls}">Médico / Concierge</label>
             <select id="c-party-id" class="${inputCls}"></select>
           </div>
+          <div class="sm:col-span-2 lg:col-span-1">
+            <label class="${labelCls}">Periodo</label>
+            <select id="c-period" class="${inputCls}">
+              ${periods.map((o) => `<option value="${o.key}">${o.label}${o.done ? '' : ' (en curso)'}</option>`).join('')}
+              <option value="custom">Otro rango de fechas…</option>
+            </select>
+          </div>
+        </div>
+        <div class="mt-4 grid grid-cols-2 gap-4 sm:max-w-md">
           <div>
             <label class="${labelCls}">Desde</label>
-            <input type="date" id="c-from" value="${defaultPeriodStart()}" class="${inputCls}">
+            <input type="date" id="c-from" class="${inputCls}">
           </div>
           <div>
             <label class="${labelCls}">Hasta</label>
-            <input type="date" id="c-to" value="${defaultPeriodEnd()}" class="${inputCls}">
+            <input type="date" id="c-to" class="${inputCls}">
           </div>
         </div>
-        <div class="mt-4">
-          <button id="btn-preview" type="button" class="rounded-lg bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Vista previa</button>
-        </div>
+        <p id="c-status" class="mt-3 text-xs text-slate-500" aria-live="polite"></p>
       </section>
 
       <div id="c-lines-box"></div>
@@ -2092,22 +2278,42 @@ function renderCommissionFormAuto(root, doctors, concierge) {
 
   const typeSel = root.querySelector('#c-party-type');
   const partySel = root.querySelector('#c-party-id');
+  const periodSel = root.querySelector('#c-period');
+  const fromInput = root.querySelector('#c-from');
+  const toInput = root.querySelector('#c-to');
+  const statusEl = root.querySelector('#c-status');
   const linesBox = root.querySelector('#c-lines-box');
   const genBtn = root.querySelector('#btn-generate');
 
+  const emptyBox = (html) => `<div class="rounded-2xl bg-white px-6 py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">${html}</div>`;
+
   const paintPartyOptions = () => {
-    const opts = typeSel.value === 'concierge'
+    const isConcierge = typeSel.value === 'concierge';
+    const opts = isConcierge
       ? concierge.map((c) => `<option value="${c.id}">${escapeHtml(c.name)}</option>`)
       : doctors.map((d) => `<option value="${d.id}">${escapeHtml(d.name)}${d.concierge_name ? ' — ' + escapeHtml(d.concierge_name) : ''}</option>`);
-    partySel.innerHTML = opts.join('') || '<option value="">— Sin registros —</option>';
+    partySel.innerHTML = opts.length
+      ? `<option value="">— Elige ${isConcierge ? 'un concierge' : 'un médico'} —</option>${opts.join('')}`
+      : '<option value="">— Sin registros —</option>';
   };
-  typeSel.addEventListener('change', paintPartyOptions);
-  paintPartyOptions();
+
+  // El periodo elegido llena las fechas; si se editan a mano, el selector pasa a "Otro rango".
+  const applyPeriod = () => {
+    const o = periods.find((x) => x.key === periodSel.value);
+    if (o) { fromInput.value = o.from; toInput.value = o.to; }
+  };
+  const syncPeriodFromDates = () => {
+    const o = periods.find((x) => x.from === fromInput.value && x.to === toInput.value);
+    periodSel.value = o ? o.key : 'custom';
+  };
 
   const paintLines = () => {
     genBtn.disabled = !lines.length;
     if (!lines.length) {
-      linesBox.innerHTML = '<div class="rounded-2xl bg-white py-10 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-200">Sin vista previa todavía.</div>';
+      linesBox.innerHTML = emptyBox(loaded
+        ? `No hay estudios de laboratorio de esta persona entre ${escapeHtml(fromInput.value)} y ${escapeHtml(toInput.value)}.<br>
+           <span class="text-xs">Revisa que en Admisión se haya capturado su nombre como médico, o prueba con otro periodo.</span>`
+        : 'Elige un médico y un periodo: los estudios aparecen aquí solos.');
       return;
     }
     const total = lines.reduce((sum, l) => sum + (l.commission_included ? l.commission_amount : 0), 0);
@@ -2130,7 +2336,8 @@ function renderCommissionFormAuto(root, doctors, concierge) {
                   <td class="px-3 py-2"><input type="checkbox" data-toggle="${l.id}" ${l.commission_included ? 'checked' : ''} class="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"></td>
                   <td class="px-3 py-2">
                     <span class="block font-medium text-slate-800">${escapeHtml(l.patient_name)}</span>
-                    <span class="block text-xs text-slate-500">${escapeHtml(l.study_name)} · ${escapeHtml(l.file_number)}</span>
+                    <span class="block text-xs text-slate-500">${escapeHtml(l.study_name)} · ${escapeHtml(l.file_number)} · ${escapeHtml(String(l.admission_date).slice(0, 10))}</span>
+                    ${l.typed_doctor ? `<span class="block text-xs text-amber-600">Médico escrito en Admisión: ${escapeHtml(l.typed_doctor)}</span>` : ''}
                   </td>
                   <td class="px-3 py-2 text-right text-slate-700">$${Number(l.amount_charged).toFixed(2)}</td>
                   <td class="px-3 py-2 text-center text-slate-500">${Number(l.commission_pct).toFixed(1)}%</td>
@@ -2159,27 +2366,52 @@ function renderCommissionFormAuto(root, doctors, concierge) {
         }
       }));
   };
-  paintLines();
 
   const currentParams = () => ({
     party_type: typeSel.value,
     party_id: +partySel.value || 0,
-    period_start: root.querySelector('#c-from').value,
-    period_end: root.querySelector('#c-to').value,
+    period_start: fromInput.value,
+    period_end: toInput.value,
   });
 
-  root.querySelector('#btn-preview').addEventListener('click', async () => {
+  /** Carga sola la vista previa en cuanto hay médico y un rango de fechas válido. */
+  const loadPreview = async () => {
     const p = currentParams();
-    if (!p.party_id) { toast('Elige un médico o concierge', 'error'); return; }
+    const mine = ++seq;
+    lines = [];
+    loaded = false;
+    statusEl.textContent = '';
+    if (!p.party_id || !p.period_start || !p.period_end || p.period_start > p.period_end) {
+      paintLines();
+      if (p.period_start > p.period_end) statusEl.textContent = 'La fecha «Desde» no puede ser posterior a «Hasta».';
+      return;
+    }
+    genBtn.disabled = true;
+    statusEl.textContent = 'Buscando estudios…';
     try {
       const res = await apiGet('commissions/preview', p);
+      if (mine !== seq) return;
       lines = res.lines;
-      paintLines();
-      if (!lines.length) toast('No hay estudios comisionables en ese periodo', 'info');
+      loaded = true;
+      statusEl.textContent = '';
     } catch (e) {
+      if (mine !== seq) return;
+      statusEl.textContent = '';
       toast(e.message, 'error');
     }
-  });
+    paintLines();
+  };
+
+  typeSel.addEventListener('change', () => { paintPartyOptions(); loadPreview(); });
+  partySel.addEventListener('change', loadPreview);
+  periodSel.addEventListener('change', () => { applyPeriod(); loadPreview(); });
+  [fromInput, toInput].forEach((el) => el.addEventListener('change', () => { syncPeriodFromDates(); loadPreview(); }));
+
+  // Arranca en el último bimestre ya terminado (el que toca facturar); si no hay, en el primero.
+  periodSel.value = (periods.find((o) => o.done) || periods[0]).key;
+  applyPeriod();
+  paintPartyOptions();
+  paintLines();
 
   genBtn.addEventListener('click', async () => {
     if (saving) return;
@@ -2647,8 +2879,20 @@ async function renderCommissionDoctorDetail(root, doctorId) {
           ${icon('plus', 'h-4 w-4')} Nuevo registro
         </button>
       </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <label for="cd-period" class="text-xs font-semibold uppercase tracking-wide text-slate-500">Periodo</label>
+        <select id="cd-period" class="${inputCls} !w-auto"></select>
+      </div>
+      <div id="cd-statements"></div>
       <div id="cd-list">${spinner()}</div>
     </div>`;
+
+  // Se abre en el bimestre en curso para no cargar la lista completa; los anteriores se eligen aquí
+  const periods = bimesterOptions();
+  const periodSel = root.querySelector('#cd-period');
+  periodSel.innerHTML = periods.map((o) => `<option value="${o.key}">${escapeHtml(o.label)}${o.done ? '' : ' · en curso'}</option>`).join('')
+    + '<option value="all">Todos los periodos</option>';
+  periodSel.value = periods[0].key;
 
   const { doctors } = await apiGet('commissions/parties');
   const doctor = doctors.find((d) => d.id === doctorId);
@@ -2659,20 +2903,65 @@ async function renderCommissionDoctorDetail(root, doctorId) {
   }
 
   const load = async () => {
-    const { entries } = await apiGet('commissions/entries_list', { doctor_id: doctorId });
-    paintCommissionEntries(root.querySelector('#cd-list'), entries, load, doctorId);
+    const period = periods.find((o) => o.key === periodSel.value);
+    const [{ entries, pending_outside: pendingOutside }, statementsRes] = await Promise.all([
+      apiGet('commissions/entries_list', { doctor_id: doctorId, from: period?.from, to: period?.to }),
+      apiGet('commissions/list', { party_type: 'doctor', party_id: doctorId, per_page: 100 }),
+    ]);
+    // Los del periodo elegido y, siempre, los que siguen pendientes de pago (son los que hay que cerrar)
+    const statements = statementsRes.items.filter((x) => !x.paid_at || !period || (x.period_start <= period.to && x.period_end >= period.from));
+    paintDoctorStatements(root.querySelector('#cd-statements'), statements, load);
+    paintCommissionEntries(root.querySelector('#cd-list'), entries, load, doctorId, {
+      doctorName: doctor.name,
+      periodLabel: period ? period.label : '',
+      pendingOutside: pendingOutside || 0,
+      showAll: () => { periodSel.value = 'all'; load(); },
+    });
   };
+  periodSel.addEventListener('change', () => { root.querySelector('#cd-list').innerHTML = spinner(); load(); });
   root.querySelector('#cd-new').addEventListener('click', () => openCommissionEntryModal(null, doctorId, load));
   await load();
 }
 
-function paintCommissionEntries(box, entries, load, doctorId) {
+/** Estados de cuenta del médico con su estatus de pago y, para el administrador, el botón del corte. */
+function paintDoctorStatements(box, statements, load) {
+  if (!statements.length) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `
+    <p class="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">Estados de cuenta</p>
+    <div class="space-y-2">
+      ${statements.map((x) => `
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+          <span class="font-mono text-xs font-semibold text-slate-700">${escapeHtml(x.folio)}</span>
+          <span class="text-xs text-slate-500">${escapeHtml(x.period_start)} — ${escapeHtml(x.period_end)}</span>
+          <span class="text-sm font-semibold text-slate-700">$${Number(x.total_commission).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
+          ${commissionStatusBadge(x)}
+          ${x.paid_at && x.payment_reference ? `<span class="font-mono text-[11px] text-slate-500">SPEI ${escapeHtml(x.payment_reference)}</span>` : ''}
+          <span class="ml-auto flex items-center gap-2">
+            <a href="comision.php?id=${x.id}" target="_blank" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500">Ver PDF</a>
+            ${commissionPayToggle(x, x.id)}
+          </span>
+        </div>`).join('')}
+    </div>`;
+  bindCommissionPayChips(box, (id) => statements.find((x) => x.id === id), load);
+}
+
+function paintCommissionEntries(box, entries, load, doctorId, { doctorName = '', periodLabel = '', pendingOutside = 0, showAll = null } = {}) {
+  const outsideNote = pendingOutside ? `
+    <div class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-amber-50 px-4 py-2.5 text-sm text-amber-800 ring-1 ring-amber-200">
+      <span>Hay ${pendingOutside} registro(s) pendiente(s) en otros periodos.</span>
+      <button type="button" id="cd-show-all" class="font-semibold underline hover:text-amber-900">Ver todos los periodos</button>
+    </div>` : '';
+
   if (!entries.length) {
     box.innerHTML = `
       <div class="rounded-2xl bg-white py-14 text-center shadow-sm ring-1 ring-slate-200">
-        <p class="text-sm font-medium text-slate-600">Sin registros todavía</p>
+        <p class="text-sm font-medium text-slate-600">${periodLabel ? 'Sin registros en ' + escapeHtml(periodLabel) : 'Sin registros todavía'}</p>
         <p class="mt-1 text-xs text-slate-400">Agrega el primero con el botón de arriba.</p>
-      </div>`;
+      </div>${outsideNote}`;
+    box.querySelector('#cd-show-all')?.addEventListener('click', () => showAll && showAll());
     return;
   }
 
@@ -2704,8 +2993,8 @@ function paintCommissionEntries(box, entries, load, doctorId) {
                 <td class="px-4 py-3 text-right font-semibold text-slate-800">$${Number(e.total_commission).toFixed(2)}</td>
                 <td class="px-4 py-3">
                   ${e.statement_id
-                    ? `<span class="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Facturado · ${escapeHtml(e.folio)}</span>`
-                    : '<span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">Pendiente</span>'}
+                    ? commissionStatusBadge(e, { withFolio: true })
+                    : '<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Sin estado de cuenta</span>'}
                 </td>
                 <td class="px-4 py-3">
                   ${e.statement_id ? '' : `
@@ -2720,9 +3009,11 @@ function paintCommissionEntries(box, entries, load, doctorId) {
       </div>
     </div>
     <div class="mt-3 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-2.5 ring-1 ring-slate-200">
-      <span class="text-sm font-semibold text-slate-600">Total pendiente</span>
+      <span class="text-sm font-semibold text-slate-600">Total pendiente${periodLabel ? ' · ' + escapeHtml(periodLabel) : ''}</span>
       <span class="text-base font-bold text-slate-800">$${pendingTotal.toFixed(2)}</span>
-    </div>`;
+    </div>${outsideNote}`;
+
+  box.querySelector('#cd-show-all')?.addEventListener('click', () => showAll && showAll());
 
   box.querySelectorAll('[data-edit-entry]').forEach((btn) =>
     btn.addEventListener('click', () => {

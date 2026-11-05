@@ -407,6 +407,238 @@ test('imágenes y notas a mano de una tarea: se suben, se enlazan al guardar y s
     eq(403, $deny['status'], $deny['body']);
 });
 
+echo "\nComisiones por periodo\n";
+$comm = (function () use ($admin, &$csrf) {
+    $doctor = function (string $name) use ($admin, &$csrf): int {
+        $r = $admin->json('POST', '/api/index.php?r=vinculacion/doctors_save', ['name' => $name], $csrf);
+        eq(200, $r['status'], $r['body']);
+        return (int)$r['json']['data']['id'];
+    };
+    $studies = fn(array $lines) => ['study_lines' => array_map(fn($l) => ['study_name' => $l[0], 'amount_charged' => $l[1]], $lines)];
+    $params = fn(int $doctorId) => ['party_type' => 'doctor', 'party_id' => $doctorId, 'period_start' => date('Y-m-d', strtotime('-1 day')), 'period_end' => date('Y-m-d', strtotime('+1 day'))];
+    $preview = function (int $doctorId) use ($admin, $params): array {
+        $r = $admin->json('GET', '/api/index.php?r=commissions/preview&' . http_build_query($params($doctorId)), null);
+        eq(200, $r['status'], $r['body']);
+        return $r['json']['data'];
+    };
+    return compact('doctor', 'studies', 'params', 'preview');
+})();
+test('una admisión del asistido (nombre escrito, estudios sin grupo) entra a la cuenta del médico y se liga al guardar', function () use ($admin, &$csrf, $createLab, $comm, $pdo) {
+    $docId = $comm['doctor']('Rodolfo Ramírez del Pilar');
+    $ep = $createLab($admin, $csrf, ['referring_doctor' => 'Dr. Rodolfo Ramírez', 'assisted' => true] + $comm['studies']([['Biometría hemática', 400], ['FilmArray GI', 0]]));
+    eq($docId, (int)$pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep)->fetchColumn(), 'el nombre escrito debía ligarse al único médico que coincide');
+    $ep2 = $createLab($admin, $csrf, ['referring_doctor' => 'Dr. Otro Nombre'] + $comm['studies']([['Glucosa', 100]]));
+    ok($pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep2)->fetchColumn() === null, 'un nombre sin coincidencia no se liga');
+
+    $d = $comm['preview']($docId);
+    eq(['Biometría hemática', 'FilmArray GI'], array_column($d['lines'], 'study_name'));
+    eq([40.0, 750.0], array_map('floatval', array_column($d['lines'], 'commission_amount')), 'clínico 10%; FilmArray monto fijo');
+    eq(790.0, (float)$d['total']);
+});
+test('las admisiones capturadas antes de dar de alta al médico también se encuentran por el nombre escrito', function () use ($admin, &$csrf, $createLab, $comm, $pdo) {
+    $ep = $createLab($admin, $csrf, ['referring_doctor' => 'Mariana Pérez Gómez'] + $comm['studies']([['Perfil lipídico', 500]]));
+    ok($pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep)->fetchColumn() === null);
+    $docId = $comm['doctor']('Mariana Pérez Gómez');
+    $d = $comm['preview']($docId);
+    eq(1, count($d['lines']), 'debía aparecer la admisión anterior');
+    eq(50.0, (float)$d['lines'][0]['commission_amount']);
+    eq('Mariana Pérez Gómez', $d['lines'][0]['typed_doctor'], 'se avisa que el médico fue escrito a mano');
+});
+test('si el nombre escrito encaja con dos médicos no se le asigna a ninguno', function () use ($admin, &$csrf, $createLab, $comm, $pdo) {
+    $a = $comm['doctor']('Ana López Ruiz');
+    $b = $comm['doctor']('Ana López Soto');
+    $ep = $createLab($admin, $csrf, ['referring_doctor' => 'Dra. Ana López'] + $comm['studies']([['Glucosa', 100]]));
+    ok($pdo->query('SELECT linked_doctor_id FROM episodes WHERE id = ' . $ep)->fetchColumn() === null);
+    eq(0, count($comm['preview']($a)['lines']));
+    eq(0, count($comm['preview']($b)['lines']));
+});
+test('el estado de cuenta por periodo se genera con folio y trae el desglose', function () use ($admin, &$csrf, $comm, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $r = $admin->json('POST', '/api/index.php?r=commissions/save', $comm['params']($docId), $csrf);
+    eq(200, $r['status'], $r['body']);
+    $g = $admin->json('GET', '/api/index.php?r=commissions/get&id=' . $r['json']['data']['id'], null)['json']['data']['statement'];
+    eq(790.0, (float)$g['total_commission']);
+    eq(2, count($g['lines']['items']));
+});
+test('el PDF del estado de cuenta trae Fecha, Nombre del paciente, Estudios y Monto, y el folio de página', function () use ($admin, $pdo) {
+    $id = (int)$pdo->query('SELECT MAX(id) FROM commission_statements')->fetchColumn();
+    $r = $admin->req('GET', '/comision.php?id=' . $id);
+    ok(str_starts_with($r['body'], '%PDF'), 'comision.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/comision_' . $id . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    $txt = (string)pdf_extract_text($tmp);
+    foreach (['FECHA', 'NOMBRE DEL PACIENTE', 'ESTUDIOS', 'MONTO', 'gina 1 de 1'] as $present) {
+        ok(str_contains($txt, $present), "debía aparecer «{$present}» en el PDF");
+    }
+    foreach (['PACIENTE / ESTUDIO', 'COMISI'] as $absent) {
+        ok(!str_contains($txt, $absent) || $absent === 'COMISI' && str_contains($txt, 'Total comisi'), "no debía aparecer «{$absent}» como columna");
+    }
+    ok(str_contains($txt, 'Biometr') && str_contains($txt, 'FilmArray GI'), 'los estudios de una misma visita van juntos en un renglón');
+});
+
+test('un estado manual hecho antes de guardar la fecha la toma de sus registros y la imprime como la ventana (AAAA-MM-DD)', function () use ($admin, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $items = [['patient_name' => 'Paciente Manual Viejo', 'study_name' => 'FILM ARRAY GASTROINTESTINAL MULTIPLEX', 'amount_charged' => 5300, 'commission_pct' => 14.2, 'commission_amount' => 750]];
+    $pdo->prepare("INSERT INTO commission_statements (folio, party_type, party_id, period_start, period_end, `lines`, total_commission, created_by) VALUES ('010126-77', 'doctor', ?, '2026-10-01', '2026-10-31', ?, 750, 1)")
+        ->execute([$docId, json_encode(['source' => 'manual', 'party_name' => 'Rodolfo Ramírez del Pilar', 'items' => $items], JSON_UNESCAPED_UNICODE)]);
+    $id = (int)$pdo->lastInsertId();
+    $pdo->prepare("INSERT INTO commission_entries (doctor_id, patient_name, entry_date, studies, total_amount, total_commission, statement_id) VALUES (?, 'Paciente Manual Viejo', '2026-10-28', '[]', 5300, 750, ?)")
+        ->execute([$docId, $id]);
+    $r = $admin->req('GET', '/comision.php?id=' . $id);
+    ok(str_starts_with($r['body'], '%PDF'), 'comision.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/comision_' . $id . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    $txt = (string)pdf_extract_text($tmp);
+    ok(str_contains($txt, '2026-10-28'), 'debía aparecer la fecha 2026-10-28 del registro original');
+});
+
+$commPdfText = function (int $id) use ($admin): string {
+    $r = $admin->req('GET', '/comision.php?id=' . $id);
+    ok(str_starts_with($r['body'], '%PDF'), 'comision.php no devolvió un PDF (HTTP ' . $r['status'] . ')');
+    $tmp = tests_tmp_dir() . '/comision_pago_' . $id . '_' . mt_rand() . '.pdf';
+    file_put_contents($tmp, $r['body']);
+    return (string)pdf_extract_text($tmp);
+};
+test('un estado de cuenta sin pagar dice «Pendiente de pago» y no lleva clave SPEI', function () use ($pdo, $commPdfText) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    $txt = $commPdfText($id);
+    ok(stripos($txt, 'Pendiente de pago') !== false, 'debía decir Pendiente de pago');
+    ok(!str_contains($txt, 'rastreo'), 'no debía traer clave de rastreo');
+});
+test('marcar pagado exige la clave de rastreo SPEI y la imprime junto con el estatus «Pagado»', function () use ($admin, &$csrf, $pdo, $commPdfText) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    foreach (['', 'ab', 'clave con $ raros'] as $bad) {
+        eq(422, $admin->json('POST', '/api/index.php?r=commissions/statement_pay', ['id' => $id, 'payment_reference' => $bad], $csrf)['status'], "«{$bad}» no debía aceptarse");
+    }
+    $r = $admin->json('POST', '/api/index.php?r=commissions/statement_pay', ['id' => $id, 'payment_reference' => 'MBAN 0100 2611 03ABC'], $csrf);
+    eq(200, $r['status'], $r['body']);
+    eq('MBAN0100261103ABC', $r['json']['data']['payment_reference'], 'la clave se guarda sin espacios');
+    $txt = $commPdfText($id);
+    ok(stripos($txt, 'Pagado') !== false, 'debía decir Pagado');
+    ok(str_contains($txt, 'MBAN0100261103ABC'), 'debía imprimir la clave de rastreo');
+    ok(str_contains($txt, 'rastreo SPEI'), 'debía rotular la clave de rastreo SPEI');
+    ok(stripos($txt, 'Pendiente de pago') === false, 'ya no debía decir Pendiente de pago');
+});
+test('un estado pagado no se puede eliminar hasta quitarle el pago', function () use ($admin, &$csrf, $pdo, $commPdfText) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    eq(422, $admin->json('POST', '/api/index.php?r=commissions/statement_delete', ['id' => $id], $csrf)['status']);
+    eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_unpay', ['id' => $id], $csrf)['status']);
+    $row = $pdo->query("SELECT paid_at, payment_reference FROM commission_statements WHERE id = $id")->fetch();
+    ok($row['paid_at'] === null && $row['payment_reference'] === null, 'al quitar el pago se borra la clave');
+    ok(stripos($commPdfText($id), 'Pendiente de pago') !== false);
+});
+test('la cuenta del médico se filtra por periodo y avisa de los pendientes de otros periodos', function () use ($admin, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $ins = $pdo->prepare("INSERT INTO commission_entries (doctor_id, patient_name, entry_date, studies, total_amount, total_commission) VALUES (?, ?, ?, '[]', 100, 10)");
+    $ins->execute([$docId, 'Pendiente de octubre', '2026-10-10']);
+    $ins->execute([$docId, 'Pendiente de marzo', '2026-03-05']);
+    $all = $admin->json('GET', '/api/index.php?r=commissions/entries_list&doctor_id=' . $docId, null)['json']['data'];
+    $names = array_column($all['entries'], 'patient_name');
+    ok(in_array('Pendiente de marzo', $names, true) && in_array('Pendiente de octubre', $names, true), 'sin periodo trae todo');
+    $d = $admin->json('GET', '/api/index.php?r=commissions/entries_list&doctor_id=' . $docId . '&from=2026-09-01&to=2026-10-31', null)['json']['data'];
+    $names = array_column($d['entries'], 'patient_name');
+    ok(in_array('Pendiente de octubre', $names, true) && !in_array('Pendiente de marzo', $names, true), 'con periodo solo trae ese bimestre');
+    eq(1, $d['pending_outside'], 'debía avisar del pendiente de marzo');
+    ok(array_key_exists('paid_at', $d['entries'][0]), 'cada registro trae el estado de pago de su estado de cuenta');
+});
+
+test('solo el administrador puede marcar pagado, corregir o quitar el pago', function () use ($std, $pdo) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    $csrf = $std->json('GET', '/api/index.php?r=auth/session', null)['json']['data']['csrf'];
+    // con acceso a Comisiones, para que el rechazo sea por no ser administrador y no por falta de acceso
+    $stdId = (int)$std->json('GET', '/api/index.php?r=auth/session', null)['json']['data']['user']['id'];
+    $pdo->prepare("INSERT INTO user_permissions (user_id, module_key, flags) VALUES (?, 'apps', ?)")
+        ->execute([$stdId, json_encode(['comisiones' => true])]);
+    foreach (['statement_pay', 'statement_unpay'] as $action) {
+        $r = $std->json('POST', '/api/index.php?r=commissions/' . $action, ['id' => $id, 'payment_reference' => 'MBAN0100261103ABC'], $csrf);
+        ok($r['status'] === 403, "$action debía rechazar a un usuario estándar (HTTP {$r['status']})");
+    }
+    ok($pdo->query("SELECT paid_at FROM commission_statements WHERE id = $id")->fetchColumn() === null, 'no debía quedar pagado');
+});
+test('el listado de estados de cuenta se filtra por periodo de generación y por médico', function () use ($admin, $pdo) {
+    $docId = (int)$pdo->query("SELECT id FROM vinculacion_doctors WHERE name = 'Rodolfo Ramírez del Pilar'")->fetchColumn();
+    $today = date('Y-m-d');
+    $in = $admin->json('GET', '/api/index.php?r=commissions/list&from=' . $today . '&to=' . $today, null)['json']['data'];
+    ok($in['total'] >= 1, 'los estados generados hoy debían aparecer en un periodo que incluye hoy');
+    $out = $admin->json('GET', '/api/index.php?r=commissions/list&from=2020-01-01&to=2020-02-29', null)['json']['data'];
+    eq(0, $out['total'], 'un periodo viejo no debía traer estados recientes');
+    $mine = $admin->json('GET', '/api/index.php?r=commissions/list&party_type=doctor&party_id=' . $docId, null)['json']['data'];
+    ok($mine['total'] >= 1);
+    $other = $admin->json('GET', '/api/index.php?r=commissions/list&party_type=doctor&party_id=999999', null)['json']['data'];
+    eq(0, $other['total']);
+});
+
+test('el listado de estados de cuenta se filtra por estatus de pago', function () use ($admin, &$csrf, $pdo) {
+    $id = (int)$pdo->query("SELECT id FROM commission_statements WHERE folio = '010126-77'")->fetchColumn();
+    $ids = fn(string $status) => array_map('intval', array_column($admin->json('GET', '/api/index.php?r=commissions/list&status=' . $status, null)['json']['data']['items'], 'id'));
+    ok(in_array($id, $ids('pending'), true), 'sin pagar debía salir en Pendiente de pago');
+    ok(!in_array($id, $ids('paid'), true), 'sin pagar no debía salir en Pagado');
+    eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_pay', ['id' => $id, 'payment_reference' => 'SPEI-FILTRO-001'], $csrf)['status']);
+    ok(in_array($id, $ids('paid'), true), 'pagado debía salir en Pagado');
+    ok(!in_array($id, $ids('pending'), true), 'pagado no debía salir en Pendiente de pago');
+    $total = $admin->json('GET', '/api/index.php?r=commissions/list', null)['json']['data']['total'];
+    eq($total, count($ids('paid')) + count($ids('pending')), 'sin filtro trae todos');
+    eq(200, $admin->json('POST', '/api/index.php?r=commissions/statement_unpay', ['id' => $id], $csrf)['status']);
+});
+
+echo "\nAdmisión Facial\n";
+test('el servicio Facial pide padecimientos, heredofamiliares, medicamentos, alergias, exposición, maquillaje y métricas', function () {
+    require_once SIRIUS_PUBLIC . '/includes/services.php';
+    $ids = array_column(service_sections('facial', 'admission'), 'id');
+    foreach (['fa_app', 'fa_ahf', 'fa_med', 'fa_alergias', 'fa_exp', 'fa_maq', 'fa_piel', 'fa_medidas', 'firma'] as $sec) {
+        ok(in_array($sec, $ids, true), "falta la sección $sec");
+    }
+    eq('Facial', SERVICE_LABELS['facial']);
+});
+test('una admisión Facial guarda sus datos, descarta llaves ajenas y sale en el expediente impreso', function () use ($admin, &$csrf, $pdo) {
+    $r = $admin->json('POST', '/api/index.php?r=episodes/create', [
+        'service' => 'facial',
+        'patient' => ['first_name' => 'Paciente', 'paternal_surname' => 'Facial' . random_int(100, 999), 'sex' => 'F'],
+        'service_data' => [
+            'app_acne' => true, 'app_acne_det' => 'Desde 2020',
+            'ahf_diabetes' => true, 'ahf_diabetes_det' => 'Madre, viva',
+            'alg_fragancias' => true,
+            'exp_quimicos' => true, 'exp_quimicos_det' => 'Cloro de alberca',
+            'maq_base' => true, 'maq_base_det' => 'Marca Aurora, líquida',
+            'met_tipo_piel' => 'Mixta', 'met_alt_facial' => '180', 'met_ancho_bicigomatico' => '130', 'met_ind_facial' => '138.5',
+            'llave_inventada' => 'no debe guardarse',
+        ],
+        'ignore_duplicate' => true,
+    ], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $episodeId = (int)$r['json']['data']['episode_id'];
+    $patientId = (int)$r['json']['data']['patient_id'];
+
+    $row = $pdo->prepare('SELECT service, service_data FROM episodes WHERE id = ?');
+    $row->execute([$episodeId]);
+    $ep = $row->fetch();
+    eq('facial', $ep['service']);
+    $data = json_decode($ep['service_data'], true);
+    eq('Cloro de alberca', $data['exp_quimicos_det']);
+    eq('Marca Aurora, líquida', $data['maq_base_det']);
+    eq('138.5', (string)$data['met_ind_facial']);
+    ok(!isset($data['llave_inventada']), 'una llave que no está en el catálogo no debía guardarse');
+
+    $pdf = $admin->req('GET', '/print.php?patient_id=' . $patientId);
+    ok(str_starts_with($pdf['body'], '%PDF'), 'print.php no devolvió un PDF (HTTP ' . $pdf['status'] . ')');
+    $tmp = tests_tmp_dir() . '/facial_' . $episodeId . '.pdf';
+    file_put_contents($tmp, $pdf['body']);
+    $txt = (string)pdf_extract_text($tmp);
+    ok(stripos($txt, 'Facial') !== false, 'el expediente debía mencionar el servicio Facial');
+    ok(str_contains($txt, 'Marca Aurora'), 'el expediente debía incluir la marca de maquillaje capturada');
+    ok(str_contains($txt, 'Mixta'), 'el expediente debía incluir el tipo de piel');
+});
+test('el calendario acepta citas del servicio Facial', function () use ($admin, &$csrf, $pdo) {
+    $r = $admin->json('POST', '/api/index.php?r=appointments/save', [
+        'title' => 'Limpieza facial', 'service' => 'facial',
+        'start_at' => '2027-01-12 10:00:00', 'end_at' => '2027-01-12 11:00:00',
+    ], $csrf);
+    eq(200, $r['status'], $r['body']);
+    $svc = $pdo->prepare('SELECT service FROM appointments WHERE id = ?');
+    $svc->execute([(int)($r['json']['data']['id'] ?? 0)]);
+    eq('facial', $svc->fetchColumn());
+});
+
 echo "\nRespaldo cifrado\n";
 test('respaldo.php entrega un archivo cifrado que se abre con su contraseña', function () use ($admin, &$csrf) {
     $r = $admin->form('/respaldo.php', ['_csrf' => $csrf, 'grupos' => 'usuarios,config', 'password' => 'una-contraseña-larga']);

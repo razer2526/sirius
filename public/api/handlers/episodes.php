@@ -3,6 +3,7 @@
 
 require_once __DIR__ . '/../../includes/services.php';
 require_once __DIR__ . '/../../includes/mailer.php';
+require_once __DIR__ . '/../../includes/doctor_match.php';
 
 function handle_episodes(string $action): void
 {
@@ -112,6 +113,10 @@ function handle_episodes(string $action): void
                     json_error('El médico seleccionado no es válido', 422);
                 }
                 $referringDoctor = $doctorRow['name'];
+            } elseif ($referringDoctor !== null) {
+                // El asistido solo deja escribir el nombre: si identifica a un solo médico con
+                // convenio se liga, para que Comisiones lo vea. El texto escrito se respeta.
+                $linkedDoctorId = doctor_resolve_typed($referringDoctor);
             }
 
             // Estudios seleccionados (solo laboratorio): cada línea trae su monto realmente
@@ -314,6 +319,8 @@ function handle_episodes(string $action): void
                     json_error('El médico seleccionado no es válido', 422);
                 }
                 $referringDoctor = $doctorRow['name'];
+            } elseif ($referringDoctor !== null) {
+                $linkedDoctorId = doctor_resolve_typed($referringDoctor);
             }
 
             db()->prepare(
